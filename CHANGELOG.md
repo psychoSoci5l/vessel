@@ -1,5 +1,26 @@
 # Changelog
 
+Registro delle modifiche su `nanobot_dashboard_v2.py` (sviluppo locale).
+Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come major release.
+
+---
+
+## [2026-02-20] Tastierino PIN numerico
+
+### Aggiunto
+- Tastierino numerico a schermo nella pagina di login (stile terminale)
+- Griglia 3x4: numeri 1-9, C (clear), 0, DEL + pulsanti lucchetto e invio
+- Display a 6 pallini con contatore cifre e glow verde al riempimento
+- Shake dell'intera login-box su PIN errato
+- Supporto tastiera fisica mantenuto (0-9, Backspace, Escape, Enter)
+- `inputmode="none"` per bloccare tastiera nativa su mobile
+
+### Modificato
+- Input PIN nascosto (readonly, invisible) — valore gestito via JS dal numpad
+- Login box ridimensionata per il numpad (310px, padding ottimizzato)
+
+---
+
 ## v1.0.0 — Initial Public Release
 
 The first open-source release of Vessel, representing months of iterative development through 5 phases.

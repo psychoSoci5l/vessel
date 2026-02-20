@@ -1915,7 +1915,7 @@ LOGIN_HTML = f"""<!DOCTYPE html>
   }}
   .login-box {{
     background: var(--card); border: 1px solid var(--border2); border-radius: 8px;
-    padding: 36px 32px; width: 320px; text-align: center;
+    padding: 32px 28px 24px; width: 310px; text-align: center;
     box-shadow: 0 0 60px rgba(0,255,65,0.06);
   }}
   .login-icon {{ width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--green3);
@@ -1923,21 +1923,52 @@ LOGIN_HTML = f"""<!DOCTYPE html>
   .login-title {{ font-size: 16px; font-weight: 700; color: var(--green); letter-spacing: 1px;
     text-shadow: 0 0 10px rgba(0,255,65,0.4); margin-bottom: 4px; }}
   .login-sub {{ font-size: 11px; color: var(--muted); margin-bottom: 24px; }}
-  #pin-input {{
-    font-family: var(--font); font-size: 28px; letter-spacing: 10px; text-align: center;
-    width: 200px; padding: 10px; background: var(--bg2); border: 1px solid var(--border2);
-    border-radius: 4px; color: var(--green); caret-color: var(--green); outline: none;
-    -webkit-appearance: none;
+  #pin-input {{ position: absolute; opacity: 0; pointer-events: none; }}
+  .pin-display {{
+    display: flex; gap: 10px; justify-content: center; margin-bottom: 6px;
   }}
-  #pin-input:focus {{ border-color: var(--green3); }}
-  #pin-input::placeholder {{ letter-spacing: 4px; font-size: 16px; color: var(--muted); }}
-  .login-btn {{
-    margin-top: 16px; width: 200px; padding: 10px; border: 1px solid var(--green3);
-    border-radius: 4px; background: var(--green-dim); color: var(--green2);
-    font-family: var(--font); font-size: 13px; font-weight: 600; cursor: pointer;
-    letter-spacing: 1px; transition: all .15s; min-height: 40px;
+  .pin-dot {{
+    width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--green3);
+    background: transparent; transition: background .15s, box-shadow .15s;
   }}
-  .login-btn:hover {{ background: #004422; color: var(--green); }}
+  .pin-dot.filled {{
+    background: var(--green); box-shadow: 0 0 8px rgba(0,255,65,0.5);
+  }}
+  .pin-counter {{
+    font-size: 11px; color: var(--muted); margin-bottom: 16px; letter-spacing: 1px;
+  }}
+  .numpad {{
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    width: 240px; margin: 0 auto;
+  }}
+  .numpad-btn {{
+    font-family: var(--font); font-size: 20px; font-weight: 600;
+    padding: 14px 0; border: 1px solid var(--border2); border-radius: 6px;
+    background: var(--bg2); color: var(--green); cursor: pointer;
+    transition: all .15s; -webkit-tap-highlight-color: transparent;
+    user-select: none; min-height: 52px;
+  }}
+  .numpad-btn:active {{ background: var(--green-dim); border-color: var(--green3); }}
+  .numpad-btn.fn {{ font-size: 13px; color: var(--muted); }}
+  .numpad-btn.fn:active {{ color: var(--green); }}
+  .numpad-bottom {{
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    width: 240px; margin: 10px auto 0;
+  }}
+  .numpad-submit {{
+    font-family: var(--font); font-size: 18px; font-weight: 600;
+    padding: 14px 0; border: 1px solid var(--green3); border-radius: 6px;
+    background: var(--green-dim); color: var(--green2); cursor: pointer;
+    transition: all .15s; -webkit-tap-highlight-color: transparent;
+    user-select: none;
+  }}
+  .numpad-submit:active {{ background: #004422; color: var(--green); }}
+  .numpad-lock {{
+    font-family: var(--font); font-size: 18px;
+    padding: 14px 0; border: 1px solid var(--border2); border-radius: 6px;
+    background: var(--bg2); color: var(--muted); cursor: default;
+    display: flex; align-items: center; justify-content: center;
+  }}
   #login-error {{
     margin-top: 12px; font-size: 11px; color: var(--red); min-height: 16px;
   }}
@@ -1946,28 +1977,81 @@ LOGIN_HTML = f"""<!DOCTYPE html>
 </style>
 </head>
 <body>
-<div class="login-box">
+<div class="login-box" id="login-box">
   <img class="login-icon" src="{VESSEL_ICON}" alt="Vessel">
   <div class="login-title">VESSEL</div>
   <div class="login-sub" id="login-sub">Inserisci PIN</div>
-  <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]*"
-    maxlength="6" placeholder="****" autocomplete="off">
-  <br>
-  <button class="login-btn" onclick="doLogin()">Accedi</button>
+  <input id="pin-input" type="password" inputmode="none" pattern="[0-9]*"
+    maxlength="6" autocomplete="off" readonly>
+  <div class="pin-display" id="pin-display"></div>
+  <div class="pin-counter" id="pin-counter">0 / 6</div>
+  <div class="numpad">
+    <button class="numpad-btn" onclick="numpadPress('1')">1</button>
+    <button class="numpad-btn" onclick="numpadPress('2')">2</button>
+    <button class="numpad-btn" onclick="numpadPress('3')">3</button>
+    <button class="numpad-btn" onclick="numpadPress('4')">4</button>
+    <button class="numpad-btn" onclick="numpadPress('5')">5</button>
+    <button class="numpad-btn" onclick="numpadPress('6')">6</button>
+    <button class="numpad-btn" onclick="numpadPress('7')">7</button>
+    <button class="numpad-btn" onclick="numpadPress('8')">8</button>
+    <button class="numpad-btn" onclick="numpadPress('9')">9</button>
+    <button class="numpad-btn fn" onclick="numpadClear()">C</button>
+    <button class="numpad-btn" onclick="numpadPress('0')">0</button>
+    <button class="numpad-btn fn" onclick="numpadDel()">DEL</button>
+  </div>
+  <div class="numpad-bottom">
+    <div class="numpad-lock">&#x1f512;</div>
+    <button class="numpad-submit" onclick="doLogin()">&#x279c;</button>
+  </div>
   <div id="login-error"></div>
 </div>
 <script>
+const MAX_PIN = 6;
+let pinValue = '';
+
+function updatePinDisplay() {{
+  const display = document.getElementById('pin-display');
+  const counter = document.getElementById('pin-counter');
+  display.innerHTML = '';
+  for (let i = 0; i < MAX_PIN; i++) {{
+    const dot = document.createElement('div');
+    dot.className = 'pin-dot' + (i < pinValue.length ? ' filled' : '');
+    display.appendChild(dot);
+  }}
+  counter.textContent = pinValue.length + ' / ' + MAX_PIN;
+  document.getElementById('pin-input').value = pinValue;
+}}
+
+function numpadPress(n) {{
+  if (pinValue.length >= MAX_PIN) return;
+  pinValue += n;
+  updatePinDisplay();
+}}
+
+function numpadDel() {{
+  if (pinValue.length === 0) return;
+  pinValue = pinValue.slice(0, -1);
+  updatePinDisplay();
+}}
+
+function numpadClear() {{
+  pinValue = '';
+  updatePinDisplay();
+}}
+
+updatePinDisplay();
+
 (async function() {{
   const r = await fetch('/auth/check');
   const d = await r.json();
   if (d.authenticated) {{ window.location.href = '/'; return; }}
   if (d.setup) {{
-    document.getElementById('login-sub').textContent = 'Imposta il PIN della dashboard (4-6 cifre)';
-    document.querySelector('.login-btn').textContent = 'Imposta PIN';
+    document.getElementById('login-sub').textContent = 'Imposta il PIN (4-6 cifre)';
   }}
 }})();
+
 async function doLogin() {{
-  const pin = document.getElementById('pin-input').value.trim();
+  const pin = pinValue.trim();
   if (!pin) return;
   const errEl = document.getElementById('login-error');
   errEl.textContent = '';
@@ -1980,16 +2064,21 @@ async function doLogin() {{
     if (d.ok) {{ window.location.href = '/'; }}
     else {{
       errEl.textContent = d.error || 'PIN errato';
-      document.getElementById('pin-input').classList.add('shake');
-      setTimeout(() => document.getElementById('pin-input').classList.remove('shake'), 400);
-      document.getElementById('pin-input').value = '';
+      document.getElementById('login-box').classList.add('shake');
+      setTimeout(() => document.getElementById('login-box').classList.remove('shake'), 400);
+      pinValue = '';
+      updatePinDisplay();
     }}
   }} catch(e) {{
     errEl.textContent = 'Errore di connessione';
   }}
 }}
-document.getElementById('pin-input').addEventListener('keydown', e => {{
-  if (e.key === 'Enter') doLogin();
+
+document.addEventListener('keydown', e => {{
+  if (e.key >= '0' && e.key <= '9') numpadPress(e.key);
+  else if (e.key === 'Backspace') numpadDel();
+  else if (e.key === 'Escape') numpadClear();
+  else if (e.key === 'Enter') doLogin();
 }});
 </script>
 </body>
