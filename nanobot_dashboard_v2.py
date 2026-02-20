@@ -1217,15 +1217,15 @@ HTML = f"""<!DOCTYPE html>
       <span class="card-title">💬 Chat con Vessel</span>
       <div style="display:flex;gap:6px;align-items:center;">
         <div class="model-switch">
-          <button class="model-btn active" id="btn-cloud" onclick="switchModel('cloud')">☁ Cloud</button>
-          <button class="model-btn" id="btn-local" onclick="switchModel('local')">🏠 Locale</button>
+          <button class="model-btn" id="btn-cloud" onclick="switchModel('cloud')">☁ Cloud</button>
+          <button class="model-btn active" id="btn-local" onclick="switchModel('local')">🏠 Locale</button>
         </div>
         <button class="btn-ghost" onclick="clearChat()">🗑 Pulisci</button>
       </div>
     </div>
     <div class="model-indicator" id="model-indicator">
-      <span class="dot dot-cloud" id="model-dot"></span>
-      <span id="model-label">Haiku (cloud)</span>
+      <span class="dot dot-local" id="model-dot"></span>
+      <span id="model-label">Gemma 3 4B (locale)</span>
     </div>
     <div id="chat-messages">
       <div class="msg msg-bot">Eyyy, sono Vessel 🐈 — dimmi cosa vuoi, psychoSocial.</div>
@@ -1524,7 +1524,7 @@ HTML = f"""<!DOCTYPE html>
   }}
 
   // ── Chat ──
-  let chatProvider = 'cloud';
+  let chatProvider = 'local';
   let streamDiv = null;
 
   function switchModel(provider) {{
