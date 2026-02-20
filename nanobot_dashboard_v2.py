@@ -1500,6 +1500,20 @@ HTML = f"""<!DOCTYPE html>
     const b = data.last;
     const ts = b.ts ? b.ts.replace('T', ' ') : '—';
     const weather = b.weather || '—';
+    const calToday = b.calendar_today || [];
+    const calTomorrow = b.calendar_tomorrow || [];
+    const calTodayHtml = calToday.length > 0
+      ? calToday.map(e => {{
+          const loc = e.location ? ` <span style="color:var(--muted)">@ ${{e.location}}</span>` : '';
+          return `<div style="margin:3px 0;font-size:11px;"><span style="color:var(--cyan);font-weight:600">${{e.time}}</span> <span style="color:var(--text2)">${{e.summary}}</span>${{loc}}</div>`;
+        }}).join('')
+      : '<div style="font-size:11px;color:var(--muted);font-style:italic">Nessun evento oggi</div>';
+    const calTomorrowHtml = calTomorrow.length > 0
+      ? `<div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px">📅 DOMANI (${{calTomorrow.length}} eventi)</div>` +
+        calTomorrow.map(e =>
+          `<div style="margin:2px 0;font-size:10px;color:var(--text2)"><span style="color:var(--cyan)">${{e.time}}</span> ${{e.summary}}</div>`
+        ).join('')
+      : '';
     const stories = (b.stories || []).map((s, i) =>
       `<div style="margin:4px 0;font-size:11px;color:var(--text2);">${{i+1}}. ${{s.title}}</div>`
     ).join('');
@@ -1509,8 +1523,11 @@ HTML = f"""<!DOCTYPE html>
         <div style="font-size:10px;color:var(--muted);">PROSSIMO: <span style="color:var(--cyan)">${{data.next_run || '07:30'}}</span></div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:8px;">
-        <div style="font-size:11px;color:var(--amber);margin-bottom:6px;">🌤 ${{weather}}</div>
-        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">📰 TOP HACKERNEWS</div>
+        <div style="font-size:11px;color:var(--amber);margin-bottom:8px;">🌤 ${{weather}}</div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">📅 CALENDARIO OGGI</div>
+        ${{calTodayHtml}}
+        ${{calTomorrowHtml}}
+        <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px;">📰 TOP HACKERNEWS</div>
         ${{stories}}
       </div>
       <div style="display:flex;gap:6px;">

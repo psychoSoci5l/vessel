@@ -69,7 +69,7 @@
 ## Fase 5 — Routine e automazioni intelligenti
 > Il Pi diventa proattivo: non aspetta comandi, agisce su schedule.
 
-- [ ] Briefing mattutino con dati calendario Google (già integrato via script)
+- [x] Briefing mattutino con dati calendario Google (google_helper --json + subprocess)
 - [ ] Reminder task Google → notifica dashboard/Discord
 - [ ] Routine "buonanotte": briefing serale, reminder domani, spegni luci Smart Life
 - [ ] Backup automatico config + memoria su cloud (Google Drive o rclone)
