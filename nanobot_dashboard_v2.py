@@ -37,6 +37,23 @@ OLLAMA_MODEL = "gemma3:4b"
 OLLAMA_TIMEOUT = 120  # secondi (Gemma ~3.5 tok/s, serve margine)
 OLLAMA_SYSTEM = "Sei Vessel, un assistente conciso che gira su Raspberry Pi. Rispondi in italiano, breve e diretto."
 
+# ─── Claude Bridge (Remote Code) ────────────────────────────────────────────
+# Config letta da ~/.nanobot/config.json chiave "bridge" (url, token)
+# oppure override via env var CLAUDE_BRIDGE_URL / CLAUDE_BRIDGE_TOKEN
+def _get_bridge_config() -> dict:
+    cfg_file = Path.home() / ".nanobot" / "config.json"
+    if cfg_file.exists():
+        try:
+            return json.loads(cfg_file.read_text()).get("bridge", {})
+        except Exception:
+            pass
+    return {}
+
+_bridge_cfg = _get_bridge_config()
+CLAUDE_BRIDGE_URL = os.environ.get("CLAUDE_BRIDGE_URL", _bridge_cfg.get("url", "http://192.168.178.34:8095"))
+CLAUDE_BRIDGE_TOKEN = os.environ.get("CLAUDE_BRIDGE_TOKEN", _bridge_cfg.get("token", ""))
+CLAUDE_TASKS_LOG = Path.home() / ".nanobot" / "claude_tasks.jsonl"
+
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 PIN_FILE = Path.home() / ".nanobot" / "dashboard_pin.hash"
 SESSIONS: dict[str, float] = {}
@@ -617,6 +634,132 @@ def chat_with_nanobot(message: str) -> str:
     except Exception as e:
         return f"(errore CLI: {e})"
 
+# ─── Claude Bridge (Remote Code) ─────────────────────────────────────────────
+def check_bridge_health() -> dict:
+    """Verifica se il Claude Bridge su Windows è raggiungibile."""
+    try:
+        req = urllib.request.Request(f"{CLAUDE_BRIDGE_URL}/health")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return json.loads(resp.read())
+    except Exception:
+        return {"status": "offline"}
+
+def get_claude_tasks(n: int = 10) -> list[dict]:
+    """Legge gli ultimi N task dal log JSONL."""
+    if not CLAUDE_TASKS_LOG.exists():
+        return []
+    tasks = []
+    for line in CLAUDE_TASKS_LOG.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            tasks.append(json.loads(line))
+        except Exception:
+            continue
+    return tasks[-n:]
+
+def log_claude_task(prompt: str, status: str, exit_code: int = 0,
+                    duration_ms: int = 0, output_preview: str = ""):
+    """Logga un task Claude nel file JSONL."""
+    entry = json.dumps({
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "prompt": prompt[:200],
+        "status": status,
+        "exit_code": exit_code,
+        "duration_ms": duration_ms,
+        "output_preview": output_preview[:200],
+    }, ensure_ascii=False)
+    with open(CLAUDE_TASKS_LOG, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
+
+async def run_claude_task_stream(websocket: WebSocket, prompt: str):
+    """Esegue un task via Claude Bridge con streaming output via WS."""
+    queue: asyncio.Queue = asyncio.Queue()
+    start_time = time.time()
+
+    def _bridge_worker():
+        try:
+            # Parse host:port da CLAUDE_BRIDGE_URL
+            url = CLAUDE_BRIDGE_URL.replace("http://", "")
+            if ":" in url:
+                host, port_s = url.split(":", 1)
+                port = int(port_s.split("/")[0])
+            else:
+                host, port = url.split("/")[0], 80
+            conn = http.client.HTTPConnection(host, port, timeout=TASK_TIMEOUT)
+            payload = json.dumps({
+                "prompt": prompt,
+                "token": CLAUDE_BRIDGE_TOKEN,
+            })
+            conn.request("POST", "/run", body=payload,
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            if resp.status != 200:
+                body = resp.read().decode("utf-8", errors="replace")
+                queue.put_nowait(("error", {"text": f"HTTP {resp.status}: {body[:200]}"}))
+                queue.put_nowait(("end", None))
+                conn.close()
+                return
+            buf = ""
+            while True:
+                raw = resp.read(512)
+                if not raw:
+                    break
+                buf += raw.decode("utf-8", errors="replace")
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        queue.put_nowait((data.get("type", "chunk"), data))
+                    except json.JSONDecodeError:
+                        queue.put_nowait(("chunk", {"text": line + "\n"}))
+            conn.close()
+        except Exception as e:
+            queue.put_nowait(("error", {"text": str(e)}))
+        finally:
+            queue.put_nowait(("end", None))
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _bridge_worker)
+
+    full_output = ""
+    exit_code = -1
+
+    while True:
+        try:
+            kind, val = await asyncio.wait_for(queue.get(), timeout=TASK_TIMEOUT)
+        except asyncio.TimeoutError:
+            await websocket.send_json({"type": "claude_chunk", "text": "\n(timeout bridge)"})
+            break
+        if kind == "chunk":
+            text = val.get("text", "") if isinstance(val, dict) else str(val)
+            full_output += text
+            await websocket.send_json({"type": "claude_chunk", "text": text})
+        elif kind == "done":
+            exit_code = val.get("exit_code", 0) if isinstance(val, dict) else 0
+            break
+        elif kind == "error":
+            err = val.get("text", "") if isinstance(val, dict) else str(val)
+            await websocket.send_json({"type": "claude_chunk", "text": f"\n⚠️ {err}"})
+            break
+        elif kind == "end":
+            break
+
+    elapsed = int((time.time() - start_time) * 1000)
+    status = "done" if exit_code == 0 else "error"
+    await websocket.send_json({
+        "type": "claude_done",
+        "exit_code": exit_code,
+        "duration_ms": elapsed,
+    })
+    log_claude_task(prompt, status, exit_code, elapsed, full_output[:200])
+
+TASK_TIMEOUT = 300  # 5 min max per task Claude Bridge
+
 # ─── Background broadcaster ───────────────────────────────────────────────────
 async def stats_broadcaster():
     cycle = 0
@@ -779,6 +922,45 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast({"type": "reboot_ack"})
                 await asyncio.sleep(0.5)
                 subprocess.run(["sudo", "reboot"])
+
+            # ── Remote Code (Claude Bridge) ──
+            elif action == "claude_task":
+                prompt = msg.get("prompt", "").strip()[:10000]
+                if not prompt:
+                    await websocket.send_json({"type": "toast", "text": "⚠️ Prompt vuoto"})
+                    continue
+                if not CLAUDE_BRIDGE_TOKEN:
+                    await websocket.send_json({"type": "toast", "text": "⚠️ Bridge non configurato"})
+                    continue
+                ip = websocket.client.host
+                if not _rate_limit(ip, "claude_task", 5, 3600):
+                    await websocket.send_json({"type": "toast", "text": "⚠️ Limite task raggiunto (max 5/ora)"})
+                    continue
+                await websocket.send_json({"type": "claude_thinking"})
+                await run_claude_task_stream(websocket, prompt)
+
+            elif action == "claude_cancel":
+                try:
+                    payload = json.dumps({"token": CLAUDE_BRIDGE_TOKEN}).encode()
+                    req = urllib.request.Request(
+                        f"{CLAUDE_BRIDGE_URL}/cancel",
+                        data=payload,
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=5) as resp:
+                        pass
+                    await websocket.send_json({"type": "toast", "text": "✅ Task cancellato"})
+                except Exception as e:
+                    await websocket.send_json({"type": "toast", "text": f"⚠️ Errore cancel: {e}"})
+
+            elif action == "check_bridge":
+                health = await bg(check_bridge_health)
+                await websocket.send_json({"type": "bridge_status", "data": health})
+
+            elif action == "get_claude_tasks":
+                tasks = get_claude_tasks(10)
+                await websocket.send_json({"type": "claude_tasks", "tasks": tasks})
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
@@ -1113,6 +1295,29 @@ HTML = f"""<!DOCTYPE html>
   .cron-desc {{ font-size: 10px; color: var(--muted); margin-top: 2px; }}
   .no-items {{ color: var(--muted); font-size: 11px; text-align: center; padding: 16px; }}
 
+  /* ── Remote Code ── */
+  .claude-output {{
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 9px 11px; font-family: var(--font); font-size: 11px; line-height: 1.6;
+    color: var(--text2); max-height: 300px; overflow-y: auto; white-space: pre-wrap;
+    word-break: break-word; -webkit-overflow-scrolling: touch;
+  }}
+  .claude-task-item {{
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 8px 11px; margin-bottom: 6px;
+  }}
+  .claude-task-prompt {{
+    font-size: 11px; color: var(--text); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px;
+  }}
+  .claude-task-meta {{
+    font-size: 10px; color: var(--muted); display: flex; gap: 10px;
+  }}
+  .claude-task-status {{ font-weight: 600; }}
+  .claude-task-status.done {{ color: var(--green); }}
+  .claude-task-status.error {{ color: var(--red); }}
+  .claude-task-status.cancelled {{ color: var(--muted); }}
+
   /* ── Tabs ── */
   .tab-row {{
     display: flex; gap: 4px; padding: 7px 13px;
@@ -1353,7 +1558,24 @@ HTML = f"""<!DOCTYPE html>
     </div>
   </div>
 
-  <!-- ⑧ Memoria tabs -->
+  <!-- ⑧ Remote Code -->
+  <div class="card collapsible collapsed" id="card-claude">
+    <div class="card-header" onclick="toggleCard('card-claude')">
+      <span class="card-title"><span class="collapse-arrow">▾</span> 💻 Remote Code</span>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span id="bridge-dot" class="health-dot" title="Bridge offline" style="width:8px;height:8px;"></span>
+        <button class="btn-ghost" onclick="loadBridge(this); event.stopPropagation();">Carica</button>
+      </div>
+    </div>
+    <div class="card-body" id="claude-body">
+      <div class="widget-placeholder">
+        <span class="ph-icon">💻</span>
+        <span>Premi Carica per verificare lo stato del bridge</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ⑨ Memoria tabs -->
   <div class="card collapsible" id="card-memoria">
     <div class="card-header" onclick="toggleCard('card-memoria')">
       <span class="card-title"><span class="collapse-arrow">▾</span> 🧠 Memoria</span>
@@ -1451,6 +1673,26 @@ HTML = f"""<!DOCTYPE html>
     else if (msg.type === 'crypto')   {{ expandCard('card-crypto'); renderCrypto(msg.data); }}
     else if (msg.type === 'toast')   {{ showToast(msg.text); }}
     else if (msg.type === 'reboot_ack') {{ startRebootWait(); }}
+    else if (msg.type === 'claude_thinking') {{
+      expandCard('card-claude');
+      const out = document.getElementById('claude-output');
+      if (out) {{ out.style.display = 'block'; out.textContent = 'Connessione al bridge...\\n'; }}
+    }}
+    else if (msg.type === 'claude_chunk') {{
+      const out = document.getElementById('claude-output');
+      if (out) {{ out.textContent += msg.text; out.scrollTop = out.scrollHeight; }}
+    }}
+    else if (msg.type === 'claude_done') {{ finalizeClaudeTask(msg); }}
+    else if (msg.type === 'claude_cancelled') {{
+      claudeRunning = false;
+      const rb = document.getElementById('claude-run-btn');
+      const cb = document.getElementById('claude-cancel-btn');
+      if (rb) rb.disabled = false;
+      if (cb) cb.style.display = 'none';
+      showToast('Task cancellato');
+    }}
+    else if (msg.type === 'bridge_status') {{ renderBridgeStatus(msg.data); }}
+    else if (msg.type === 'claude_tasks') {{ expandCard('card-claude'); renderClaudeTasks(msg.tasks); }}
   }}
 
   // ── Storico campioni per grafico ──
@@ -1792,6 +2034,110 @@ HTML = f"""<!DOCTYPE html>
   }}
   function deleteCron(index) {{
     send({{ action: 'delete_cron', index: index }});
+  }}
+
+  // ── Remote Code ──
+  let claudeRunning = false;
+
+  function loadBridge(btn) {{
+    if (btn) btn.textContent = '...';
+    send({{ action: 'check_bridge' }});
+    send({{ action: 'get_claude_tasks' }});
+  }}
+
+  function runClaudeTask() {{
+    const input = document.getElementById('claude-prompt');
+    const prompt = input.value.trim();
+    if (!prompt) {{ showToast('Scrivi un prompt'); return; }}
+    if (claudeRunning) {{ showToast('Task già in esecuzione'); return; }}
+    claudeRunning = true;
+    document.getElementById('claude-run-btn').disabled = true;
+    document.getElementById('claude-cancel-btn').style.display = 'inline-block';
+    const out = document.getElementById('claude-output');
+    if (out) {{ out.style.display = 'block'; out.textContent = ''; }}
+    send({{ action: 'claude_task', prompt: prompt }});
+  }}
+
+  function cancelClaudeTask() {{
+    send({{ action: 'claude_cancel' }});
+  }}
+
+  function finalizeClaudeTask(data) {{
+    claudeRunning = false;
+    const rb = document.getElementById('claude-run-btn');
+    const cb = document.getElementById('claude-cancel-btn');
+    if (rb) rb.disabled = false;
+    if (cb) cb.style.display = 'none';
+    const status = data.exit_code === 0 ? '✅ completato' : '⚠️ errore';
+    const dur = (data.duration_ms / 1000).toFixed(1);
+    showToast(`Task ${{status}} in ${{dur}}s`);
+    send({{ action: 'get_claude_tasks' }});
+  }}
+
+  function renderBridgeStatus(data) {{
+    const dot = document.getElementById('bridge-dot');
+    if (!dot) return;
+    if (data.status === 'ok') {{
+      dot.className = 'health-dot green';
+      dot.title = 'Bridge online';
+    }} else {{
+      dot.className = 'health-dot red';
+      dot.title = 'Bridge offline';
+    }}
+    // Se il body è ancora il placeholder, renderizza il form
+    const body = document.getElementById('claude-body');
+    if (body && body.querySelector('.widget-placeholder')) {{
+      renderClaudeUI(data.status === 'ok');
+    }}
+  }}
+
+  function renderClaudeUI(isOnline) {{
+    const body = document.getElementById('claude-body');
+    if (!body) return;
+    body.innerHTML = `
+      <div style="margin-bottom:10px;">
+        <textarea id="claude-prompt" rows="3" placeholder="Descrivi il task per Claude Code..."
+          style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;
+          color:var(--green);padding:9px 12px;font-family:var(--font);font-size:13px;
+          outline:none;resize:vertical;caret-color:var(--green);min-height:60px;box-sizing:border-box;"></textarea>
+        <div style="display:flex;gap:6px;margin-top:6px;">
+          <button class="btn-green" id="claude-run-btn" onclick="runClaudeTask()"
+            ${{!isOnline ? 'disabled title="Bridge offline"' : ''}}>▶ Esegui</button>
+          <button class="btn-red" id="claude-cancel-btn" onclick="cancelClaudeTask()"
+            style="display:none;">■ Stop</button>
+          <button class="btn-ghost" onclick="loadBridge()">↻ Stato</button>
+        </div>
+      </div>
+      <div id="claude-output" class="claude-output" style="display:none;margin-bottom:10px;"></div>
+      <div id="claude-tasks-list"></div>`;
+  }}
+
+  function renderClaudeTasks(tasks) {{
+    // Se il body è ancora placeholder, renderizza prima il form
+    const body = document.getElementById('claude-body');
+    if (body && body.querySelector('.widget-placeholder')) {{
+      renderClaudeUI(document.getElementById('bridge-dot')?.classList.contains('green'));
+    }}
+    const el = document.getElementById('claude-tasks-list');
+    if (!el) return;
+    if (!tasks || !tasks.length) {{
+      el.innerHTML = '<div class="no-items">// nessun task eseguito</div>';
+      return;
+    }}
+    const list = tasks.slice().reverse();
+    el.innerHTML = '<div style="font-size:10px;color:var(--muted);margin-bottom:6px;">ULTIMI TASK</div>' +
+      list.map(t => {{
+        const dur = t.duration_ms ? (t.duration_ms/1000).toFixed(1)+'s' : '';
+        const ts = (t.ts || '').replace('T', ' ');
+        return `<div class="claude-task-item">
+          <div class="claude-task-prompt" title="${{t.prompt}}">${{t.prompt}}</div>
+          <div class="claude-task-meta">
+            <span class="claude-task-status ${{t.status}}">${{t.status}}</span>
+            <span>${{ts}}</span>
+            <span>${{dur}}</span>
+          </div>
+        </div>`;
+      }}).join('');
   }}
 
   // ── Tabs ──
