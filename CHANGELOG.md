@@ -5,6 +5,84 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-20] Chat History + Riconoscimento Amici + Ollama Warmup
+
+### Aggiunto
+- **Chat history Ollama**: switch da `/api/generate` a `/api/chat` con array `messages` (ultimi 20 msg)
+- **Riconoscimento amici**: `FRIENDS.md` in `~/.nanobot/workspace/`, caricato nel system prompt Ollama e Cloud
+- **Funzione `_load_friends()`**: carica contesto amici all'avvio, iniettato in entrambi i provider chat
+- **`keep_alive: 60m`**: modello Ollama resta in RAM 60 min (evita cold start, ventola, lag)
+- **Warmup all'avvio**: richiesta minima (`num_predict: 1`) durante `lifespan()` per precaricare il modello
+- **Clear chat server-side**: pulsante "Pulisci" ora resetta anche la history WS (`clear_chat` action)
+- **System prompt migliorato**: tono caldo e discorsivo, disambiguazione nomi duplicati, terza persona per amici di Filippo
+
+### Modificato
+- `chat_with_ollama_stream()` accetta `chat_history: list` come parametro
+- `ollama_chat_history` inizializzata per ogni sessione WS
+- System prompt con esempio concreto di risposta (Gemma segue meglio gli esempi)
+
+### Fix
+- **Bridge token mismatch**: token nella config Pi non corrispondeva al `BRIDGE_TOKEN` del bridge Windows
+
+---
+
+## [2026-02-20] Fase 8: Ralph Loop — Automatic Iteration with AI Supervisor
+
+> **Killer feature**: Send a task from your phone, walk away. Claude Code iterates automatically
+> until the job is done — with a local Ollama model acting as supervisor between attempts.
+
+### Added
+- **Ralph Loop** in bridge: Claude Code retries automatically until completion (max 3 iterations)
+- **Ollama supervisor** (qwen2.5-coder:14b on RTX 3060 12GB) evaluates output between iterations
+- **TASK_COMPLETE marker**: dual verification — self-report from Claude Code + supervisor confirmation
+- **Automatic follow-up**: if the supervisor detects incomplete work, a refined prompt with error context is generated
+- **Backup/rollback**: optional file backup before loop starts, auto-restore on total failure
+- **Streaming iteration markers**: visual feedback in dashboard — green for iterations, yellow for supervisor
+- **CSS classes**: `.ralph-marker`, `.ralph-supervisor`, `.ralph-info` for iteration UI
+- **Health check** now reports Ollama status and `loop: true` capability
+
+### Flow
+```
+Prompt → Bridge /run-loop → Claude Code (iter 1)
+  → TASK_COMPLETE in output? → Yes: DONE
+  → No + exit 0: Ollama evaluates → generates follow-up → iter 2 → ...
+  → Error exit: abort (rollback if backup exists)
+  → Max 3 iterations or 12 min total timeout
+```
+
+### Changed
+- Bridge v2: new `/run-loop` endpoint (old `/run` kept for backwards compatibility)
+- Dashboard: `_bridge_worker` uses `/run-loop`, handles new WS message types (`claude_iteration`, `claude_supervisor`, `claude_info`)
+- `finalizeClaudeTask` shows iteration count in completion toast
+- Output widget uses `appendChild` for DOM compatibility with styled elements
+
+### Architecture
+```
+iPhone (PWA) → Pi (Vessel Dashboard) → LAN → PC Windows (Bridge v2)
+                                                 ├── Claude Code (claude -p)
+                                                 └── Ollama supervisor (qwen2.5-coder:14b)
+```
+
+---
+
+## [2026-02-20] Fase 7: Remote Claude Code
+
+### Aggiunto
+- Widget "Remote Code" nella dashboard — task runner per Claude Code remoto
+- Claude Bridge (`claude_bridge.py`): micro-servizio FastAPI su Windows, porta 8095
+- Streaming output ndjson dal bridge al Pi al browser (pattern identico a Ollama)
+- Cronologia task in `~/.nanobot/claude_tasks.jsonl` con prompt, stato, durata
+- Health check bridge con pallino verde/rosso nell'header widget
+- Bottone Stop per cancellare task in corso
+- Config bridge in `~/.nanobot/config.json` chiave `bridge` (url + token)
+- Rate limiting: max 5 task/ora per IP, timeout 5 min, un task alla volta
+
+### Flusso
+- iPhone (PWA) → Cloudflare → Pi (dashboard WS) → LAN → PC Windows (bridge) → `claude -p`
+- Output streaming chunk per chunk in tempo reale
+
+---
+
 ## [2026-02-20] Tastierino PIN numerico
 
 ### Aggiunto

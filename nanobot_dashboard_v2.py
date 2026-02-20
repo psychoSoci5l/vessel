@@ -35,7 +35,19 @@ QUICKREF_FILE = NANOBOT_WORKSPACE / "memory" / "QUICKREF.md"
 OLLAMA_BASE = "http://127.0.0.1:11434"
 OLLAMA_MODEL = "gemma3:4b"
 OLLAMA_TIMEOUT = 120  # secondi (Gemma ~3.5 tok/s, serve margine)
-OLLAMA_SYSTEM = "Sei Vessel, un assistente conciso che gira su Raspberry Pi. Rispondi in italiano, breve e diretto."
+OLLAMA_KEEP_ALIVE = "60m"  # tiene il modello in RAM per 60 min (evita cold start)
+OLLAMA_SYSTEM = "Sei Vessel, un assistente conciso che gira su Raspberry Pi 5 di psychoSocial (Filippo). Rispondi in italiano, breve e diretto.\n\nHai un elenco degli amici di Filippo. Quando qualcuno si presenta (es. 'sono Giulia', 'mi chiamo Stefano'), cerca il nome nell'elenco e rispondi in modo CALDO e NATURALE: presentati, saluta la persona per nome, mostra che la conosci citando i suoi interessi in modo discorsivo (non come elenco!), e proponi di chiacchierare su uno di quei temi. Esempio di tono giusto: 'Ciao Giulia! Sono Vessel, l'assistente di Filippo. So che sei una grande appassionata di fotografia e metal, e pure sviluppatrice Java, mica male! Come va la ricerca della casa? Posso aiutarti con qualcosa?'. Se il nome non è nell'elenco, presentati e chiedi chi sono con curiosità. IMPORTANTE: se ci sono PIU persone con lo stesso nome nell'elenco, NON tirare a indovinare. Chiedi gentilmente quale sono, ad esempio: 'Ciao Stefano! Filippo conosce due Stefano — sei Santaiti o Rodella?'. Ricorda: gli amici sono di FILIPPO, non tuoi. Parla sempre in terza persona quando ti riferisci a loro (es. 'Filippo conosce...', 'So che sei amico di Filippo')."
+
+FRIENDS_FILE = Path.home() / ".nanobot" / "workspace" / "FRIENDS.md"
+
+def _load_friends() -> str:
+    """Carica il contesto amici da FRIENDS.md, stringa vuota se non esiste."""
+    try:
+        if FRIENDS_FILE.exists():
+            return FRIENDS_FILE.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return ""
 
 # ─── Claude Bridge (Remote Code) ────────────────────────────────────────────
 # Config letta da ~/.nanobot/config.json chiave "bridge" (url, token)
@@ -115,6 +127,8 @@ def _rate_limit(ip: str, action: str, max_requests: int, window_seconds: int) ->
 @asynccontextmanager
 async def lifespan(app):
     asyncio.create_task(stats_broadcaster())
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, warmup_ollama)
     yield
 
 app = FastAPI(lifespan=lifespan)
@@ -517,19 +531,49 @@ def check_ollama_health() -> bool:
     except Exception:
         return False
 
-async def chat_with_ollama_stream(websocket: WebSocket, message: str):
-    """Chat con Ollama via streaming. Invia chunk progressivi via WS."""
+def warmup_ollama():
+    """Precarica il modello in RAM con una richiesta minima."""
+    try:
+        payload = json.dumps({
+            "model": OLLAMA_MODEL,
+            "messages": [{"role": "user", "content": "ciao"}],
+            "stream": False, "keep_alive": OLLAMA_KEEP_ALIVE,
+            "options": {"num_predict": 1},
+        }).encode()
+        req = urllib.request.Request(
+            f"{OLLAMA_BASE}/api/chat", data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=30):
+            pass
+        print("[Ollama] Modello precaricato in RAM")
+    except Exception as e:
+        print(f"[Ollama] Warmup fallito: {e}")
+
+async def chat_with_ollama_stream(websocket: WebSocket, message: str, chat_history: list):
+    """Chat con Ollama via streaming con history. Invia chunk progressivi via WS."""
     queue: asyncio.Queue = asyncio.Queue()
     start_time = time.time()
+
+    friends_ctx = _load_friends()
+    system_with_friends = OLLAMA_SYSTEM
+    if friends_ctx:
+        system_with_friends = OLLAMA_SYSTEM + "\n\n## Elenco Amici\n" + friends_ctx
+
+    chat_history.append({"role": "user", "content": message})
+    # Limita history a ultimi 20 messaggi per non esplodere la RAM
+    trimmed = chat_history[-20:]
 
     def _stream_worker():
         try:
             conn = http.client.HTTPConnection("127.0.0.1", 11434, timeout=OLLAMA_TIMEOUT)
             payload = json.dumps({
-                "model": OLLAMA_MODEL, "prompt": message,
-                "system": OLLAMA_SYSTEM, "stream": True,
+                "model": OLLAMA_MODEL,
+                "messages": [{"role": "system", "content": system_with_friends}] + trimmed,
+                "stream": True,
+                "keep_alive": OLLAMA_KEEP_ALIVE,
             })
-            conn.request("POST", "/api/generate", body=payload,
+            conn.request("POST", "/api/chat", body=payload,
                          headers={"Content-Type": "application/json"})
             resp = conn.getresponse()
             buf = ""
@@ -544,7 +588,7 @@ async def chat_with_ollama_stream(websocket: WebSocket, message: str):
                     if not line:
                         continue
                     data = json.loads(line)
-                    token = data.get("response", "")
+                    token = data.get("message", {}).get("content", "")
                     if token:
                         queue.put_nowait(("chunk", token))
                     if data.get("done"):
@@ -576,6 +620,7 @@ async def chat_with_ollama_stream(websocket: WebSocket, message: str):
         elif kind == "end":
             break
 
+    chat_history.append({"role": "assistant", "content": full_reply})
     elapsed = int((time.time() - start_time) * 1000)
     await websocket.send_json({"type": "chat_done", "provider": "ollama"})
     log_token_usage(0, eval_count, OLLAMA_MODEL, provider="ollama", response_time_ms=elapsed)
@@ -587,6 +632,9 @@ def chat_with_nanobot(message: str) -> str:
     raw_model = cfg.get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
     model = _resolve_model(raw_model)
     system_prompt = cfg.get("system_prompt", "Sei Vessel, un assistente sarcastico e informale.")
+    friends_ctx = _load_friends()
+    if friends_ctx:
+        system_prompt = system_prompt + "\n\n## Contesto Amici\n" + friends_ctx
     if api_key:
         try:
             payload = json.dumps({
@@ -692,7 +740,7 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str):
                 "prompt": prompt,
                 "token": CLAUDE_BRIDGE_TOKEN,
             })
-            conn.request("POST", "/run", body=payload,
+            conn.request("POST", "/run-loop", body=payload,
                          headers={"Content-Type": "application/json"})
             resp = conn.getresponse()
             if resp.status != 200:
@@ -728,6 +776,8 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str):
 
     full_output = ""
     exit_code = -1
+    iterations = 1
+    completed = False
 
     while True:
         try:
@@ -741,11 +791,23 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str):
             await websocket.send_json({"type": "claude_chunk", "text": text})
         elif kind == "done":
             exit_code = val.get("exit_code", 0) if isinstance(val, dict) else 0
+            iterations = val.get("iterations", 1) if isinstance(val, dict) else 1
+            completed = val.get("completed", exit_code == 0) if isinstance(val, dict) else False
             break
         elif kind == "error":
             err = val.get("text", "") if isinstance(val, dict) else str(val)
             await websocket.send_json({"type": "claude_chunk", "text": f"\n⚠️ {err}"})
             break
+        elif kind == "iteration_start":
+            i = val.get("iteration", 1) if isinstance(val, dict) else 1
+            m = val.get("max", 3) if isinstance(val, dict) else 3
+            await websocket.send_json({"type": "claude_iteration", "iteration": i, "max": m})
+        elif kind == "supervisor":
+            text = val.get("text", "") if isinstance(val, dict) else str(val)
+            await websocket.send_json({"type": "claude_supervisor", "text": text})
+        elif kind in ("info", "rollback"):
+            text = val.get("text", "") if isinstance(val, dict) else str(val)
+            await websocket.send_json({"type": "claude_info", "text": text})
         elif kind == "end":
             break
 
@@ -755,6 +817,8 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str):
         "type": "claude_done",
         "exit_code": exit_code,
         "duration_ms": elapsed,
+        "iterations": iterations,
+        "completed": completed,
     })
     log_claude_task(prompt, status, exit_code, elapsed, full_output[:200])
 
@@ -799,6 +863,7 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4001, reason="Non autenticato")
         return
     await manager.connect(websocket)
+    ollama_chat_history: list[dict] = []
     await websocket.send_json({
         "type": "init",
         "data": {
@@ -824,10 +889,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         continue
                     await websocket.send_json({"type": "chat_thinking"})
                     if provider == "local":
-                        await chat_with_ollama_stream(websocket, text)
+                        await chat_with_ollama_stream(websocket, text, ollama_chat_history)
                     else:
                         reply = await bg(chat_with_nanobot, text)
                         await websocket.send_json({"type": "chat_reply", "text": reply})
+
+            elif action == "clear_chat":
+                ollama_chat_history.clear()
 
             elif action == "check_ollama":
                 alive = await bg(check_ollama_health)
@@ -1317,6 +1385,14 @@ HTML = f"""<!DOCTYPE html>
   .claude-task-status.done {{ color: var(--green); }}
   .claude-task-status.error {{ color: var(--red); }}
   .claude-task-status.cancelled {{ color: var(--muted); }}
+  .ralph-marker {{
+    color: var(--green); font-weight: 700; padding: 6px 0 2px; font-size: 11px;
+    border-top: 1px solid var(--border); margin-top: 4px;
+  }}
+  .ralph-supervisor {{
+    color: #f0c040; font-size: 11px; padding: 2px 0; font-style: italic;
+  }}
+  .ralph-info {{ color: var(--muted); font-size: 10px; padding: 2px 0; }}
 
   /* ── Tabs ── */
   .tab-row {{
@@ -1676,11 +1752,41 @@ HTML = f"""<!DOCTYPE html>
     else if (msg.type === 'claude_thinking') {{
       expandCard('card-claude');
       const out = document.getElementById('claude-output');
-      if (out) {{ out.style.display = 'block'; out.textContent = 'Connessione al bridge...\\n'; }}
+      if (out) {{ out.style.display = 'block'; out.innerHTML = ''; out.appendChild(document.createTextNode('Connessione al bridge...\\n')); }}
     }}
     else if (msg.type === 'claude_chunk') {{
       const out = document.getElementById('claude-output');
-      if (out) {{ out.textContent += msg.text; out.scrollTop = out.scrollHeight; }}
+      if (out) {{ out.appendChild(document.createTextNode(msg.text)); out.scrollTop = out.scrollHeight; }}
+    }}
+    else if (msg.type === 'claude_iteration') {{
+      const out = document.getElementById('claude-output');
+      if (out) {{
+        const m = document.createElement('div');
+        m.className = 'ralph-marker';
+        m.textContent = '═══ ITERAZIONE ' + msg.iteration + '/' + msg.max + ' ═══';
+        out.appendChild(m);
+        out.scrollTop = out.scrollHeight;
+      }}
+    }}
+    else if (msg.type === 'claude_supervisor') {{
+      const out = document.getElementById('claude-output');
+      if (out) {{
+        const m = document.createElement('div');
+        m.className = 'ralph-supervisor';
+        m.textContent = '▸ ' + msg.text;
+        out.appendChild(m);
+        out.scrollTop = out.scrollHeight;
+      }}
+    }}
+    else if (msg.type === 'claude_info') {{
+      const out = document.getElementById('claude-output');
+      if (out) {{
+        const m = document.createElement('div');
+        m.className = 'ralph-info';
+        m.textContent = msg.text;
+        out.appendChild(m);
+        out.scrollTop = out.scrollHeight;
+      }}
     }}
     else if (msg.type === 'claude_done') {{ finalizeClaudeTask(msg); }}
     else if (msg.type === 'claude_cancelled') {{
@@ -1833,6 +1939,7 @@ HTML = f"""<!DOCTYPE html>
   function clearChat() {{
     document.getElementById('chat-messages').innerHTML =
       '<div class="msg msg-bot">Chat pulita 🧹</div>';
+    send({{ action: 'clear_chat' }});
   }}
 
   // ── On-demand widget loaders ──
@@ -2054,7 +2161,7 @@ HTML = f"""<!DOCTYPE html>
     document.getElementById('claude-run-btn').disabled = true;
     document.getElementById('claude-cancel-btn').style.display = 'inline-block';
     const out = document.getElementById('claude-output');
-    if (out) {{ out.style.display = 'block'; out.textContent = ''; }}
+    if (out) {{ out.style.display = 'block'; out.innerHTML = ''; }}
     send({{ action: 'claude_task', prompt: prompt }});
   }}
 
@@ -2068,9 +2175,10 @@ HTML = f"""<!DOCTYPE html>
     const cb = document.getElementById('claude-cancel-btn');
     if (rb) rb.disabled = false;
     if (cb) cb.style.display = 'none';
-    const status = data.exit_code === 0 ? '✅ completato' : '⚠️ errore';
+    const status = data.completed ? '✅ completato' : (data.exit_code === 0 ? '⚠️ incompleto' : '⚠️ errore');
     const dur = (data.duration_ms / 1000).toFixed(1);
-    showToast(`Task ${{status}} in ${{dur}}s`);
+    const iter = data.iterations > 1 ? ` (${{data.iterations}} iter)` : '';
+    showToast(`Task ${{status}} in ${{dur}}s${{iter}}`);
     send({{ action: 'get_claude_tasks' }});
   }}
 

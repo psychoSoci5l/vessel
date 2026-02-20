@@ -76,13 +76,38 @@
 - [ ] Backup automatico config + memoria su cloud (Google Drive o rclone)
 - [ ] Voice control via Whisper (STT sul Pi) — priorità bassa
 
-## Fase 6 — Pubblicazione e community
+## Fase 6 — Pubblicazione e community ✅ COMPLETATA
 > Preparazione per repo pubblica e condivisione.
 
-- [ ] Pulizia codice per open source (rimuovere dati personali hardcoded)
-- [ ] README.md con screenshot, setup guide, architettura
-- [ ] Repo GitHub pubblica
-- [ ] Eventuale mobile wrapper (Capacitor/PWA builder) se la PWA non basta
+- [x] Pulizia codice per open source (vessel.py con env-based config)
+- [x] README.md con screenshot, setup guide, architettura
+- [x] Repo GitHub pubblica (`psychoSoci5l/vessel-pi`)
+- [x] PWA funzionale su iPhone — nessun wrapper necessario
+
+## Fase 7 — Remote Claude Code ✅ COMPLETATA
+> Orchestrare Claude Code sul PC Windows da remoto via dashboard.
+
+- [x] Claude Bridge: micro-servizio FastAPI su Windows (~100 righe, porta 8095)
+- [x] Streaming ndjson dal bridge al Pi al browser (pattern Ollama)
+- [x] Widget "Remote Code": textarea prompt, Esegui/Stop, output live, cronologia
+- [x] Health check bridge con pallino verde/rosso
+- [x] Config bridge in `~/.nanobot/config.json` (no segreti hardcoded)
+- [x] Sicurezza: auth token condiviso, rate limit 5/ora, timeout 5 min, un task alla volta
+- [x] Cancellazione task in corso via endpoint `/cancel`
+- [x] Log task in `~/.nanobot/claude_tasks.jsonl`
+
+## Fase 8 — Ralph Loop ✅ COMPLETATA
+> Iterazione automatica: Claude Code riprova fino a successo, con supervisore Ollama locale.
+
+- [x] Bridge v2: endpoint `/run-loop` con loop max 3 iterazioni
+- [x] Supervisore Ollama (qwen2.5-coder:14b su PC Windows, RTX 3060 12GB)
+- [x] Completion marker `TASK_COMPLETE` + verifica supervisore
+- [x] Follow-up prompt automatico con contesto errore precedente
+- [x] Backup/rollback file opzionale (protezione da corruzione)
+- [x] Dashboard: streaming iterazioni con marker visivi
+- [x] Backwards compatible: vecchio `/run` ancora disponibile
+- [ ] Gate deploy: conferma utente prima di deployare (futuro)
+- [ ] UI: toggle loop on/off nel widget Remote Code (futuro)
 
 ---
 
@@ -92,3 +117,5 @@
 - Widget pesanti (crypto, briefing, token) sono sempre **on-demand** con placeholder
 - Il Pi ha 8GB RAM e disco da 91GB — risorse abbondanti per tutto questo
 - Google Workspace integrato via script helper (`~/scripts/google_helper.py`) — NO MCP server
+- PC Windows: AMD Ryzen 5 5600X, 16GB RAM, RTX 3060 12GB — Ollama supervisor per Ralph Loop
+- Ralph Loop: Claude Code + Ollama eseguono sequenzialmente (non in parallelo) per evitare contesa VRAM
