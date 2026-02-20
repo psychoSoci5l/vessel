@@ -1,0 +1,31 @@
+# Backup e archivi
+pi_backup.tar.gz
+*.tar.gz
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# File temporanei SSH/debug
+C:/Users/Tsune/ssh_out.txt
+
+# Editor/IDE
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Claude Code settings (contiene whitelist locale)
+.claude/
+
+# Immagini sorgente (le versioni inline b64 sono nel codice)
+vessel_dark.jpg
+new_vessel.jpg
+
+# Token OAuth locali
+oauth_google.py

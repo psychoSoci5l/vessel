@@ -1,0 +1,1 @@
+30 7 * * * cd /home/psychosocial/.nanobot/workspace/skills/morning-briefing && /usr/bin/python3.13 briefing.py >> /home/psychosocial/.nanobot/briefing_cron.log 2>&1
