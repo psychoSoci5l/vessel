@@ -8,6 +8,7 @@ Accesso: http://picoclaw.local:8090
 
 import asyncio
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -29,6 +30,12 @@ NANOBOT_WORKSPACE = Path.home() / ".nanobot" / "workspace"
 MEMORY_FILE  = NANOBOT_WORKSPACE / "memory" / "MEMORY.md"
 HISTORY_FILE = NANOBOT_WORKSPACE / "memory" / "HISTORY.md"
 QUICKREF_FILE = NANOBOT_WORKSPACE / "memory" / "QUICKREF.md"
+
+# ─── Ollama (LLM locale) ─────────────────────────────────────────────────────
+OLLAMA_BASE = "http://127.0.0.1:11434"
+OLLAMA_MODEL = "gemma3:4b"
+OLLAMA_TIMEOUT = 120  # secondi (Gemma ~3.5 tok/s, serve margine)
+OLLAMA_SYSTEM = "Sei Vessel, un assistente conciso che gira su Raspberry Pi. Rispondi in italiano, breve e diretto."
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 PIN_FILE = Path.home() / ".nanobot" / "dashboard_pin.hash"
@@ -396,12 +403,14 @@ def get_crypto_prices() -> dict:
 USAGE_LOG = Path.home() / ".nanobot" / "usage_dashboard.jsonl"
 ADMIN_KEY_FILE = Path.home() / ".nanobot" / "admin_api_key"
 
-def log_token_usage(input_tokens: int, output_tokens: int, model: str):
+def log_token_usage(input_tokens: int, output_tokens: int, model: str,
+                    provider: str = "anthropic", response_time_ms: int = 0):
     """Appende una riga al log locale dei token."""
     entry = json.dumps({
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "input": input_tokens, "output": output_tokens,
-        "model": model
+        "model": model, "provider": provider,
+        "response_time_ms": response_time_ms,
     })
     with open(USAGE_LOG, "a") as f:
         f.write(entry + "\n")
@@ -482,6 +491,78 @@ def _resolve_model(raw: str) -> str:
     name = raw.split("/")[-1] if "/" in raw else raw
     return MODEL_MAP.get(name, name)
 
+def check_ollama_health() -> bool:
+    """Verifica se Ollama è raggiungibile."""
+    try:
+        req = urllib.request.Request(f"{OLLAMA_BASE}/api/tags")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+async def chat_with_ollama_stream(websocket: WebSocket, message: str):
+    """Chat con Ollama via streaming. Invia chunk progressivi via WS."""
+    queue: asyncio.Queue = asyncio.Queue()
+    start_time = time.time()
+
+    def _stream_worker():
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", 11434, timeout=OLLAMA_TIMEOUT)
+            payload = json.dumps({
+                "model": OLLAMA_MODEL, "prompt": message,
+                "system": OLLAMA_SYSTEM, "stream": True,
+            })
+            conn.request("POST", "/api/generate", body=payload,
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            buf = ""
+            while True:
+                raw = resp.read(256)
+                if not raw:
+                    break
+                buf += raw.decode("utf-8", errors="replace")
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    data = json.loads(line)
+                    token = data.get("response", "")
+                    if token:
+                        queue.put_nowait(("chunk", token))
+                    if data.get("done"):
+                        queue.put_nowait(("meta", data))
+                        conn.close()
+                        return
+            conn.close()
+        except Exception as e:
+            queue.put_nowait(("error", str(e)))
+        finally:
+            queue.put_nowait(("end", None))
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_worker)
+
+    full_reply = ""
+    eval_count = 0
+
+    while True:
+        kind, val = await queue.get()
+        if kind == "chunk":
+            full_reply += val
+            await websocket.send_json({"type": "chat_chunk", "text": val})
+        elif kind == "meta":
+            eval_count = val.get("eval_count", 0)
+        elif kind == "error":
+            if not full_reply:
+                await websocket.send_json({"type": "chat_chunk", "text": f"(errore Ollama: {val})"})
+        elif kind == "end":
+            break
+
+    elapsed = int((time.time() - start_time) * 1000)
+    await websocket.send_json({"type": "chat_done", "provider": "ollama"})
+    log_token_usage(0, eval_count, OLLAMA_MODEL, provider="ollama", response_time_ms=elapsed)
+
 def chat_with_nanobot(message: str) -> str:
     """Chat via API Anthropic diretta (con logging token) oppure fallback CLI."""
     cfg = _get_nanobot_config()
@@ -518,6 +599,7 @@ def chat_with_nanobot(message: str) -> str:
                     usage.get("input_tokens", 0),
                     usage.get("output_tokens", 0),
                     data.get("model", model),
+                    provider="anthropic",
                 )
                 return reply.strip() or "(nessuna risposta)"
         except Exception as e:
@@ -591,14 +673,22 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if action == "chat":
                 text = msg.get("text", "").strip()[:4000]
+                provider = msg.get("provider", "cloud")
                 if text:
                     ip = websocket.client.host
                     if not _rate_limit(ip, "chat", 20, 60):
                         await websocket.send_json({"type": "chat_reply", "text": "⚠️ Troppi messaggi. Attendi un momento."})
                         continue
                     await websocket.send_json({"type": "chat_thinking"})
-                    reply = await bg(chat_with_nanobot, text)
-                    await websocket.send_json({"type": "chat_reply", "text": reply})
+                    if provider == "local":
+                        await chat_with_ollama_stream(websocket, text)
+                    else:
+                        reply = await bg(chat_with_nanobot, text)
+                        await websocket.send_json({"type": "chat_reply", "text": reply})
+
+            elif action == "check_ollama":
+                alive = await bg(check_ollama_health)
+                await websocket.send_json({"type": "ollama_status", "alive": alive})
 
             elif action == "get_memory":
                 await websocket.send_json({"type": "memory", "text": get_memory_preview()})
@@ -902,6 +992,29 @@ HTML = f"""<!DOCTYPE html>
   #chat-input::placeholder {{ color: var(--muted); font-size: 13px; }}
   #chat-input:focus {{ border-color: var(--green3); }}
 
+  /* ── Model Switch ── */
+  .model-switch {{
+    display: flex; gap: 0; border: 1px solid var(--border2); border-radius: 4px;
+    overflow: hidden;
+  }}
+  .model-btn {{
+    padding: 3px 9px; font-size: 10px; cursor: pointer;
+    background: transparent; color: var(--muted); border: none;
+    font-family: var(--font); font-weight: 600; letter-spacing: 0.3px;
+    transition: all .15s;
+  }}
+  .model-btn.active {{ background: var(--green-dim); color: var(--green2); }}
+  .model-btn:hover:not(.active) {{ color: var(--text2); }}
+  .model-indicator {{
+    font-size: 9px; color: var(--muted); padding: 2px 12px 6px;
+    display: flex; align-items: center; gap: 5px;
+  }}
+  .model-indicator .dot {{
+    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  }}
+  .dot-cloud {{ background: #ffb300; box-shadow: 0 0 4px #ffb300; }}
+  .dot-local {{ background: #00ffcc; box-shadow: 0 0 4px #00ffcc; }}
+
   /* ── Stats ── */
   .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }}
   .stat-item {{
@@ -1102,7 +1215,17 @@ HTML = f"""<!DOCTYPE html>
   <div class="card">
     <div class="card-header">
       <span class="card-title">💬 Chat con Vessel</span>
-      <button class="btn-ghost" onclick="clearChat()">🗑 Pulisci</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <div class="model-switch">
+          <button class="model-btn active" id="btn-cloud" onclick="switchModel('cloud')">☁ Cloud</button>
+          <button class="model-btn" id="btn-local" onclick="switchModel('local')">🏠 Locale</button>
+        </div>
+        <button class="btn-ghost" onclick="clearChat()">🗑 Pulisci</button>
+      </div>
+    </div>
+    <div class="model-indicator" id="model-indicator">
+      <span class="dot dot-cloud" id="model-dot"></span>
+      <span id="model-label">Haiku (cloud)</span>
     </div>
     <div id="chat-messages">
       <div class="msg msg-bot">Eyyy, sono Vessel 🐈 — dimmi cosa vuoi, psychoSocial.</div>
@@ -1314,7 +1437,10 @@ HTML = f"""<!DOCTYPE html>
       document.getElementById('clock').textContent = msg.data.time;
     }}
     else if (msg.type === 'chat_thinking') {{ appendThinking(); }}
-    else if (msg.type === 'chat_reply') {{ removeThinking(); appendMessage(msg.text, 'bot'); }}
+    else if (msg.type === 'chat_chunk') {{ removeThinking(); appendChunk(msg.text); }}
+    else if (msg.type === 'chat_done') {{ finalizeStream(); document.getElementById('chat-send').disabled = false; }}
+    else if (msg.type === 'chat_reply') {{ removeThinking(); appendMessage(msg.text, 'bot'); document.getElementById('chat-send').disabled = false; }}
+    else if (msg.type === 'ollama_status') {{ document.getElementById('btn-local').title = msg.alive ? 'Ollama attivo' : 'Ollama non disponibile'; }}
     else if (msg.type === 'memory')   {{ document.getElementById('memory-content').textContent = msg.text; }}
     else if (msg.type === 'history')  {{ document.getElementById('history-content').textContent = msg.text; }}
     else if (msg.type === 'quickref') {{ document.getElementById('quickref-content').textContent = msg.text; }}
@@ -1398,13 +1524,48 @@ HTML = f"""<!DOCTYPE html>
   }}
 
   // ── Chat ──
+  let chatProvider = 'cloud';
+  let streamDiv = null;
+
+  function switchModel(provider) {{
+    chatProvider = provider;
+    document.getElementById('btn-cloud').classList.toggle('active', provider === 'cloud');
+    document.getElementById('btn-local').classList.toggle('active', provider === 'local');
+    const dot = document.getElementById('model-dot');
+    const label = document.getElementById('model-label');
+    if (provider === 'local') {{
+      dot.className = 'dot dot-local';
+      label.textContent = 'Gemma 3 4B (locale)';
+    }} else {{
+      dot.className = 'dot dot-cloud';
+      label.textContent = 'Haiku (cloud)';
+    }}
+  }}
+
+  function appendChunk(text) {{
+    const box = document.getElementById('chat-messages');
+    if (!streamDiv) {{
+      streamDiv = document.createElement('div');
+      streamDiv.className = 'msg msg-bot';
+      streamDiv.textContent = '';
+      box.appendChild(streamDiv);
+    }}
+    streamDiv.textContent += text;
+    box.scrollTop = box.scrollHeight;
+  }}
+
+  function finalizeStream() {{
+    streamDiv = null;
+  }}
+
   function sendChat() {{
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if (!text) return;
     appendMessage(text, 'user');
-    send({{ action: 'chat', text }});
+    send({{ action: 'chat', text, provider: chatProvider }});
     input.value = '';
+    document.getElementById('chat-send').disabled = true;
   }}
   document.addEventListener('DOMContentLoaded', () => {{
     document.getElementById('chat-input').addEventListener('keydown', e => {{
