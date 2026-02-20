@@ -109,6 +109,38 @@
 - [ ] Gate deploy: conferma utente prima di deployare (futuro)
 - [ ] UI: toggle loop on/off nel widget Remote Code (futuro)
 
+## Fase 9 — Hardening e qualità (da autoanalisi 2026-02-20)
+> Criticità e miglioramenti identificati dall'autoanalisi del codebase via Remote Code.
+
+### Sicurezza (priorità alta)
+- [ ] Fix XSS: `escapeHtml()` centralizzata per `renderLogs()`, `updateSessions()`, `renderClaudeTasks()`
+- [ ] Hardening PIN: da SHA-256 puro a `pbkdf2_hmac` con salt random
+- [ ] Audit `run()` shell=True: verificare che nessuna variabile utente entri nei comandi
+
+### UX Chat (priorità alta)
+- [ ] Streaming per chat Anthropic cloud (parità con Ollama)
+- [ ] Chat history cloud multi-turno (come già fatto per Ollama)
+
+### Performance
+- [ ] `stats_broadcaster()`: wrappare `get_pi_stats()` e `get_tmux_sessions()` in `await bg()`
+- [ ] Persistenza sessioni su file (`~/.nanobot/sessions.json`) — no ri-login dopo deploy
+
+### Nuove feature
+- [ ] Notifiche push (Web Push API) per briefing, alert temperatura, task completato
+- [ ] Auto-refresh widget on-demand configurabile (crypto ogni 5min, token ogni 10min)
+- [ ] Temi alternativi (amber-on-black, blue-on-dark) con switch + localStorage
+
+### Refactoring
+- [ ] Unificare `_get_nanobot_config()` e `_get_bridge_config()` in `_get_config()` cached
+- [ ] Unificare `_rate_limit()` e `_check_auth_rate()` in un unico pattern
+- [ ] Separare cleanup dal broadcaster in funzione dedicata `_cleanup_expired()`
+- [ ] Costanti in `@dataclass Config` con valori da env/file
+
+### Visione futura
+- [ ] Sistema plugin/widget esterni da `~/.nanobot/widgets/`
+- [ ] Dashboard multi-host (monitoraggio altri device LAN)
+- [ ] Provider chat astratto (`ChatProvider` con `OllamaProvider` / `AnthropicProvider`)
+
 ---
 
 ## Note tecniche
