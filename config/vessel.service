@@ -1,0 +1,31 @@
+# Vessel Dashboard — systemd user service
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user/
+#   cp vessel.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable vessel
+#   systemctl --user start vessel
+#
+# Logs:
+#   journalctl --user -u vessel -f
+
+[Unit]
+Description=Vessel Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+ExecStart=/usr/bin/python3 %h/vessel.py
+Restart=on-failure
+RestartSec=5
+Environment=PORT=8090
+# Add your environment variables here:
+# Environment=VESSEL_HOST=mypi.local
+# Environment=VESSEL_USER=myname
+# Environment=OLLAMA_MODEL=gemma3:4b
+
+[Install]
+WantedBy=default.target

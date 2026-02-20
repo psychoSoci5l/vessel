@@ -1,0 +1,7 @@
+# Vessel — Example crontab entries
+#
+# Install with: crontab -e  (then paste the lines below)
+# Or from the dashboard's "Scheduled Tasks" widget.
+
+# Morning briefing at 07:30 daily
+30 7 * * * cd ~/.nanobot/workspace/skills/morning-briefing && python3 briefing.py >> ~/.nanobot/briefing_cron.log 2>&1

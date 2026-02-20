@@ -1,0 +1,37 @@
+{
+  "agents": {
+    "defaults": {
+      "workspace": "~/.nanobot/workspace",
+      "model": "anthropic/claude-haiku-4-5",
+      "maxTokens": 8192,
+      "temperature": 0.7,
+      "maxToolIterations": 20,
+      "memoryWindow": 50
+    }
+  },
+  "providers": {
+    "anthropic": {
+      "apiKey": "YOUR_ANTHROPIC_API_KEY_HERE",
+      "apiBase": "https://api.anthropic.com"
+    }
+  },
+  "channels": {
+    "discord": {
+      "enabled": false,
+      "token": "YOUR_DISCORD_BOT_TOKEN_HERE"
+    }
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
+  },
+  "tools": {
+    "exec": {
+      "enabled": true,
+      "timeout": 60
+    },
+    "web.search": {
+      "enabled": true
+    }
+  }
+}

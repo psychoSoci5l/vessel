@@ -70,6 +70,7 @@
 > Il Pi diventa proattivo: non aspetta comandi, agisce su schedule.
 
 - [x] Briefing mattutino con dati calendario Google (google_helper --json + subprocess)
+- [x] Integrazione Ollama: chat locale Gemma 3 4B con streaming + switch cloud/locale
 - [ ] Reminder task Google → notifica dashboard/Discord
 - [ ] Routine "buonanotte": briefing serale, reminder domani, spegni luci Smart Life
 - [ ] Backup automatico config + memoria su cloud (Google Drive o rclone)

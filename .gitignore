@@ -1,17 +1,38 @@
-# Backup e archivi
-pi_backup.tar.gz
-*.tar.gz
-
 # Python
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
 
-# File temporanei SSH/debug
-C:/Users/Tsune/ssh_out.txt
+# Environment and secrets
+.env
+config.json
+*.secret
+*.key
+
+# Nanobot data (runtime, not source)
+.nanobot/
+*.jsonl
+
+# Google credentials
+.google_workspace_mcp/
+.config/google-workspace-mcp/
+
+# Logs
+*.log
+
+# Archives and backups
+*.tar.gz
+*.zip
+pi_backup*
 
 # Editor/IDE
 .vscode/
+.idea/
 *.swp
 *.swo
 *~
@@ -20,12 +41,26 @@ C:/Users/Tsune/ssh_out.txt
 Thumbs.db
 .DS_Store
 
-# Claude Code settings (contiene whitelist locale)
+# Claude Code settings
 .claude/
 
-# Immagini sorgente (le versioni inline b64 sono nel codice)
+# Source images (inline base64 is in the code)
 vessel_dark.jpg
 new_vessel.jpg
+vessel_icon.png
+vessel_512.png
+*.b64.txt
+vessel_b64_*.txt
 
-# Token OAuth locali
+# SSH debug output
+ssh_out*.txt
+
+# Old dashboard versions (keep vessel.py as the public file)
+nanobot_dashboard*.py
+
+# Local development files
 oauth_google.py
+crontab_backup.txt
+MEMORY.md
+ROADMAP.md
+DEPLOY.md
