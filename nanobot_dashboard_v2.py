@@ -298,7 +298,7 @@ def get_pi_stats() -> dict:
         health = "green"
     return {"cpu": cpu or "N/A", "mem": mem, "disk": disk or "N/A",
             "temp": temp_str, "uptime": format_uptime(uptime) if uptime else "N/A",
-            "health": health, "cpu_val": cpu_val, "temp_val": temp_c}
+            "health": health, "cpu_val": cpu_val, "temp_val": temp_c, "mem_pct": mem_pct}
 
 def get_tmux_sessions() -> list[dict]:
     out = run("tmux ls 2>/dev/null")
@@ -1337,49 +1337,7 @@ HTML = f"""<!DOCTYPE html>
     height: 100%; height: 100dvh;
   }}
 
-  /* ── Status Bar ── */
-  .status-bar {{
-    background: var(--card);
-    border: 1px solid var(--border2);
-    border-top: none;
-    z-index: 100;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
-    flex-shrink: 0;
-    margin: 0 0 2px 0;
-    transition: border-color .2s, box-shadow .2s;
-  }}
-  .status-bar.expanded {{
-    border-color: var(--green3);
-    box-shadow: 0 2px 12px rgba(0,255,65,0.1);
-  }}
-  .status-compact {{
-    display: flex; align-items: center;
-    padding: 8px 12px; padding-top: calc(8px + var(--safe-top));
-    gap: 8px; cursor: pointer; user-select: none; -webkit-user-select: none;
-  }}
-  .status-compact .logo-icon {{ width: 24px; height: 24px; }}
-  .status-values {{
-    display: flex; align-items: center; gap: 6px;
-    margin-left: auto; font-size: 11px; flex-wrap: nowrap;
-  }}
-  .sv {{ color: var(--text2); white-space: nowrap; }}
-  .sv-label {{ color: var(--muted); font-size: 9px; margin-right: 2px; }}
-  .status-toggle {{
-    color: var(--green3); font-size: 14px; transition: transform .2s;
-    margin-left: 4px; display: inline-block;
-  }}
-  .status-toggle.open {{ transform: rotate(180deg); }}
-  .status-toggle-label {{
-    font-size: 9px; color: var(--muted); margin-left: 2px;
-    text-transform: uppercase; letter-spacing: 0.5px;
-  }}
-  .status-detail {{
-    max-height: 0; overflow: hidden; transition: max-height .35s ease;
-  }}
-  .status-detail.open {{ max-height: 600px; }}
-  .status-detail-inner {{
-    padding: 10px 12px; border-top: 1px solid var(--border);
-  }}
+  /* (status-bar rimossa — sostituita da home-view) */
 
   .logo-icon {{
     width: 24px; height: 24px;
@@ -1387,15 +1345,11 @@ HTML = f"""<!DOCTYPE html>
     border: 1px solid var(--green3);
     filter: drop-shadow(0 0 6px rgba(0,255,65,0.4));
   }}
-  #clock {{ font-size: 11px; color: var(--amber); text-shadow: 0 0 6px rgba(255,176,0,0.4); letter-spacing: 1px; white-space: nowrap; }}
+  /* #clock e #conn-dot rimossi — sostituiti da .home-clock e .conn-dot-mini */
   .version-badge {{
     font-size: 10px; background: var(--green-dim); border: 1px solid var(--green3);
     border-radius: 3px; padding: 2px 7px; color: var(--green2);
   }}
-  #conn-dot {{
-    width: 8px; height: 8px; border-radius: 50%; background: var(--red); transition: all .3s;
-  }}
-  #conn-dot.on {{ background: var(--green); box-shadow: 0 0 10px var(--green); }}
   .health-dot {{
     width: 10px; height: 10px; border-radius: 50%;
     background: var(--muted); transition: all .5s;
@@ -1409,22 +1363,31 @@ HTML = f"""<!DOCTYPE html>
     flex: 1; display: flex; flex-direction: column;
     min-height: 0; overflow: hidden;
   }}
-  .chat-area {{
-    flex: 1; display: flex; flex-direction: column;
-    min-height: 0; overflow: hidden;
-  }}
-  .chat-header {{
-    padding: 9px 13px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--card2); flex-shrink: 0;
-  }}
+  /* (chat-area e chat-header rimossi — sostituiti da home-view e chat-view) */
   /* ── Desktop: two-column layout ── */
   @media (min-width: 768px) {{
-    .app-content {{
+    .app-content.has-drawer {{
       flex-direction: row;
     }}
-    .chat-area {{
-      border-right: 1px solid var(--border);
+    .app-content.has-drawer .home-view {{
+      flex: 1; max-width: none;
+    }}
+    .app-content.has-drawer .chat-view {{
+      flex: 1;
+    }}
+    .home-view {{
+      padding: 0 24px; max-width: 900px; margin: 0 auto;
+    }}
+    .home-stats {{
+      grid-template-columns: repeat(4, 1fr);
+    }}
+    .hc-value {{ font-size: 26px; }}
+    .home-chart #pi-chart {{ height: 100px; }}
+    .chat-view {{
+      flex: 1;
+    }}
+    .chat-view.active + .drawer-overlay {{
+      border-left: 1px solid var(--border2);
     }}
     .drawer-overlay {{
       position: static !important; inset: auto !important;
@@ -1456,16 +1419,10 @@ HTML = f"""<!DOCTYPE html>
     .card-body {{ padding: 10px; }}
     .stats-grid {{ gap: 5px; }}
     .stat-item {{ padding: 7px 9px; }}
-    .chat-input-row {{ padding: 7px 10px; }}
     .widget-placeholder {{ padding: 16px 10px; min-height: 60px; }}
     .mono-block {{ max-height: 150px; }}
     .token-grid {{ grid-template-columns: repeat(3, 1fr); gap: 5px; }}
     button {{ min-height: 44px; }}
-    /* Hide fullscreen button on mobile (chat IS already fullscreen) */
-    .chat-header .btn-ghost[title="Schermo intero"] {{ display: none; }}
-    .chat-header .card-title {{ font-size: 12px; }}
-    /* Model buttons bigger on mobile */
-    .model-btn {{ padding: 8px 10px; font-size: 14px; min-height: 36px; }}
   }}
 
   /* ── Tab Bar (bottom) ── */
@@ -1571,28 +1528,7 @@ HTML = f"""<!DOCTYPE html>
     min-height: 0;
   }}
 
-  /* ── Chat fullscreen overlay ── */
-  .chat-fs-overlay {{
-    position: fixed; inset: 0; background: var(--bg); z-index: 250;
-    display: flex; flex-direction: column;
-    opacity: 0; pointer-events: none; transition: opacity .2s;
-  }}
-  .chat-fs-overlay.show {{ opacity: 1; pointer-events: auto; }}
-  .chat-fs-header {{
-    padding: 10px 16px; padding-top: calc(10px + var(--safe-top));
-    border-bottom: 1px solid var(--border2);
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--card);
-  }}
-  .chat-fs-slot {{ flex: 1; display: flex; flex-direction: column; overflow: hidden; }}
-  .chat-fs-input-slot {{
-    display: flex; gap: 8px; padding: 10px 16px;
-    padding-bottom: calc(10px + var(--safe-bot));
-    border-top: 1px solid var(--border); background: var(--card2);
-  }}
-  .chat-fs-overlay #chat-messages {{
-    height: auto !important; max-height: none !important; flex: 1;
-  }}
+  /* (chat-fs-overlay rimosso — chat mode è ora il chat-view) */
   .msg {{ max-width: 85%; padding: 8px 12px; border-radius: 4px; line-height: 1.5; font-size: 12px; }}
   .msg-user {{
     align-self: flex-end;
@@ -1627,11 +1563,7 @@ HTML = f"""<!DOCTYPE html>
   @keyframes blink {{ 0%,80%,100%{{opacity:.2}} 40%{{opacity:1}} }}
   @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.4}} }}
 
-  .chat-input-row {{
-    display: flex; gap: 8px; padding: 9px 12px;
-    border-top: 1px solid var(--border); background: var(--card2);
-    flex-shrink: 0;
-  }}
+  /* (chat-input-row rimosso — sostituito da home-input-row e chat-input-row-v2) */
   #chat-input {{
     flex: 1; background: var(--bg2); border: 1px solid var(--border2);
     border-radius: 4px; color: var(--green);
@@ -1643,26 +1575,7 @@ HTML = f"""<!DOCTYPE html>
   #chat-input::placeholder {{ color: var(--muted); font-size: 13px; }}
   #chat-input:focus {{ border-color: var(--green3); }}
 
-  /* ── Model Switch ── */
-  .model-switch {{
-    display: flex; gap: 0; border: 1px solid var(--border2); border-radius: 4px;
-    overflow: hidden;
-  }}
-  .model-btn {{
-    padding: 6px 10px; font-size: 13px; min-height: 34px; cursor: pointer;
-    background: transparent; color: var(--muted); border: none;
-    font-family: var(--font); font-weight: 600; letter-spacing: 0.3px;
-    transition: all .15s;
-  }}
-  .model-btn.active {{ background: var(--green-dim); color: var(--green2); }}
-  .model-btn:hover:not(.active) {{ color: var(--text2); }}
-  .model-indicator {{
-    font-size: 9px; color: var(--muted); padding: 2px 12px 6px;
-    display: flex; align-items: center; gap: 5px;
-  }}
-  .model-indicator .dot {{
-    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
-  }}
+  /* (model-switch/indicator rimossi — sostituiti da provider-dropdown) */
   .dot-cloud {{ background: #ffb300; box-shadow: 0 0 4px #ffb300; }}
   .dot-local {{ background: #00ffcc; box-shadow: 0 0 4px #00ffcc; }}
   .dot-deepseek {{ background: #6c5ce7; box-shadow: 0 0 4px #6c5ce7; }}
@@ -1882,28 +1795,260 @@ HTML = f"""<!DOCTYPE html>
   ::-webkit-scrollbar {{ width: 3px; height: 3px; }}
   ::-webkit-scrollbar-track {{ background: var(--bg2); }}
   ::-webkit-scrollbar-thumb {{ background: var(--border2); border-radius: 2px; }}
+
+  /* ══════ HOME VIEW ══════ */
+  .home-view {{
+    flex: 1; display: flex; flex-direction: column;
+    min-height: 0; overflow-y: auto; overflow-x: hidden;
+    padding: 0 12px;
+    padding-top: calc(8px + var(--safe-top));
+    -webkit-overflow-scrolling: touch;
+  }}
+  .home-header {{
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 0 8px; flex-shrink: 0;
+  }}
+  .home-title {{
+    font-weight: 700; color: var(--green); letter-spacing: 1.5px; font-size: 14px;
+  }}
+  .home-spacer {{ flex: 1; }}
+  .home-clock {{
+    font-size: 12px; color: var(--amber);
+    text-shadow: 0 0 6px rgba(255,176,0,0.4);
+    letter-spacing: 1px; white-space: nowrap;
+  }}
+  .conn-dot-mini {{
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--red); transition: all .3s; flex-shrink: 0;
+  }}
+  .conn-dot-mini.on {{ background: var(--green); box-shadow: 0 0 10px var(--green); }}
+
+  /* ── Home Stats Cards ── */
+  .home-stats {{
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin: 8px 0; flex-shrink: 0;
+  }}
+  .home-card {{
+    background: var(--card); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 14px 16px;
+    position: relative; overflow: hidden;
+  }}
+  .home-card::before {{
+    content: ''; position: absolute;
+    top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--green3), transparent);
+  }}
+  .hc-label {{
+    font-size: 10px; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 1.5px; margin-bottom: 6px;
+  }}
+  .hc-value {{
+    font-size: 22px; font-weight: 700; color: var(--green);
+    text-shadow: 0 0 10px rgba(0,255,65,0.3);
+    line-height: 1.2;
+  }}
+  .hc-sub {{
+    font-size: 9px; color: var(--text2); margin-top: 2px;
+  }}
+  .hc-bar {{
+    margin-top: 8px; height: 4px; background: var(--bg2);
+    border-radius: 2px; overflow: hidden;
+  }}
+  .hc-bar-fill {{
+    height: 100%; background: var(--green); border-radius: 2px;
+    transition: width .5s ease; width: 0%;
+  }}
+  .hc-bar-fill.hc-bar-cyan {{ background: var(--cyan); }}
+  .hc-bar-fill.hc-bar-amber {{ background: var(--amber); }}
+
+  /* ── Home Chart ── */
+  .home-chart {{
+    margin: 4px 0 8px; padding: 10px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; flex-shrink: 0;
+  }}
+  .home-chart #pi-chart {{ width: 100%; height: 80px; display: block; }}
+
+  /* ── Home Services (collapsible) ── */
+  .home-services {{
+    max-height: 0; overflow: hidden;
+    transition: max-height .35s ease; flex-shrink: 0;
+  }}
+  .home-services.open {{ max-height: 400px; }}
+  .home-services-inner {{
+    padding: 0 0 8px;
+  }}
+  .home-services-toggle {{
+    display: flex; align-items: center; justify-content: center;
+    gap: 6px; width: 100%; padding: 6px 0;
+    background: none; border: none; color: var(--muted);
+    font-family: var(--font); font-size: 10px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 1px;
+    transition: color .15s; flex-shrink: 0;
+  }}
+  .home-services-toggle:hover {{ color: var(--text2); }}
+  .home-services-toggle .svc-arrow {{
+    font-size: 10px; transition: transform .2s; display: inline-block;
+  }}
+  .home-services-toggle.open .svc-arrow {{ transform: rotate(180deg); }}
+
+  /* ── Home Input Area ── */
+  .home-input-area {{
+    margin-top: auto;
+    padding: 12px 0;
+    padding-bottom: calc(8px + var(--safe-bot));
+    flex-shrink: 0;
+  }}
+  .home-input-row {{
+    display: flex; gap: 8px; align-items: stretch;
+  }}
+
+  /* ── Provider Dropdown ── */
+  .provider-dropdown {{
+    position: relative; flex-shrink: 0;
+  }}
+  .provider-btn {{
+    display: flex; align-items: center; gap: 5px;
+    padding: 8px 10px; min-height: 36px;
+    background: var(--card2); border: 1px solid var(--border2);
+    border-radius: 4px; color: var(--text2);
+    font-family: var(--font); font-size: 11px; font-weight: 600;
+    cursor: pointer; white-space: nowrap;
+    transition: border-color .15s;
+  }}
+  .provider-btn:hover {{ border-color: var(--green3); }}
+  .provider-dot {{
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  }}
+  .provider-arrow {{
+    font-size: 10px; color: var(--muted); transition: transform .15s;
+  }}
+  .provider-dropdown.open .provider-arrow {{ transform: rotate(180deg); }}
+  .provider-menu {{
+    position: absolute; bottom: 100%; left: 0; right: auto;
+    margin-bottom: 4px; min-width: 200px;
+    background: var(--card); border: 1px solid var(--border2);
+    border-radius: 6px; overflow: hidden;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
+    display: none; z-index: 50;
+  }}
+  .provider-dropdown.open .provider-menu {{ display: block; }}
+  .provider-menu button {{
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 10px 14px; min-height: 40px;
+    background: none; border: none; border-bottom: 1px solid var(--border);
+    color: var(--text2); font-family: var(--font); font-size: 12px;
+    cursor: pointer; text-align: left;
+  }}
+  .provider-menu button:last-child {{ border-bottom: none; }}
+  .provider-menu button:hover {{
+    background: var(--green-dim); color: var(--green);
+  }}
+  .provider-menu .dot {{
+    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+  }}
+
+  /* ══════ CHAT VIEW ══════ */
+  .chat-view {{
+    flex: 1; display: none; flex-direction: column;
+    min-height: 0; overflow: hidden;
+  }}
+  .chat-view.active {{ display: flex; }}
+  .chat-compact-header {{
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; padding-top: calc(8px + var(--safe-top));
+    background: var(--card); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }}
+  .back-home-btn {{
+    background: none; border: 1px solid var(--border2);
+    border-radius: 4px; color: var(--green2);
+    font-family: var(--font); font-size: 11px; font-weight: 600;
+    padding: 4px 10px; cursor: pointer; min-height: 28px;
+    letter-spacing: 0.3px; transition: all .15s;
+  }}
+  .back-home-btn:hover {{ border-color: var(--green3); color: var(--green); }}
+  .chat-compact-title {{
+    font-weight: 700; color: var(--green); font-size: 12px; letter-spacing: 1px;
+  }}
+  .chat-compact-temp {{ font-size: 11px; color: var(--text2); }}
+  .chat-compact-spacer {{ flex: 1; }}
+  .chat-input-area {{
+    padding: 9px 12px; padding-bottom: calc(9px + var(--safe-bot));
+    border-top: 1px solid var(--border); background: var(--card2);
+    flex-shrink: 0;
+  }}
+  .chat-input-row-v2 {{
+    display: flex; gap: 8px; align-items: stretch;
+  }}
+
+  /* ── Transizioni vista ── */
+  .chat-view.entering {{
+    animation: slideUp .25s ease forwards;
+  }}
+  @keyframes slideUp {{
+    from {{ opacity: 0; transform: translateY(20px); }}
+    to {{ opacity: 1; transform: translateY(0); }}
+  }}
 </style>
 </head>
 <body>
 <div class="app-layout">
 
-<!-- ─── Status Bar ─── -->
-<div class="status-bar">
-  <div class="status-compact" onclick="toggleStatusDetail()">
+<!-- ─── App Content ─── -->
+<div class="app-content">
+
+<!-- ═══ HOME VIEW (default) ═══ -->
+<div id="home-view" class="home-view">
+  <div class="home-header">
     <img class="logo-icon" src="{VESSEL_ICON}" alt="V">
-    <span style="font-weight:700;color:var(--green);letter-spacing:1px;font-size:12px;">VESSEL</span>
-    <div id="health-dot" class="health-dot" title="Salute Pi"></div>
-    <div class="status-values">
-      <span class="sv" id="sb-temp">—</span>
-      <span class="sv" id="sb-cpu">—</span>
-      <span class="sv" id="sb-uptime">—</span>
-    </div>
-    <span id="clock">--:--</span>
-    <div id="conn-dot" title="WebSocket"></div>
-    <span class="status-toggle" id="status-toggle">&#x25BE;</span><span class="status-toggle-label">stats</span>
+    <span class="home-title">VESSEL</span>
+    <div id="home-health-dot" class="health-dot" title="Salute Pi"></div>
+    <span class="home-spacer"></span>
+    <span id="home-clock" class="home-clock">--:--:--</span>
+    <div id="home-conn-dot" class="conn-dot-mini" title="WebSocket"></div>
   </div>
-  <div class="status-detail" id="status-detail">
-    <div class="status-detail-inner">
+
+  <div class="home-stats">
+    <div class="home-card">
+      <div class="hc-label">CPU</div>
+      <div class="hc-value" id="hc-cpu-val">--</div>
+      <div class="hc-bar"><div class="hc-bar-fill" id="hc-cpu-bar"></div></div>
+    </div>
+    <div class="home-card">
+      <div class="hc-label">RAM</div>
+      <div class="hc-value" id="hc-ram-val">--</div>
+      <div class="hc-sub" id="hc-ram-sub"></div>
+      <div class="hc-bar"><div class="hc-bar-fill hc-bar-cyan" id="hc-ram-bar"></div></div>
+    </div>
+    <div class="home-card">
+      <div class="hc-label">Temp</div>
+      <div class="hc-value" id="hc-temp-val">--</div>
+      <div class="hc-bar"><div class="hc-bar-fill hc-bar-amber" id="hc-temp-bar"></div></div>
+    </div>
+    <div class="home-card">
+      <div class="hc-label">Uptime</div>
+      <div class="hc-value" id="hc-uptime-val" style="font-size:16px;">--</div>
+    </div>
+  </div>
+
+  <div class="home-chart">
+    <div class="chart-header">
+      <span class="chart-label">Ultimi 15 min</span>
+      <div class="chart-legend">
+        <span><div class="dot-cpu"></div> <span style="color:var(--text2)">CPU%</span></span>
+        <span><div class="dot-temp"></div> <span style="color:var(--text2)">Temp</span></span>
+      </div>
+    </div>
+    <canvas id="pi-chart"></canvas>
+  </div>
+
+  <button class="home-services-toggle" id="home-svc-toggle" onclick="toggleHomeServices()">
+    <span>Pi Stats</span>
+    <span class="svc-arrow">&#x25BE;</span>
+  </button>
+  <div class="home-services" id="home-services">
+    <div class="home-services-inner">
       <div class="stats-grid">
         <div class="stat-item"><div class="stat-label">CPU</div><div class="stat-value" id="stat-cpu">—</div></div>
         <div class="stat-item"><div class="stat-label">Temp</div><div class="stat-value" id="stat-temp">—</div></div>
@@ -1911,20 +2056,10 @@ HTML = f"""<!DOCTYPE html>
         <div class="stat-item"><div class="stat-label">Disco</div><div class="stat-value" id="stat-disk">—</div></div>
         <div class="stat-item full"><div class="stat-label">Uptime</div><div class="stat-value" id="stat-uptime">—</div></div>
       </div>
-      <div class="chart-container">
-        <div class="chart-header">
-          <span class="chart-label">Ultimi 15 min</span>
-          <div class="chart-legend">
-            <span><div class="dot-cpu"></div> <span style="color:var(--text2)">CPU%</span></span>
-            <span><div class="dot-temp"></div> <span style="color:var(--text2)">Temp</span></span>
-          </div>
-        </div>
-        <canvas id="pi-chart"></canvas>
-      </div>
       <div style="margin-top:10px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">⚡ Sessioni tmux</span>
-          <button class="btn-green" onclick="gatewayRestart()" style="min-height:28px;padding:3px 10px;font-size:10px;">↺ Gateway</button>
+          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Sessioni tmux</span>
+          <button class="btn-green" onclick="gatewayRestart()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BA; Gateway</button>
         </div>
         <div class="session-list" id="session-list">
           <div class="no-items">Caricamento…</div>
@@ -1932,44 +2067,54 @@ HTML = f"""<!DOCTYPE html>
       </div>
       <div style="display:flex;gap:6px;margin-top:10px;justify-content:space-between;align-items:center;">
         <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn-ghost" onclick="requestStats()" style="min-height:28px;padding:3px 10px;font-size:10px;">↻ Refresh</button>
+          <button class="btn-ghost" onclick="requestStats()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BB; Refresh</button>
           <span id="version-badge" class="version-badge">—</span>
         </div>
-        <button class="btn-red" onclick="showRebootModal()" style="min-height:28px;padding:3px 10px;font-size:10px;">⏻ Reboot</button>
+        <button class="btn-red" onclick="showRebootModal()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x23FB; Reboot</button>
       </div>
+    </div>
+  </div>
+
+  <div class="home-input-area">
+    <div class="home-input-row" id="home-input-row">
+      <input id="chat-input" placeholder="scrivi qui…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      <div class="provider-dropdown" id="provider-dropdown">
+        <button class="provider-btn" id="provider-trigger" onclick="toggleProviderMenu()" type="button">
+          <span class="provider-dot dot-local" id="provider-dot"></span>
+          <span id="provider-short">Local</span>
+          <span class="provider-arrow">&#x25BE;</span>
+        </button>
+        <div class="provider-menu" id="provider-menu">
+          <button type="button" onclick="switchProvider('cloud')"><span class="dot dot-cloud"></span> Cloud (Haiku)</button>
+          <button type="button" onclick="switchProvider('local')"><span class="dot dot-local"></span> Local (Gemma)</button>
+          <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> Deep (DeepSeek)</button>
+        </div>
+      </div>
+      <button class="btn-green" id="chat-send" onclick="sendChat()">Invia &#x21B5;</button>
     </div>
   </div>
 </div>
 
-<!-- ─── App Content (chat + widget panel) ─── -->
-<div class="app-content">
-
-<!-- ─── Chat Area ─── -->
-<section class="chat-area">
-  <div class="chat-header">
-    <span class="card-title">💬 Chat</span>
-    <div style="display:flex;gap:4px;align-items:center;">
-      <div class="model-switch">
-        <button class="model-btn" id="btn-cloud" onclick="switchModel('cloud')">&#x2601; Cloud</button>
-        <button class="model-btn active" id="btn-local" onclick="switchModel('local')">&#x2302; Local</button>
-        <button class="model-btn" id="btn-deepseek" onclick="switchModel('deepseek')">&#x26A1; Deep</button>
-      </div>
-      <button class="btn-ghost" onclick="clearChat()" style="padding:3px 6px;min-height:28px;">🗑</button>
-      <button class="btn-ghost" onclick="openChatFullscreen()" title="Schermo intero" style="padding:3px 6px;min-height:28px;">⛶</button>
-    </div>
-  </div>
-  <div class="model-indicator" id="model-indicator">
-    <span class="dot dot-local" id="model-dot"></span>
-    <span id="model-label">Gemma 3 4B (locale)</span>
+<!-- ═══ CHAT VIEW (nascosto, attivato su invio messaggio) ═══ -->
+<div id="chat-view" class="chat-view">
+  <div class="chat-compact-header">
+    <button class="back-home-btn" onclick="goHome()" type="button">&#x2190; Home</button>
+    <span class="chat-compact-title">VESSEL</span>
+    <div id="chat-health-dot" class="health-dot" title="Salute Pi"></div>
+    <span class="chat-compact-temp" id="chat-temp">--</span>
+    <span class="chat-compact-spacer"></span>
+    <span id="chat-clock" class="home-clock">--:--:--</span>
+    <div id="chat-conn-dot" class="conn-dot-mini" title="WebSocket"></div>
+    <button class="btn-ghost" onclick="clearChat()" style="padding:3px 6px;min-height:28px;margin-left:4px;">&#x1F5D1;</button>
   </div>
   <div id="chat-messages">
-    <div class="msg msg-bot">Eyyy, sono Vessel 🐈 — dimmi cosa vuoi, psychoSocial.</div>
+    <div class="msg msg-bot">Eyyy, sono Vessel &#x1F408; — dimmi cosa vuoi, psychoSocial.</div>
   </div>
-  <div class="chat-input-row">
-    <input id="chat-input" placeholder="scrivi qui…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-    <button class="btn-green" id="chat-send" onclick="sendChat()">Invia ↵</button>
+  <div class="chat-input-area">
+    <div class="chat-input-row-v2" id="chat-input-row-v2">
+    </div>
   </div>
-</section>
+</div>
 
 <!-- ─── Drawer (side panel on desktop, bottom sheet on mobile) ─── -->
 <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()">
@@ -2068,18 +2213,7 @@ HTML = f"""<!DOCTYPE html>
   <div class="reboot-status" id="reboot-status">In attesa che il Pi torni online</div>
 </div>
 
-<!-- Overlay chat fullscreen -->
-<div class="chat-fs-overlay" id="chat-fullscreen">
-  <div class="chat-fs-header">
-    <span class="card-title">💬 Chat con Vessel</span>
-    <div style="display:flex;gap:8px;align-items:center;">
-      <div class="model-switch" id="fs-model-switch"></div>
-      <button class="btn-ghost" onclick="closeChatFullscreen()">✕ Chiudi</button>
-    </div>
-  </div>
-  <div class="chat-fs-slot" id="chat-fs-slot"></div>
-  <div class="chat-fs-input-slot" id="chat-fs-input-slot"></div>
-</div>
+<!-- (chat-fs-overlay rimosso — chat-view è la nuova modalità fullscreen) -->
 
 <!-- Overlay output fullscreen -->
 <div class="modal-overlay" id="output-fullscreen" onclick="closeOutputFullscreen()">
@@ -2105,11 +2239,17 @@ HTML = f"""<!DOCTYPE html>
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${{proto}}://${{location.host}}/ws`);
     ws.onopen = () => {{
-      document.getElementById('conn-dot').classList.add('on');
+      ['home-conn-dot', 'chat-conn-dot'].forEach(id => {{
+        const el = document.getElementById(id);
+        if (el) el.classList.add('on');
+      }});
       if (reconnectTimer) {{ clearTimeout(reconnectTimer); reconnectTimer = null; }}
     }};
     ws.onclose = (e) => {{
-      document.getElementById('conn-dot').classList.remove('on');
+      ['home-conn-dot', 'chat-conn-dot'].forEach(id => {{
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('on');
+      }});
       if (e.code === 4001) {{ window.location.href = '/'; return; }}
       reconnectTimer = setTimeout(connect, 3000);
     }};
@@ -2135,13 +2275,16 @@ HTML = f"""<!DOCTYPE html>
     }}
     else if (msg.type === 'stats') {{
       updateStats(msg.data.pi); updateSessions(msg.data.tmux);
-      document.getElementById('clock').textContent = msg.data.time;
+      ['home-clock', 'chat-clock'].forEach(id => {{
+        const el = document.getElementById(id);
+        if (el) el.textContent = msg.data.time;
+      }});
     }}
     else if (msg.type === 'chat_thinking') {{ appendThinking(); }}
     else if (msg.type === 'chat_chunk') {{ removeThinking(); appendChunk(msg.text); }}
     else if (msg.type === 'chat_done') {{ finalizeStream(); document.getElementById('chat-send').disabled = false; }}
     else if (msg.type === 'chat_reply') {{ removeThinking(); appendMessage(msg.text, 'bot'); document.getElementById('chat-send').disabled = false; }}
-    else if (msg.type === 'ollama_status') {{ document.getElementById('btn-local').title = msg.alive ? 'Ollama attivo' : 'Ollama non disponibile'; }}
+    else if (msg.type === 'ollama_status') {{ /* ollama status ricevuto — info disponibile via provider dropdown */ }}
     else if (msg.type === 'memory')   {{ document.getElementById('memory-content').textContent = msg.text; }}
     else if (msg.type === 'history')  {{ document.getElementById('history-content').textContent = msg.text; }}
     else if (msg.type === 'quickref') {{ document.getElementById('quickref-content').textContent = msg.text; }}
@@ -2211,27 +2354,71 @@ HTML = f"""<!DOCTYPE html>
   const tempHistory = [];
 
   function updateStats(pi) {{
-    document.getElementById('stat-cpu').textContent    = pi.cpu    || '—';
-    document.getElementById('stat-temp').textContent   = pi.temp   || '—';
-    document.getElementById('stat-mem').textContent    = pi.mem    || '—';
-    document.getElementById('stat-disk').textContent   = pi.disk   || '—';
-    document.getElementById('stat-uptime').textContent = pi.uptime || '—';
-    // Semaforo salute
-    const hd = document.getElementById('health-dot');
-    hd.className = 'health-dot ' + (pi.health || '');
-    hd.title = pi.health === 'red' ? 'ATTENZIONE' : pi.health === 'yellow' ? 'Sotto controllo' : 'Tutto OK';
-    // Storico per grafico
-    cpuHistory.push(pi.cpu_val || 0);
-    tempHistory.push(pi.temp_val || 0);
+    const cpuPct = pi.cpu_val || 0;
+    const tempC = pi.temp_val || 0;
+    const memPct = pi.mem_pct || 0;
+
+    // ── Home cards ──
+    const hcCpu = document.getElementById('hc-cpu-val');
+    if (hcCpu) hcCpu.textContent = pi.cpu ? cpuPct.toFixed(1) + '%' : '--';
+    const hcRam = document.getElementById('hc-ram-val');
+    if (hcRam) hcRam.textContent = memPct + '%';
+    const hcRamSub = document.getElementById('hc-ram-sub');
+    if (hcRamSub) hcRamSub.textContent = pi.mem || '';
+    const hcTemp = document.getElementById('hc-temp-val');
+    if (hcTemp) hcTemp.textContent = pi.temp || '--';
+    const hcUptime = document.getElementById('hc-uptime-val');
+    if (hcUptime) hcUptime.textContent = pi.uptime || '--';
+
+    // Barre progresso
+    const cpuBar = document.getElementById('hc-cpu-bar');
+    if (cpuBar) {{
+      cpuBar.style.width = cpuPct + '%';
+      cpuBar.style.background = cpuPct > 80 ? 'var(--red)' : cpuPct > 60 ? 'var(--amber)' : 'var(--green)';
+    }}
+    const ramBar = document.getElementById('hc-ram-bar');
+    if (ramBar) {{
+      ramBar.style.width = memPct + '%';
+      ramBar.style.background = memPct > 85 ? 'var(--red)' : memPct > 70 ? 'var(--amber)' : 'var(--cyan)';
+    }}
+    const tempBar = document.getElementById('hc-temp-bar');
+    if (tempBar) {{
+      const tPct = Math.min(100, (tempC / 85) * 100);
+      tempBar.style.width = tPct + '%';
+      tempBar.style.background = tempC > 70 ? 'var(--red)' : tempC > 55 ? 'var(--amber)' : 'var(--amber)';
+    }}
+
+    // ── Stats detail (sezione servizi) ──
+    const sc = document.getElementById('stat-cpu');    if (sc) sc.textContent = pi.cpu || '—';
+    const st = document.getElementById('stat-temp');   if (st) st.textContent = pi.temp || '—';
+    const sm = document.getElementById('stat-mem');    if (sm) sm.textContent = pi.mem || '—';
+    const sd = document.getElementById('stat-disk');   if (sd) sd.textContent = pi.disk || '—';
+    const su = document.getElementById('stat-uptime'); if (su) su.textContent = pi.uptime || '—';
+
+    // ── Health dots (tutti) ──
+    ['home-health-dot', 'chat-health-dot'].forEach(id => {{
+      const el = document.getElementById(id);
+      if (el) {{
+        el.className = 'health-dot ' + (pi.health || '');
+        el.title = pi.health === 'red' ? 'ATTENZIONE' : pi.health === 'yellow' ? 'Sotto controllo' : 'Tutto OK';
+      }}
+    }});
+
+    // ── Chat compact temp ──
+    const chatTemp = document.getElementById('chat-temp');
+    if (chatTemp) chatTemp.textContent = pi.temp || '--';
+
+    // ── Storico per grafico ──
+    cpuHistory.push(cpuPct);
+    tempHistory.push(tempC);
     if (cpuHistory.length > MAX_SAMPLES) cpuHistory.shift();
     if (tempHistory.length > MAX_SAMPLES) tempHistory.shift();
     drawChart();
-    updateStatusBar(pi);
   }}
 
   function drawChart() {{
     const canvas = document.getElementById('pi-chart');
-    if (!canvas) return;
+    if (!canvas || canvas.offsetParent === null) return;
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
@@ -2276,28 +2463,94 @@ HTML = f"""<!DOCTYPE html>
       </div>`).join('');
   }}
 
-  // ── Chat ──
+  // ── Vista corrente + Chat ──
+  let currentView = 'home';
   let chatProvider = 'local';
   let streamDiv = null;
 
-  function switchModel(provider) {{
-    chatProvider = provider;
-    document.getElementById('btn-cloud').classList.toggle('active', provider === 'cloud');
-    document.getElementById('btn-local').classList.toggle('active', provider === 'local');
-    document.getElementById('btn-deepseek').classList.toggle('active', provider === 'deepseek');
-    const dot = document.getElementById('model-dot');
-    const label = document.getElementById('model-label');
-    if (provider === 'local') {{
-      dot.className = 'dot dot-local';
-      label.textContent = 'Gemma 3 4B (locale)';
-    }} else if (provider === 'deepseek') {{
-      dot.className = 'dot dot-deepseek';
-      label.textContent = 'DeepSeek V3 (OpenRouter)';
-    }} else {{
-      dot.className = 'dot dot-cloud';
-      label.textContent = 'Haiku (cloud)';
-    }}
+  // ── Transizione Home → Chat ──
+  function switchToChat() {{
+    if (currentView === 'chat') return;
+    currentView = 'chat';
+
+    const homeView = document.getElementById('home-view');
+    const chatView = document.getElementById('chat-view');
+
+    // Sposta input + provider + send nel chat view
+    const chatInputRow = document.getElementById('chat-input-row-v2');
+    chatInputRow.appendChild(document.getElementById('chat-input'));
+    chatInputRow.appendChild(document.getElementById('provider-dropdown'));
+    chatInputRow.appendChild(document.getElementById('chat-send'));
+
+    // Switch viste
+    homeView.style.display = 'none';
+    chatView.style.display = 'flex';
+    chatView.classList.add('active');
+    chatView.classList.add('entering');
+    setTimeout(() => chatView.classList.remove('entering'), 250);
+
+    const msgs = document.getElementById('chat-messages');
+    msgs.scrollTop = msgs.scrollHeight;
+    document.getElementById('chat-input').focus();
   }}
+
+  // ── Transizione Chat → Home ──
+  function goHome() {{
+    if (currentView === 'home') return;
+    currentView = 'home';
+
+    const homeView = document.getElementById('home-view');
+    const chatView = document.getElementById('chat-view');
+
+    // Sposta input + provider + send nella home
+    const homeInputRow = document.getElementById('home-input-row');
+    homeInputRow.appendChild(document.getElementById('chat-input'));
+    homeInputRow.appendChild(document.getElementById('provider-dropdown'));
+    homeInputRow.appendChild(document.getElementById('chat-send'));
+
+    // Switch viste
+    chatView.style.display = 'none';
+    chatView.classList.remove('active');
+    homeView.style.display = 'flex';
+
+    // Ridisegna il canvas (potrebbe aver perso dimensioni)
+    requestAnimationFrame(() => drawChart());
+  }}
+
+  // ── Provider dropdown ──
+  function toggleProviderMenu() {{
+    document.getElementById('provider-dropdown').classList.toggle('open');
+  }}
+  function switchProvider(provider) {{
+    chatProvider = provider;
+    const dot = document.getElementById('provider-dot');
+    const label = document.getElementById('provider-short');
+    const names = {{ cloud: 'Cloud', local: 'Local', deepseek: 'Deep' }};
+    const dotClass = {{ cloud: 'dot-cloud', local: 'dot-local', deepseek: 'dot-deepseek' }};
+    dot.className = 'provider-dot ' + (dotClass[provider] || 'dot-local');
+    label.textContent = names[provider] || 'Local';
+    document.getElementById('provider-dropdown').classList.remove('open');
+  }}
+  // Chiudi dropdown quando click fuori
+  document.addEventListener('click', (e) => {{
+    const dd = document.getElementById('provider-dropdown');
+    if (dd && !dd.contains(e.target)) dd.classList.remove('open');
+  }});
+
+  // ── Home services toggle ──
+  function toggleHomeServices() {{
+    const svc = document.getElementById('home-services');
+    const btn = document.getElementById('home-svc-toggle');
+    svc.classList.toggle('open');
+    btn.classList.toggle('open');
+  }}
+
+  // ── Focus input → chat mode (solo mobile) ──
+  document.addEventListener('DOMContentLoaded', () => {{
+    document.getElementById('chat-input').addEventListener('focus', () => {{
+      if (window.innerWidth < 768) switchToChat();
+    }});
+  }});
 
   function appendChunk(text) {{
     const box = document.getElementById('chat-messages');
@@ -2332,6 +2585,7 @@ HTML = f"""<!DOCTYPE html>
     const input = document.getElementById('chat-input');
     const text = input.value.trim();
     if (!text) return;
+    switchToChat();
     appendMessage(text, 'user');
     send({{ action: 'chat', text, provider: chatProvider }});
     input.value = '';
@@ -2379,23 +2633,7 @@ HTML = f"""<!DOCTYPE html>
     send({{ action: 'clear_chat' }});
   }}
 
-  // ── Status Bar toggle ──
-  function toggleStatusDetail() {{
-    const bar = document.querySelector('.status-bar');
-    const detail = document.getElementById('status-detail');
-    const toggle = document.getElementById('status-toggle');
-    detail.classList.toggle('open');
-    toggle.classList.toggle('open');
-    bar.classList.toggle('expanded');
-  }}
-  function updateStatusBar(pi) {{
-    const t = document.getElementById('sb-temp');
-    const c = document.getElementById('sb-cpu');
-    const u = document.getElementById('sb-uptime');
-    if (t) t.textContent = pi.temp || '—';
-    if (c) c.textContent = pi.cpu || '—';
-    if (u) u.textContent = pi.uptime || '—';
-  }}
+  /* toggleStatusDetail e updateStatusBar rimossi — home cards aggiornate da updateStats */
 
   // ── Drawer (bottom sheet) ──
   let activeDrawer = null;
@@ -2421,8 +2659,9 @@ HTML = f"""<!DOCTYPE html>
     document.getElementById('drawer-actions').innerHTML =
       (cfg ? cfg.actions : '') +
       '<button class="btn-ghost" onclick="closeDrawer()" style="min-height:28px;padding:3px 8px;">\u2715</button>';
-    // Show overlay
+    // Show overlay + enable two-column on desktop
     document.getElementById('drawer-overlay').classList.add('show');
+    document.querySelector('.app-content').classList.add('has-drawer');
     // Tab bar highlight
     document.querySelectorAll('.tab-bar-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.widget === widgetId));
@@ -2430,6 +2669,7 @@ HTML = f"""<!DOCTYPE html>
   }}
   function closeDrawer() {{
     document.getElementById('drawer-overlay').classList.remove('show');
+    document.querySelector('.app-content').classList.remove('has-drawer');
     document.querySelectorAll('.tab-bar-btn').forEach(b => b.classList.remove('active'));
     activeDrawer = null;
   }}
@@ -2448,38 +2688,10 @@ HTML = f"""<!DOCTYPE html>
     }}, {{ passive: true }});
   }})();
 
-  // ── Chat fullscreen ──
-  let chatFullscreen = false;
-  function openChatFullscreen() {{
-    chatFullscreen = true;
-    const overlay = document.getElementById('chat-fullscreen');
-    const slot = document.getElementById('chat-fs-slot');
-    const inputSlot = document.getElementById('chat-fs-input-slot');
-    // Sposta nodi reali dentro il fullscreen
-    slot.appendChild(document.getElementById('chat-messages'));
-    const chatInput = document.getElementById('chat-input');
-    const chatSend = document.getElementById('chat-send');
-    inputSlot.appendChild(chatInput);
-    inputSlot.appendChild(chatSend);
-    overlay.classList.add('show');
-    chatInput.focus();
-    document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
-  }}
-  function closeChatFullscreen() {{
-    chatFullscreen = false;
-    document.getElementById('chat-fullscreen').classList.remove('show');
-    // Rimetti i nodi nella card originale
-    const card = document.querySelector('.chat-input-row');
-    const chatMessages = document.getElementById('chat-messages');
-    card.parentNode.insertBefore(chatMessages, card);
-    card.appendChild(document.getElementById('chat-input'));
-    card.appendChild(document.getElementById('chat-send'));
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }}
-  // Escape chiude overlay/drawer
+  // Escape chiude chat view / drawer / overlay
   document.addEventListener('keydown', (e) => {{
     if (e.key === 'Escape') {{
-      if (chatFullscreen) closeChatFullscreen();
+      if (currentView === 'chat') goHome();
       else if (activeDrawer) closeDrawer();
       const outFs = document.getElementById('output-fullscreen');
       if (outFs && outFs.classList.contains('show')) closeOutputFullscreen();
@@ -2912,7 +3124,11 @@ HTML = f"""<!DOCTYPE html>
   }}
 
   setInterval(() => {{
-    document.getElementById('clock').textContent = new Date().toLocaleTimeString('it-IT');
+    const t = new Date().toLocaleTimeString('it-IT');
+    ['home-clock', 'chat-clock'].forEach(id => {{
+      const el = document.getElementById(id);
+      if (el) el.textContent = t;
+    }});
   }}, 1000);
 
   if ('serviceWorker' in navigator) {{

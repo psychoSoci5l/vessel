@@ -5,6 +5,43 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-21] Home View + Chat Mode Redesign
+
+### Architettura nuova — 2 modalità
+Dashboard trasformata da "chat vuota con status bar anonima" a "home dashboard con transizione a chat mode":
+- **Home View** (default): header VESSEL, 4 stats cards prominenti (CPU/RAM/TEMP/UPTIME) con barre progresso, grafico 15 min, sezione Pi Stats collapsible, input chat con provider dropdown
+- **Chat Mode** (su invio messaggio): header compatto con "← Home" + temp live, chat fullscreen, stesso input/provider/invia
+- **Provider Dropdown**: sostituisce i 3 bottoni switch con menu a tendina compatto (dot colorato + nome) accanto a "Invia"
+
+### Aggiunto
+- **Home stats cards** 2x2 (mobile) / 4 in riga (desktop): CPU%, RAM%, Temp°C, Uptime con barre progresso animate e soglie colore (verde/ambra/rosso)
+- **Provider dropdown**: menu a tendina Cloud (Haiku) / Local (Gemma) / Deep (DeepSeek) con dot colorati, sostituisce i 3 bottoni nell'header chat
+- **Transizione Home↔Chat**: `switchToChat()` e `goHome()` spostano nodi DOM (input, send, provider, messages) tra le due viste — stesso pattern del vecchio fullscreen
+- **Pi Stats collapsible**: stats grid dettagliati + sessioni tmux + Gateway restart + Reboot, accessibili da toggle sotto il grafico
+- **`mem_pct`** aggiunto al return di `get_pi_stats()` per le barre RAM
+- **Desktop two-column con drawer**: classe `.has-drawer` abilita flex-direction row quando un widget è aperto
+- **Health dots sincronizzati**: home-health-dot e chat-health-dot aggiornati in parallelo
+- **Clock/conn-dot sincronizzati**: home-clock/chat-clock e home-conn-dot/chat-conn-dot
+- **Mobile focus → chat**: su viewport < 768px, focus sull'input attiva automaticamente la chat mode
+
+### Rimosso
+- **Status bar compatta** (`.status-bar`, `.status-compact`, `.status-detail`): sostituita dalla home view con cards
+- **Chat fullscreen overlay** (`.chat-fs-overlay`): non serve più, la chat mode È il fullscreen
+- **Model switch 3 bottoni** (`.model-switch`, `.model-btn`, `.model-indicator`): sostituiti dal provider dropdown
+- **Funzioni JS obsolete**: `toggleStatusDetail()`, `updateStatusBar()`, `switchModel()`, `openChatFullscreen()`, `closeChatFullscreen()`
+
+### Modificato
+- `updateStats(pi)`: aggiorna home cards + barre progresso + stats detail + health dots + chat temp
+- `drawChart()`: check `offsetParent === null` per non disegnare quando il canvas è nascosto
+- `connect()`: sincronizza conn-dot su entrambe le viste
+- `handleMessage()`: clock aggiornato su home-clock e chat-clock
+- `sendChat()`: chiama `switchToChat()` prima dell'invio
+- `openDrawer()`/`closeDrawer()`: gestiscono `.has-drawer` per layout desktop
+- Escape handler: `goHome()` al posto di `closeChatFullscreen()`
+- Clock interval: aggiorna entrambi i clock
+
+---
+
 ## [2026-02-21] UX Redesign: Mobile-First 3-Zone Layout + Desktop Two-Column
 
 ### Architettura nuova — 3 zone
