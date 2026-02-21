@@ -71,7 +71,9 @@ export CALENDAR_TIMEZONE=Europe/Rome
 python3 scripts/google_helper.py calendar today
 python3 scripts/google_helper.py calendar tomorrow
 python3 scripts/google_helper.py calendar week
-python3 scripts/google_helper.py calendar today --json    # Structured output
+python3 scripts/google_helper.py calendar today --json      # Structured output
+python3 scripts/google_helper.py calendar search "birthday"  # Search events by name (next 12 months)
+python3 scripts/google_helper.py calendar month 10           # All events in October
 python3 scripts/google_helper.py calendar add "Meeting" "2026-03-01T10:00" "2026-03-01T11:00"
 ```
 

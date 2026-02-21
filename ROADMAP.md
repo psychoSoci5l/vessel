@@ -107,6 +107,31 @@
 - [ ] Gate deploy: conferma utente prima di deployare (futuro)
 - [ ] UI: toggle loop on/off nel widget Remote Code (futuro)
 
+## Fase 9.5 — Ollama PC + Nanobot Discord Upgrade ✅ COMPLETATA (2026-02-21)
+> GPU Windows come cervello remoto. Discord potenziato con DeepSeek + routing modelli.
+
+### Ollama PC (GPU via LAN)
+- [x] 2 nuovi provider dashboard: PC Coder (qwen2.5-coder:14b) e PC Deep (deepseek-r1:8b)
+- [x] Config esterna `~/.nanobot/ollama_pc.json` (host, port, modelli)
+- [x] Backend streaming parametrizzato `chat_with_ollama_pc_stream()`
+- [x] Provider dropdown esteso a 5 opzioni con dot colorati
+- [x] Ollama Windows con `OLLAMA_HOST=0.0.0.0` per LAN
+
+### Nanobot Discord
+- [x] Default model: DeepSeek V3 via OpenRouter (economico, performante)
+- [x] Script `ollama_pc_helper.py` per delegare a GPU Windows
+- [x] Prefissi routing da Discord: `@pc`, `@deep`, `@status`
+- [x] SOUL.md rinnovato: self-knowledge, assertivita, routing prefissi
+- [x] USER.md: info famiglia (Alessio, compleanno 22 ottobre)
+
+### Google Helper
+- [x] `calendar search "termine"` — cerca eventi per nome nell'anno
+- [x] `calendar month N` — eventi di un mese specifico
+
+### Dashboard
+- [x] Bottone Power Off con modale conferma + handler `shutdown`
+- [x] Fix widget Memoria: MEMORY.md e HISTORY.md creati post-migrazione
+
 ## Fase 9 — Hardening e qualità ✅ COMPLETATA (2026-02-20)
 > Criticità e miglioramenti identificati dall'autoanalisi del codebase via Remote Code.
 
@@ -188,7 +213,9 @@
 - Widget pesanti (crypto, briefing, token) sono sempre **on-demand** con placeholder
 - Il Pi ha 8GB RAM e disco da 91GB — risorse abbondanti per tutto questo
 - Google Workspace integrato via script helper (`~/scripts/google_helper.py`) — NO MCP server
-- PC Windows: AMD Ryzen 5 5600X, 16GB RAM, RTX 3060 12GB — Ollama supervisor per Ralph Loop
+- PC Windows: AMD Ryzen 5 5600X, 16GB RAM, RTX 3060 12GB — Ollama supervisor per Ralph Loop + provider LAN
+- Ollama PC modelli: qwen2.5-coder:14b (coding, ~9GB) + deepseek-r1:8b (reasoning, ~5GB)
 - Ralph Loop: Claude Code + Ollama eseguono sequenzialmente (non in parallelo) per evitare contesa VRAM
+- Nanobot Discord default: DeepSeek V3 via OpenRouter (LiteLLM routing, ~$0.0002/msg)
 - **Doppia autoanalisi** (2026-02-21): Claude Code + DeepSeek V3 hanno analizzato indipendentemente il codebase. I punti convergenti formano la Fase 10
 - Report salvati: `analysis-report.md` (Claude Code) + report DeepSeek inline nel CHANGELOG

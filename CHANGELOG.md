@@ -5,6 +5,35 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-21] Ollama PC + Nanobot Discord Upgrade
+
+### Ollama PC — GPU Windows via LAN
+- **2 nuovi provider dashboard**: PC Coder (qwen2.5-coder:14b, rosa #ff006e) e PC Deep (deepseek-r1:8b, rosso #e74c3c)
+- **Config esterna**: `~/.nanobot/ollama_pc.json` (host, port, modelli)
+- **Backend**: `chat_with_ollama_pc_stream()` — funzione parametrizzata per modello, streaming via thread worker
+- **Health check**: `check_ollama_pc_health()` per verifica raggiungibilita LAN
+- **Chat history** separata per ciascun provider PC
+- **Provider dropdown** esteso a 5 opzioni: Haiku / Local / PC Coder / PC Deep / Deep
+- Ollama Windows configurato con `OLLAMA_HOST=0.0.0.0` (env var utente)
+
+### Nanobot Discord — DeepSeek + routing prefissi
+- **Default model cambiato** a `openrouter/deepseek/deepseek-chat-v3-0324` (DeepSeek V3 via OpenRouter, economico)
+- **Script `ollama_pc_helper.py`** su Pi: delega messaggi ai modelli GPU Windows via LAN
+- **Prefissi routing** da Discord: `@pc`/`@coder` (qwen2.5-coder), `@deep` (deepseek-r1), `@status`
+- **SOUL.md rinnovato**: self-knowledge architettura, prefissi routing, regola "agisci non chiedere", sezione calendario assertiva
+- **USER.md esteso**: info famiglia (Alessio Maio, compleanno 22 ottobre)
+
+### Google Helper — nuovi comandi calendario
+- **`calendar search "termine"`**: cerca eventi per nome nell'intero anno (risolve "quando compie gli anni X?")
+- **`calendar month N`**: eventi di un mese specifico (1-12), anno corrente o prossimo
+
+### Dashboard — Power Off + fix Memory
+- **Bottone Power Off** (`sudo shutdown -h now`) accanto a Reboot in Pi Stats, con modale conferma dedicata
+- **Handler `shutdown`** nel backend WebSocket con rate limiting
+- **File MEMORY.md e HISTORY.md** creati in `~/.nanobot/workspace/memory/` (erano assenti post-migrazione SSD)
+
+---
+
 ## [2026-02-21] Home View + Chat Mode Redesign
 
 ### Architettura nuova — 2 modalità

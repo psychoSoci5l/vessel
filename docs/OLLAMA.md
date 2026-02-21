@@ -61,15 +61,55 @@ export OLLAMA_TIMEOUT=120                    # Seconds
 export OLLAMA_SYSTEM="You are a helpful assistant. Be concise."
 ```
 
-## Running Ollama on a different machine
+## Running Ollama on a different machine (Ollama PC)
 
-If your LLM runs on a separate, more powerful machine:
+If you have a more powerful machine (e.g., a PC with a GPU), Vessel can use it as a remote LLM provider over LAN.
+
+### Setup on the PC (Windows)
 
 ```bash
-# On the LLM machine: bind Ollama to all interfaces
-# Edit /etc/systemd/system/ollama.service and add:
-# Environment="OLLAMA_HOST=0.0.0.0"
+# Set OLLAMA_HOST as a user environment variable
+# Windows: System Properties > Environment Variables > User Variables
+# Add: OLLAMA_HOST = 0.0.0.0
 
+# Or via PowerShell (permanent):
+[System.Environment]::SetEnvironmentVariable("OLLAMA_HOST", "0.0.0.0", "User")
+
+# Restart Ollama after setting the variable
+```
+
+### Setup on the Pi
+
+Create `~/.nanobot/ollama_pc.json`:
+
+```json
+{
+  "host": "192.168.1.100",
+  "port": 11434,
+  "models": {
+    "coder": "qwen2.5-coder:14b",
+    "deep": "deepseek-r1:8b"
+  }
+}
+```
+
+The dashboard will automatically pick up this config and add PC Coder and PC Deep to the provider dropdown.
+
+### Nanobot Discord routing
+
+Create `~/scripts/ollama_pc_helper.py` to enable prefix routing from Discord:
+
+- `@pc` or `@coder` — routes to the coder model (coding tasks)
+- `@deep` — routes to the deep reasoning model
+- `@status` — shows available models on the PC
+
+Add the routing instructions to your `SOUL.md` (see `config/SOUL.example.md`).
+
+### Simple remote setup (single model)
+
+For a simpler setup with just one remote model:
+
+```bash
 # On the Pi: point Vessel to the remote Ollama
 export OLLAMA_BASE=http://192.168.1.100:11434
 ```

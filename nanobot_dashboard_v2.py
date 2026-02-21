@@ -64,6 +64,51 @@ def _load_friends() -> str:
         pass
     return ""
 
+# ─── Ollama PC (LLM su GPU Windows via LAN) ─────────────────────────────────
+def _get_ollama_pc_config() -> dict:
+    pc_file = Path.home() / ".nanobot" / "ollama_pc.json"
+    if pc_file.exists():
+        try:
+            return json.loads(pc_file.read_text())
+        except Exception:
+            pass
+    return {}
+
+_pc_cfg = _get_ollama_pc_config()
+OLLAMA_PC_HOST = _pc_cfg.get("host", "192.168.178.34")
+OLLAMA_PC_PORT = _pc_cfg.get("port", 11434)
+OLLAMA_PC_BASE = f"http://{OLLAMA_PC_HOST}:{OLLAMA_PC_PORT}"
+OLLAMA_PC_KEEP_ALIVE = "60m"
+OLLAMA_PC_TIMEOUT = 60  # GPU è veloce
+_pc_models = _pc_cfg.get("models", {})
+OLLAMA_PC_CODER_MODEL = _pc_models.get("coder", "qwen2.5-coder:14b")
+OLLAMA_PC_DEEP_MODEL = _pc_models.get("deep", "deepseek-r1:8b")
+OLLAMA_PC_CODER_SYSTEM = (
+    "Sei Vessel, assistente personale di psychoSocial (Filippo). "
+    "Giri su un PC Windows con GPU NVIDIA RTX 3060. Rispondi in italiano, breve e diretto. "
+    "Sei specializzato in coding e questioni tecniche, ma puoi aiutare con qualsiasi cosa.\n\n"
+    "## Riconoscimento amici\n"
+    "Hai un elenco degli amici di Filippo. Quando qualcuno si presenta "
+    "(es. 'sono Giulia', 'mi chiamo Stefano'), cerca il nome nell'elenco e "
+    "rispondi in modo caldo e naturale: presentati, saluta per nome, cita i "
+    "loro interessi in modo discorsivo (non come elenco!). Se il nome non è "
+    "nell'elenco, presentati e chiedi chi sono. Se ci sono PIÙ persone con lo "
+    "stesso nome, chiedi quale sono. Gli amici sono di Filippo, non tuoi."
+)
+OLLAMA_PC_DEEP_SYSTEM = (
+    "Sei Vessel, assistente personale di psychoSocial (Filippo). "
+    "Giri su un PC Windows con GPU NVIDIA RTX 3060. Rispondi in italiano, breve e diretto. "
+    "Sei specializzato in ragionamento, analisi e problem solving, "
+    "ma puoi aiutare con qualsiasi cosa.\n\n"
+    "## Riconoscimento amici\n"
+    "Hai un elenco degli amici di Filippo. Quando qualcuno si presenta "
+    "(es. 'sono Giulia', 'mi chiamo Stefano'), cerca il nome nell'elenco e "
+    "rispondi in modo caldo e naturale: presentati, saluta per nome, cita i "
+    "loro interessi in modo discorsivo (non come elenco!). Se il nome non è "
+    "nell'elenco, presentati e chiedi chi sono. Se ci sono PIÙ persone con lo "
+    "stesso nome, chiedi quale sono. Gli amici sono di Filippo, non tuoi."
+)
+
 # ─── Claude Bridge (Remote Code) ────────────────────────────────────────────
 # Config letta da ~/.nanobot/bridge.json (url, token)
 # oppure override via env var CLAUDE_BRIDGE_URL / CLAUDE_BRIDGE_TOKEN
@@ -581,6 +626,15 @@ def check_ollama_health() -> bool:
     except Exception:
         return False
 
+def check_ollama_pc_health() -> bool:
+    """Verifica se Ollama PC è raggiungibile sulla LAN."""
+    try:
+        req = urllib.request.Request(f"{OLLAMA_PC_BASE}/api/tags")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
 def warmup_ollama():
     """Precarica il modello in RAM con una richiesta minima."""
     try:
@@ -674,6 +728,83 @@ async def chat_with_ollama_stream(websocket: WebSocket, message: str, chat_histo
     elapsed = int((time.time() - start_time) * 1000)
     await websocket.send_json({"type": "chat_done", "provider": "ollama"})
     log_token_usage(0, eval_count, OLLAMA_MODEL, provider="ollama", response_time_ms=elapsed)
+
+async def chat_with_ollama_pc_stream(
+    websocket: WebSocket, message: str, chat_history: list,
+    model: str, system_prompt: str, provider_id: str,
+):
+    """Chat con Ollama PC (GPU Windows) via streaming. Funzione parametrizzata per modello."""
+    queue: asyncio.Queue = asyncio.Queue()
+    start_time = time.time()
+
+    friends_ctx = _load_friends()
+    system_with_friends = system_prompt
+    if friends_ctx:
+        system_with_friends = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
+
+    chat_history.append({"role": "user", "content": message})
+    trimmed = chat_history[-20:]
+
+    def _stream_worker():
+        try:
+            conn = http.client.HTTPConnection(OLLAMA_PC_HOST, OLLAMA_PC_PORT, timeout=OLLAMA_PC_TIMEOUT)
+            payload = json.dumps({
+                "model": model,
+                "messages": [{"role": "system", "content": system_with_friends}] + trimmed,
+                "stream": True,
+                "keep_alive": OLLAMA_PC_KEEP_ALIVE,
+            })
+            conn.request("POST", "/api/chat", body=payload,
+                         headers={"Content-Type": "application/json"})
+            resp = conn.getresponse()
+            buf = ""
+            while True:
+                raw = resp.read(256)
+                if not raw:
+                    break
+                buf += raw.decode("utf-8", errors="replace")
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    data = json.loads(line)
+                    token = data.get("message", {}).get("content", "")
+                    if token:
+                        queue.put_nowait(("chunk", token))
+                    if data.get("done"):
+                        queue.put_nowait(("meta", data))
+                        conn.close()
+                        return
+            conn.close()
+        except Exception as e:
+            queue.put_nowait(("error", str(e)))
+        finally:
+            queue.put_nowait(("end", None))
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_worker)
+
+    full_reply = ""
+    eval_count = 0
+
+    while True:
+        kind, val = await queue.get()
+        if kind == "chunk":
+            full_reply += val
+            await websocket.send_json({"type": "chat_chunk", "text": val})
+        elif kind == "meta":
+            eval_count = val.get("eval_count", 0)
+        elif kind == "error":
+            if not full_reply:
+                await websocket.send_json({"type": "chat_chunk", "text": f"(errore Ollama PC: {val})"})
+        elif kind == "end":
+            break
+
+    chat_history.append({"role": "assistant", "content": full_reply})
+    elapsed = int((time.time() - start_time) * 1000)
+    await websocket.send_json({"type": "chat_done", "provider": provider_id})
+    log_token_usage(0, eval_count, model, provider=provider_id, response_time_ms=elapsed)
 
 async def chat_with_anthropic_stream(websocket: WebSocket, message: str, chat_history: list):
     """Chat con Anthropic API via streaming SSE con history."""
@@ -1094,6 +1225,8 @@ async def websocket_endpoint(websocket: WebSocket):
     ollama_chat_history: list[dict] = []
     cloud_chat_history: list[dict] = []
     deepseek_chat_history: list[dict] = []
+    pc_coder_chat_history: list[dict] = []
+    pc_deep_chat_history: list[dict] = []
     await websocket.send_json({
         "type": "init",
         "data": {
@@ -1120,6 +1253,12 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "chat_thinking"})
                     if provider == "local":
                         await chat_with_ollama_stream(websocket, text, ollama_chat_history)
+                    elif provider == "pc_coder":
+                        await chat_with_ollama_pc_stream(websocket, text, pc_coder_chat_history,
+                            OLLAMA_PC_CODER_MODEL, OLLAMA_PC_CODER_SYSTEM, "ollama_pc_coder")
+                    elif provider == "pc_deep":
+                        await chat_with_ollama_pc_stream(websocket, text, pc_deep_chat_history,
+                            OLLAMA_PC_DEEP_MODEL, OLLAMA_PC_DEEP_SYSTEM, "ollama_pc_deep")
                     elif provider == "deepseek":
                         await chat_with_openrouter_stream(websocket, text, deepseek_chat_history)
                     else:
@@ -1129,6 +1268,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 ollama_chat_history.clear()
                 cloud_chat_history.clear()
                 deepseek_chat_history.clear()
+                pc_coder_chat_history.clear()
+                pc_deep_chat_history.clear()
 
             elif action == "check_ollama":
                 alive = await bg(check_ollama_health)
@@ -1223,6 +1364,15 @@ async def websocket_endpoint(websocket: WebSocket):
                 await manager.broadcast({"type": "reboot_ack"})
                 await asyncio.sleep(0.5)
                 subprocess.run(["sudo", "reboot"])
+
+            elif action == "shutdown":
+                ip = websocket.client.host
+                if not _rate_limit(ip, "shutdown", 1, 300):
+                    await websocket.send_json({"type": "toast", "text": "⚠️ Shutdown già richiesto di recente"})
+                    continue
+                await manager.broadcast({"type": "shutdown_ack"})
+                await asyncio.sleep(0.5)
+                subprocess.run(["sudo", "shutdown", "-h", "now"])
 
             # ── Remote Code (Claude Bridge) ──
             elif action == "claude_task":
@@ -1579,6 +1729,8 @@ HTML = f"""<!DOCTYPE html>
   .dot-cloud {{ background: #ffb300; box-shadow: 0 0 4px #ffb300; }}
   .dot-local {{ background: #00ffcc; box-shadow: 0 0 4px #00ffcc; }}
   .dot-deepseek {{ background: #6c5ce7; box-shadow: 0 0 4px #6c5ce7; }}
+  .dot-pc-coder {{ background: #ff006e; box-shadow: 0 0 4px #ff006e; }}
+  .dot-pc-deep {{ background: #e74c3c; box-shadow: 0 0 4px #e74c3c; }}
 
   /* ── Stats ── */
   .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }}
@@ -2070,7 +2222,10 @@ HTML = f"""<!DOCTYPE html>
           <button class="btn-ghost" onclick="requestStats()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BB; Refresh</button>
           <span id="version-badge" class="version-badge">—</span>
         </div>
-        <button class="btn-red" onclick="showRebootModal()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x23FB; Reboot</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-red" onclick="showRebootModal()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BA; Reboot</button>
+          <button class="btn-red" onclick="showShutdownModal()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x23FB; Off</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2085,8 +2240,10 @@ HTML = f"""<!DOCTYPE html>
           <span class="provider-arrow">&#x25BE;</span>
         </button>
         <div class="provider-menu" id="provider-menu">
-          <button type="button" onclick="switchProvider('cloud')"><span class="dot dot-cloud"></span> Cloud (Haiku)</button>
+          <button type="button" onclick="switchProvider('cloud')"><span class="dot dot-cloud"></span> Haiku</button>
           <button type="button" onclick="switchProvider('local')"><span class="dot dot-local"></span> Local (Gemma)</button>
+          <button type="button" onclick="switchProvider('pc_coder')"><span class="dot dot-pc-coder"></span> PC Coder</button>
+          <button type="button" onclick="switchProvider('pc_deep')"><span class="dot dot-pc-deep"></span> PC Deep</button>
           <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> Deep (DeepSeek)</button>
         </div>
       </div>
@@ -2206,6 +2363,18 @@ HTML = f"""<!DOCTYPE html>
   </div>
 </div>
 
+<!-- Modale conferma shutdown -->
+<div class="modal-overlay" id="shutdown-modal">
+  <div class="modal-box">
+    <div class="modal-title">&#x23FB; Spegnimento Raspberry Pi</div>
+    <div class="modal-text">Sei sicuro? Il Pi si spegnerà completamente. Per riaccenderlo dovrai staccare e riattaccare l'alimentazione.</div>
+    <div class="modal-btns">
+      <button class="btn-ghost" onclick="hideShutdownModal()">Annulla</button>
+      <button class="btn-red" onclick="confirmShutdown()">Conferma Spegnimento</button>
+    </div>
+  </div>
+</div>
+
 <!-- Overlay durante reboot -->
 <div class="reboot-overlay" id="reboot-overlay">
   <div class="reboot-spinner"></div>
@@ -2295,6 +2464,7 @@ HTML = f"""<!DOCTYPE html>
     else if (msg.type === 'crypto')   {{ renderCrypto(msg.data); }}
     else if (msg.type === 'toast')   {{ showToast(msg.text); }}
     else if (msg.type === 'reboot_ack') {{ startRebootWait(); }}
+    else if (msg.type === 'shutdown_ack') {{ document.getElementById('reboot-overlay').classList.add('show'); document.getElementById('reboot-status').textContent = 'Il Pi si sta spegnendo…'; document.querySelector('.reboot-text').textContent = 'Spegnimento in corso…'; }}
     else if (msg.type === 'claude_thinking') {{
       const wrap = document.getElementById('claude-output-wrap');
       if (wrap) wrap.style.display = 'block';
@@ -2525,8 +2695,8 @@ HTML = f"""<!DOCTYPE html>
     chatProvider = provider;
     const dot = document.getElementById('provider-dot');
     const label = document.getElementById('provider-short');
-    const names = {{ cloud: 'Cloud', local: 'Local', deepseek: 'Deep' }};
-    const dotClass = {{ cloud: 'dot-cloud', local: 'dot-local', deepseek: 'dot-deepseek' }};
+    const names = {{ cloud: 'Haiku', local: 'Local', pc_coder: 'PC Coder', pc_deep: 'PC Deep', deepseek: 'Deep' }};
+    const dotClass = {{ cloud: 'dot-cloud', local: 'dot-local', pc_coder: 'dot-pc-coder', pc_deep: 'dot-pc-deep', deepseek: 'dot-deepseek' }};
     dot.className = 'provider-dot ' + (dotClass[provider] || 'dot-local');
     label.textContent = names[provider] || 'Local';
     document.getElementById('provider-dropdown').classList.remove('open');
@@ -3043,7 +3213,7 @@ HTML = f"""<!DOCTYPE html>
   function killSession(name) {{ send({{ action: 'tmux_kill', session: name }}); }}
   function gatewayRestart() {{ showToast('⏳ Riavvio gateway…'); send({{ action: 'gateway_restart' }}); }}
 
-  // ── Reboot ──
+  // ── Reboot / Shutdown ──
   function showRebootModal() {{
     document.getElementById('reboot-modal').classList.add('show');
   }}
@@ -3053,6 +3223,16 @@ HTML = f"""<!DOCTYPE html>
   function confirmReboot() {{
     hideRebootModal();
     send({{ action: 'reboot' }});
+  }}
+  function showShutdownModal() {{
+    document.getElementById('shutdown-modal').classList.add('show');
+  }}
+  function hideShutdownModal() {{
+    document.getElementById('shutdown-modal').classList.remove('show');
+  }}
+  function confirmShutdown() {{
+    hideShutdownModal();
+    send({{ action: 'shutdown' }});
   }}
   function startRebootWait() {{
     document.getElementById('reboot-overlay').classList.add('show');

@@ -26,9 +26,12 @@ Browser (PWA)
                   ├─ stats (broadcast every 5s)
                   │   └─ CPU, temp, RAM, disk, uptime, tmux
                   │
-                  ├─ chat
-                  │   ├─ local → Ollama (streaming via thread worker)
-                  │   └─ cloud → Anthropic API (direct HTTP)
+                  ├─ chat (5 providers)
+                  │   ├─ local    → Ollama Pi (Gemma 3 4B, CPU)
+                  │   ├─ cloud    → Anthropic API (Haiku)
+                  │   ├─ pc_coder → Ollama PC LAN (qwen2.5-coder:14b, GPU)
+                  │   ├─ pc_deep  → Ollama PC LAN (deepseek-r1:8b, GPU)
+                  │   └─ deepseek → OpenRouter (DeepSeek V3)
                   │
                   ├─ on-demand widgets
                   │   ├─ briefing → read JSONL log / run script
@@ -40,7 +43,7 @@ Browser (PWA)
                   │
                   └─ actions
                       ├─ tmux kill/restart
-                      ├─ reboot (rate-limited)
+                      ├─ reboot / shutdown (rate-limited)
                       └─ cron add/delete
 ```
 
@@ -98,6 +101,7 @@ All communication after initial page load happens via a single WebSocket connect
 {"action": "tmux_kill", "session": "nanobot-gateway"}
 {"action": "gateway_restart"}
 {"action": "reboot"}
+{"action": "shutdown"}
 {"action": "check_ollama"}
 ```
 
@@ -118,11 +122,12 @@ All communication after initial page load happens via a single WebSocket connect
 {"type": "ollama_status", "alive": true}
 {"type": "toast", "text": "Action completed"}
 {"type": "reboot_ack"}
+{"type": "shutdown_ack"}
 ```
 
 ## Security
 
-- **PIN hashed with SHA256** — not stored in plaintext
+- **PIN hashed with PBKDF2** — salted, 600k iterations (auto-migrated from SHA256)
 - **Session tokens** — cryptographically random (`secrets.token_urlsafe(32)`)
 - **Rate limiting** — per-IP, per-action (chat: 20/min, cron: 10/min, reboot: 1/5min)
 - **No shell injection** — subprocess uses argument lists, not `shell=True` for user input
