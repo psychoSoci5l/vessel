@@ -5,6 +5,35 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-21] Fase 9 (parziale): Hardening + Terzo Cervello DeepSeek V3
+
+### Aggiunto
+- **DeepSeek V3 via OpenRouter**: terzo provider chat, bottone ⚡ DeepSeek nella UI
+  - Modello: `deepseek/deepseek-chat-v3-0324` (685B MoE), provider preferito: ModelRun (43 tok/s)
+  - Streaming SSE OpenAI-compatible, chat history multi-turno, logging token
+  - Config separata: `~/.nanobot/openrouter.json` (apiKey, model, providerOrder)
+  - Costo: ~$0.0002/messaggio — con $10 si fanno ~60.000 messaggi
+  - Pallino viola nella UI, label dinamica "DeepSeek V3 (OpenRouter)"
+- **Streaming chat Anthropic cloud**: parità con Ollama, `chat_with_anthropic_stream()` via SSE
+- **Chat history cloud multi-turno**: `cloud_chat_history` separata (ultimi 20 msg)
+- **Fix XSS**: funzione `esc()` centralizzata, applicata a 6 funzioni render (`updateSessions`, `renderClaudeTasks`, `renderBriefing`, `renderLogs`, `renderTokens`, `renderCrypto`)
+- **Hardening PIN**: da SHA-256 puro a `pbkdf2_hmac` con salt random (600k iterazioni), auto-migrazione trasparente dal vecchio formato
+- **SOUL.md arricchito**: personalità completa + riconoscimento amici + istruzioni Google Tools
+
+### Modificato
+- **OLLAMA_SYSTEM riscritto**: da "solo amici" a assistente tuttofare con riconoscimento amici come feature aggiuntiva
+- **System prompt cloud allineato**: usa `OLLAMA_SYSTEM` come fallback coerente
+- **PIN UI semplificata**: da 6 a 4 cifre, auto-submit alla 4a cifra, pulsante "SBLOCCA" (rimosso lucchetto emoji)
+- **Config bridge separata**: `~/.nanobot/bridge.json` (era dentro config.json, causava crash gateway Pydantic)
+- **`_get_bridge_config()` retrocompatibile**: prova bridge.json, fallback su config.json
+
+### Fix
+- **Gateway Discord non partiva**: chiave `bridge` in config.json violava Pydantic `extra=forbid` di nanobot
+- **Vessel rispondeva solo su amici**: OLLAMA_SYSTEM era interamente focalizzato sul riconoscimento amici
+- **Discord non riconosceva amici**: FRIENDS.md non era nei BOOTSTRAP_FILES, aggiunto contenuto in SOUL.md
+
+---
+
 ## [2026-02-20] Chat History + Riconoscimento Amici + Ollama Warmup
 
 ### Aggiunto

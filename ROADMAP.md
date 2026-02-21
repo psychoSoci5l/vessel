@@ -113,13 +113,15 @@
 > Criticità e miglioramenti identificati dall'autoanalisi del codebase via Remote Code.
 
 ### Sicurezza (priorità alta)
-- [ ] Fix XSS: `escapeHtml()` centralizzata per `renderLogs()`, `updateSessions()`, `renderClaudeTasks()`
-- [ ] Hardening PIN: da SHA-256 puro a `pbkdf2_hmac` con salt random
+- [x] Fix XSS: `esc()` centralizzata per `renderLogs()`, `updateSessions()`, `renderClaudeTasks()`, `renderBriefing()`, `renderTokens()`, `renderCrypto()`
+- [x] Hardening PIN: da SHA-256 puro a `pbkdf2_hmac` con salt random (600k iter, auto-migrazione)
 - [ ] Audit `run()` shell=True: verificare che nessuna variabile utente entri nei comandi
 
 ### UX Chat (priorità alta)
-- [ ] Streaming per chat Anthropic cloud (parità con Ollama)
-- [ ] Chat history cloud multi-turno (come già fatto per Ollama)
+- [x] Streaming per chat Anthropic cloud (parità con Ollama)
+- [x] Chat history cloud multi-turno (come già fatto per Ollama)
+- [x] Terzo provider: DeepSeek V3 via OpenRouter (ModelRun, 43 tok/s, ~$0.0002/msg)
+- [x] PIN semplificato: 4 cifre, auto-submit, pulsante SBLOCCA
 
 ### Performance
 - [ ] `stats_broadcaster()`: wrappare `get_pi_stats()` e `get_tmux_sessions()` in `await bg()`
@@ -139,7 +141,7 @@
 ### Visione futura
 - [ ] Sistema plugin/widget esterni da `~/.nanobot/widgets/`
 - [ ] Dashboard multi-host (monitoraggio altri device LAN)
-- [ ] Provider chat astratto (`ChatProvider` con `OllamaProvider` / `AnthropicProvider`)
+- [ ] Provider chat astratto (`ChatProvider` con `OllamaProvider` / `AnthropicProvider` / `OpenRouterProvider`)
 
 ---
 

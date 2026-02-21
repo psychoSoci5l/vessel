@@ -15,9 +15,10 @@
 ## Nanobot / Vessel
 - **Nanobot v0.1.4** — rinominato **Vessel** (personalita' sarcastica/informale)
 - Provider API: **Anthropic diretto** (`claude-haiku-4-5-20251001`)
-- MCP Home Assistant: `hass-mcp` via npx → `http://192.168.178.48:8123` (9 tool)
+- Provider alternativo: **DeepSeek V3** via OpenRouter/ModelRun (~43 tok/s, $0.0002/msg)
+- Provider locale: **Gemma 3 4B** via Ollama (~3.5 tok/s, gratis)
 - CLI: `nanobot agent -m 'messaggio'`, `nanobot gateway`
-- Config: `~/.nanobot/config.json`
+- Config: `~/.nanobot/config.json` (NON aggiungere chiavi extra — Pydantic extra=forbid!)
 
 ## Nanobot config — struttura
 - Top-level keys: `agents`, `channels`, `providers`, `gateway`, `tools`
@@ -34,9 +35,14 @@
 
 ## File importanti sul Pi
 ```
-~/.nanobot/config.json                    <- config principale
-~/.nanobot/dashboard_pin.hash             <- PIN hash SHA-256 (Fase 4)
+~/.nanobot/config.json                    <- config principale (NO chiavi extra!)
+~/.nanobot/bridge.json                    <- config Claude Bridge (url, token)
+~/.nanobot/openrouter.json                <- config OpenRouter (apiKey, model, providerOrder)
+~/.nanobot/dashboard_pin.hash             <- PIN hash pbkdf2 con salt (Fase 9)
 ~/.nanobot/usage_dashboard.jsonl          <- log token (creato dalla dashboard)
+~/.nanobot/workspace/SOUL.md              <- system prompt gateway (con amici + Google Tools)
+~/.nanobot/workspace/FRIENDS.md           <- profili amici (usato dalla dashboard)
+~/.nanobot/workspace/USER.md              <- email e preferenze utente
 ~/.nanobot/workspace/memory/MEMORY.md     <- memoria Vessel
 ~/.nanobot/workspace/memory/HISTORY.md    <- storico conversazioni
 ~/.nanobot/workspace/memory/QUICKREF.md   <- quick reference
@@ -48,7 +54,6 @@
 
 ## Rete e accesso esterno
 - Cloudflare Tunnel: `nanobot.psychosoci5l.com` → porta 8090 (Cloudflare Access, OTP)
-- Home Assistant: `http://192.168.178.48:8123`
 - Dashboard locale: `http://picoclaw.local:8090`
 
 ## Discord e automazioni
@@ -65,7 +70,7 @@
 
 ### Layout (dall'alto)
 1. Header sticky: icona, "VESSEL", hostname, health dot, version, clock, WS dot
-2. Chat con Vessel (full width, primo widget) — API diretta con token logging
+2. Chat con Vessel (full width, primo widget) — 3 provider: Cloud/Locale/DeepSeek, tutti streaming
 3. Row 2 colonne: Pi Stats (con chart CPU/temp + reboot btn) | Sessioni tmux
 4. Morning Briefing (on-demand) — ultimo briefing + genera nuovo + cron 7:30
 5. Crypto (on-demand) — BTC/ETH prezzi USD/EUR + 24h change via CoinGecko
@@ -98,11 +103,11 @@
 - **Lavoro diretto su Pi**: SSH per debug, ispezione config, log
 - **NOTA SSH + Bash tool**: stdout non catturato direttamente, redirect su file + Read tool
 
-## Stato attuale (2026-02-20)
-- **Fase 1**: COMPLETATA — stabilizzazione, lifespan, favicon, review codice
-- **Fase 2**: COMPLETATA — uptime formattato, health dot, chart CPU/temp, PWA, token widget
-- **Fase 3**: COMPLETATA — reboot, briefing, crypto, cron scheduler, logs strutturati
-- **Fase 4**: COMPLETATA — PIN auth, WS auth, file whitelist, shell injection fix, rate limiting, security headers
-- **Fase 4.5**: COMPLETATA — widget collassabili, icona Vessel, pass estetico, code review (6 fix + 4 miglioramenti)
-- **Prossimo**: Fase 5 (Routine e automazioni) — briefing+calendario, reminder task, backup cloud
-- **Poi**: Fase 6 (Pubblicazione) — pulizia open source, repo GitHub
+## Stato attuale (2026-02-21)
+- **Fase 1–4.5**: COMPLETATE
+- **Fase 5**: COMPLETATA — briefing+calendario, Ollama integrato
+- **Fase 6**: COMPLETATA — repo pubblica `vessel-pi`, README, LICENSE
+- **Fase 7**: COMPLETATA — Remote Claude Code (bridge Windows)
+- **Fase 8**: COMPLETATA — Ralph Loop (iterazione automatica con supervisore Ollama)
+- **Fase 9**: IN CORSO — Hardening (XSS fix, PIN pbkdf2, streaming cloud, history cloud, DeepSeek V3)
+- **Prossimo**: performance (async broadcaster, persistenza sessioni), notifiche push, temi

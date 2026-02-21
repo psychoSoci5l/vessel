@@ -36,7 +36,21 @@ OLLAMA_BASE = "http://127.0.0.1:11434"
 OLLAMA_MODEL = "gemma3:4b"
 OLLAMA_TIMEOUT = 120  # secondi (Gemma ~3.5 tok/s, serve margine)
 OLLAMA_KEEP_ALIVE = "60m"  # tiene il modello in RAM per 60 min (evita cold start)
-OLLAMA_SYSTEM = "Sei Vessel, un assistente conciso che gira su Raspberry Pi 5 di psychoSocial (Filippo). Rispondi in italiano, breve e diretto.\n\nHai un elenco degli amici di Filippo. Quando qualcuno si presenta (es. 'sono Giulia', 'mi chiamo Stefano'), cerca il nome nell'elenco e rispondi in modo CALDO e NATURALE: presentati, saluta la persona per nome, mostra che la conosci citando i suoi interessi in modo discorsivo (non come elenco!), e proponi di chiacchierare su uno di quei temi. Esempio di tono giusto: 'Ciao Giulia! Sono Vessel, l'assistente di Filippo. So che sei una grande appassionata di fotografia e metal, e pure sviluppatrice Java, mica male! Come va la ricerca della casa? Posso aiutarti con qualcosa?'. Se il nome non è nell'elenco, presentati e chiedi chi sono con curiosità. IMPORTANTE: se ci sono PIU persone con lo stesso nome nell'elenco, NON tirare a indovinare. Chiedi gentilmente quale sono, ad esempio: 'Ciao Stefano! Filippo conosce due Stefano — sei Santaiti o Rodella?'. Ricorda: gli amici sono di FILIPPO, non tuoi. Parla sempre in terza persona quando ti riferisci a loro (es. 'Filippo conosce...', 'So che sei amico di Filippo')."
+OLLAMA_SYSTEM = (
+    "Sei Vessel, assistente personale di psychoSocial (Filippo). "
+    "Giri su Raspberry Pi 5. Rispondi in italiano, breve e diretto. "
+    "Puoi aiutare con qualsiasi cosa: domande generali, coding, consigli, "
+    "curiosità, brainstorming, organizzazione — sei un assistente tuttofare.\n\n"
+    "## Riconoscimento amici\n"
+    "Hai un elenco degli amici di Filippo. Quando qualcuno si presenta "
+    "(es. 'sono Giulia', 'mi chiamo Stefano'), cerca il nome nell'elenco e "
+    "rispondi in modo caldo e naturale: presentati, saluta per nome, cita i "
+    "loro interessi in modo discorsivo (non come elenco!). Se il nome non è "
+    "nell'elenco, presentati e chiedi chi sono. Se ci sono PIÙ persone con lo "
+    "stesso nome, chiedi quale sono (es. 'Filippo conosce due Stefano — sei "
+    "Santaiti o Rodella?'). Gli amici sono di Filippo, non tuoi — parla in "
+    "terza persona (es. 'Filippo conosce...', 'So che sei amico di Filippo')."
+)
 
 FRIENDS_FILE = Path.home() / ".nanobot" / "workspace" / "FRIENDS.md"
 
@@ -50,9 +64,16 @@ def _load_friends() -> str:
     return ""
 
 # ─── Claude Bridge (Remote Code) ────────────────────────────────────────────
-# Config letta da ~/.nanobot/config.json chiave "bridge" (url, token)
+# Config letta da ~/.nanobot/bridge.json (url, token)
 # oppure override via env var CLAUDE_BRIDGE_URL / CLAUDE_BRIDGE_TOKEN
 def _get_bridge_config() -> dict:
+    # Prima prova file dedicato, poi fallback su config.json per retrocompatibilità
+    bridge_file = Path.home() / ".nanobot" / "bridge.json"
+    if bridge_file.exists():
+        try:
+            return json.loads(bridge_file.read_text())
+        except Exception:
+            pass
     cfg_file = Path.home() / ".nanobot" / "config.json"
     if cfg_file.exists():
         try:
@@ -66,6 +87,22 @@ CLAUDE_BRIDGE_URL = os.environ.get("CLAUDE_BRIDGE_URL", _bridge_cfg.get("url", "
 CLAUDE_BRIDGE_TOKEN = os.environ.get("CLAUDE_BRIDGE_TOKEN", _bridge_cfg.get("token", ""))
 CLAUDE_TASKS_LOG = Path.home() / ".nanobot" / "claude_tasks.jsonl"
 
+# ─── OpenRouter (DeepSeek V3) ────────────────────────────────────────────────
+def _get_openrouter_config() -> dict:
+    or_file = Path.home() / ".nanobot" / "openrouter.json"
+    if or_file.exists():
+        try:
+            return json.loads(or_file.read_text())
+        except Exception:
+            pass
+    return {}
+
+_or_cfg = _get_openrouter_config()
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", _or_cfg.get("apiKey", ""))
+OPENROUTER_MODEL = _or_cfg.get("model", "deepseek/deepseek-chat-v3-0324")
+OPENROUTER_PROVIDER_ORDER = _or_cfg.get("providerOrder", ["ModelRun", "DeepInfra"])
+OPENROUTER_LABEL = _or_cfg.get("label", "DeepSeek V3")
+
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 PIN_FILE = Path.home() / ".nanobot" / "dashboard_pin.hash"
 SESSIONS: dict[str, float] = {}
@@ -74,14 +111,26 @@ AUTH_ATTEMPTS: dict[str, list[float]] = {}
 MAX_AUTH_ATTEMPTS = 5
 AUTH_LOCKOUT_SECONDS = 300  # 5 minuti
 
-def _hash_pin(pin: str) -> str:
-    return hashlib.sha256(pin.encode()).hexdigest()
+def _hash_pin(pin: str, salt: bytes | None = None) -> str:
+    if salt is None:
+        salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pin.encode(), salt, 600_000)
+    return salt.hex() + ":" + dk.hex()
 
 def _verify_pin(pin: str) -> bool:
     if not PIN_FILE.exists():
         return False
     stored = PIN_FILE.read_text().strip()
-    return secrets.compare_digest(_hash_pin(pin), stored)
+    if ":" in stored:
+        salt_hex, _ = stored.split(":", 1)
+        salt = bytes.fromhex(salt_hex)
+        return secrets.compare_digest(_hash_pin(pin, salt), stored)
+    # Retrocompatibilità: vecchio hash SHA-256 puro (64 hex chars)
+    old_hash = hashlib.sha256(pin.encode()).hexdigest()
+    if secrets.compare_digest(old_hash, stored):
+        _set_pin(pin)  # Auto-migra a pbkdf2
+        return True
+    return False
 
 def _set_pin(pin: str):
     PIN_FILE.write_text(_hash_pin(pin))
@@ -625,51 +674,228 @@ async def chat_with_ollama_stream(websocket: WebSocket, message: str, chat_histo
     await websocket.send_json({"type": "chat_done", "provider": "ollama"})
     log_token_usage(0, eval_count, OLLAMA_MODEL, provider="ollama", response_time_ms=elapsed)
 
-def chat_with_nanobot(message: str) -> str:
-    """Chat via API Anthropic diretta (con logging token) oppure fallback CLI."""
+async def chat_with_anthropic_stream(websocket: WebSocket, message: str, chat_history: list):
+    """Chat con Anthropic API via streaming SSE con history."""
+    queue: asyncio.Queue = asyncio.Queue()
+    start_time = time.time()
+
     cfg = _get_nanobot_config()
     api_key = cfg.get("providers", {}).get("anthropic", {}).get("apiKey", "")
+    if not api_key:
+        await websocket.send_json({"type": "chat_chunk", "text": "(nessuna API key Anthropic configurata)"})
+        await websocket.send_json({"type": "chat_done", "provider": "anthropic"})
+        return
+
     raw_model = cfg.get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
     model = _resolve_model(raw_model)
-    system_prompt = cfg.get("system_prompt", "Sei Vessel, un assistente sarcastico e informale.")
+    system_prompt = cfg.get("system_prompt", OLLAMA_SYSTEM)
     friends_ctx = _load_friends()
     if friends_ctx:
         system_prompt = system_prompt + "\n\n## Contesto Amici\n" + friends_ctx
-    if api_key:
+
+    chat_history.append({"role": "user", "content": message})
+    trimmed = chat_history[-20:]
+
+    def _stream_worker():
+        input_tokens = 0
+        output_tokens = 0
         try:
+            conn = http.client.HTTPSConnection("api.anthropic.com", timeout=60)
             payload = json.dumps({
                 "model": model,
                 "max_tokens": 1024,
                 "system": system_prompt,
-                "messages": [{"role": "user", "content": message}]
+                "messages": trimmed,
+                "stream": True,
             })
-            req = urllib.request.Request(
-                "https://api.anthropic.com/v1/messages",
-                data=payload.encode(),
-                headers={
-                    "content-type": "application/json",
-                    "anthropic-version": "2023-06-01",
-                    "x-api-key": api_key,
-                },
-            )
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read())
-                reply = ""
-                for block in data.get("content", []):
-                    if block.get("type") == "text":
-                        reply += block["text"]
-                # Log token usage
-                usage = data.get("usage", {})
-                log_token_usage(
-                    usage.get("input_tokens", 0),
-                    usage.get("output_tokens", 0),
-                    data.get("model", model),
-                    provider="anthropic",
-                )
-                return reply.strip() or "(nessuna risposta)"
+            conn.request("POST", "/v1/messages", body=payload, headers={
+                "Content-Type": "application/json",
+                "anthropic-version": "2023-06-01",
+                "x-api-key": api_key,
+            })
+            resp = conn.getresponse()
+            if resp.status != 200:
+                body = resp.read().decode("utf-8", errors="replace")
+                queue.put_nowait(("error", f"HTTP {resp.status}: {body[:200]}"))
+                return
+            buf = ""
+            while True:
+                raw = resp.read(512)
+                if not raw:
+                    break
+                buf += raw.decode("utf-8", errors="replace")
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if not line or line.startswith("event:"):
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        dtype = data.get("type", "")
+                        if dtype == "content_block_delta":
+                            delta = data.get("delta", {})
+                            if delta.get("type") == "text_delta":
+                                text = delta.get("text", "")
+                                if text:
+                                    queue.put_nowait(("chunk", text))
+                        elif dtype == "message_start":
+                            usage = data.get("message", {}).get("usage", {})
+                            input_tokens = usage.get("input_tokens", 0)
+                        elif dtype == "message_delta":
+                            usage = data.get("usage", {})
+                            output_tokens = usage.get("output_tokens", 0)
+            conn.close()
         except Exception as e:
-            return f"(errore API: {e})"
-    # Fallback: CLI nanobot (senza shell per prevenire injection)
+            queue.put_nowait(("error", str(e)))
+        finally:
+            queue.put_nowait(("meta", {"input_tokens": input_tokens, "output_tokens": output_tokens, "model": model}))
+            queue.put_nowait(("end", None))
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_worker)
+
+    full_reply = ""
+    token_meta = {}
+
+    while True:
+        kind, val = await queue.get()
+        if kind == "chunk":
+            full_reply += val
+            await websocket.send_json({"type": "chat_chunk", "text": val})
+        elif kind == "meta":
+            token_meta = val
+        elif kind == "error":
+            if not full_reply:
+                await websocket.send_json({"type": "chat_chunk", "text": f"(errore API: {val})"})
+        elif kind == "end":
+            break
+
+    chat_history.append({"role": "assistant", "content": full_reply})
+    elapsed = int((time.time() - start_time) * 1000)
+    await websocket.send_json({"type": "chat_done", "provider": "anthropic"})
+    log_token_usage(
+        token_meta.get("input_tokens", 0),
+        token_meta.get("output_tokens", 0),
+        token_meta.get("model", model),
+        provider="anthropic",
+        response_time_ms=elapsed,
+    )
+
+async def chat_with_openrouter_stream(websocket: WebSocket, message: str, chat_history: list):
+    """Chat con DeepSeek V3 via OpenRouter streaming (OpenAI-compatible SSE)."""
+    queue: asyncio.Queue = asyncio.Queue()
+    start_time = time.time()
+
+    if not OPENROUTER_API_KEY:
+        await websocket.send_json({"type": "chat_chunk", "text": "(nessuna API key OpenRouter configurata)"})
+        await websocket.send_json({"type": "chat_done", "provider": "openrouter"})
+        return
+
+    friends_ctx = _load_friends()
+    system_prompt = OLLAMA_SYSTEM
+    if friends_ctx:
+        system_prompt = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
+
+    chat_history.append({"role": "user", "content": message})
+    trimmed = chat_history[-20:]
+
+    def _stream_worker():
+        input_tokens = 0
+        output_tokens = 0
+        try:
+            conn = http.client.HTTPSConnection("openrouter.ai", timeout=60)
+            payload = json.dumps({
+                "model": OPENROUTER_MODEL,
+                "messages": [{"role": "system", "content": system_prompt}] + trimmed,
+                "max_tokens": 1024,
+                "stream": True,
+                "provider": {"order": OPENROUTER_PROVIDER_ORDER},
+            })
+            conn.request("POST", "/api/v1/chat/completions", body=payload, headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "HTTP-Referer": "https://picoclaw.local",
+                "X-Title": "Vessel Dashboard",
+            })
+            resp = conn.getresponse()
+            if resp.status != 200:
+                body = resp.read().decode("utf-8", errors="replace")
+                queue.put_nowait(("error", f"HTTP {resp.status}: {body[:200]}"))
+                return
+            buf = ""
+            while True:
+                raw = resp.read(512)
+                if not raw:
+                    break
+                buf += raw.decode("utf-8", errors="replace")
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if not line or line.startswith("event:") or line.startswith(":"):
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = data.get("choices", [])
+                        if choices:
+                            delta = choices[0].get("delta", {})
+                            text = delta.get("content", "")
+                            if text:
+                                queue.put_nowait(("chunk", text))
+                        usage = data.get("usage")
+                        if usage:
+                            input_tokens = usage.get("prompt_tokens", 0)
+                            output_tokens = usage.get("completion_tokens", 0)
+            conn.close()
+        except Exception as e:
+            queue.put_nowait(("error", str(e)))
+        finally:
+            queue.put_nowait(("meta", {"input_tokens": input_tokens, "output_tokens": output_tokens}))
+            queue.put_nowait(("end", None))
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _stream_worker)
+
+    full_reply = ""
+    token_meta = {}
+
+    while True:
+        kind, val = await queue.get()
+        if kind == "chunk":
+            full_reply += val
+            await websocket.send_json({"type": "chat_chunk", "text": val})
+        elif kind == "meta":
+            token_meta = val
+        elif kind == "error":
+            if not full_reply:
+                await websocket.send_json({"type": "chat_chunk", "text": f"(errore OpenRouter: {val})"})
+        elif kind == "end":
+            break
+
+    chat_history.append({"role": "assistant", "content": full_reply})
+    elapsed = int((time.time() - start_time) * 1000)
+    await websocket.send_json({"type": "chat_done", "provider": "openrouter"})
+    log_token_usage(
+        token_meta.get("input_tokens", 0),
+        token_meta.get("output_tokens", 0),
+        OPENROUTER_MODEL,
+        provider="openrouter",
+        response_time_ms=elapsed,
+    )
+
+def chat_with_nanobot(message: str) -> str:
+    """Fallback: CLI nanobot (senza shell per prevenire injection)."""
     try:
         r = subprocess.run(
             ["nanobot", "agent", "-m", message],
@@ -864,6 +1090,8 @@ async def websocket_endpoint(websocket: WebSocket):
         return
     await manager.connect(websocket)
     ollama_chat_history: list[dict] = []
+    cloud_chat_history: list[dict] = []
+    deepseek_chat_history: list[dict] = []
     await websocket.send_json({
         "type": "init",
         "data": {
@@ -890,12 +1118,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     await websocket.send_json({"type": "chat_thinking"})
                     if provider == "local":
                         await chat_with_ollama_stream(websocket, text, ollama_chat_history)
+                    elif provider == "deepseek":
+                        await chat_with_openrouter_stream(websocket, text, deepseek_chat_history)
                     else:
-                        reply = await bg(chat_with_nanobot, text)
-                        await websocket.send_json({"type": "chat_reply", "text": reply})
+                        await chat_with_anthropic_stream(websocket, text, cloud_chat_history)
 
             elif action == "clear_chat":
                 ollama_chat_history.clear()
+                cloud_chat_history.clear()
+                deepseek_chat_history.clear()
 
             elif action == "check_ollama":
                 alive = await bg(check_ollama_health)
@@ -1264,6 +1495,7 @@ HTML = f"""<!DOCTYPE html>
   }}
   .dot-cloud {{ background: #ffb300; box-shadow: 0 0 4px #ffb300; }}
   .dot-local {{ background: #00ffcc; box-shadow: 0 0 4px #00ffcc; }}
+  .dot-deepseek {{ background: #6c5ce7; box-shadow: 0 0 4px #6c5ce7; }}
 
   /* ── Stats ── */
   .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }}
@@ -1500,6 +1732,7 @@ HTML = f"""<!DOCTYPE html>
         <div class="model-switch">
           <button class="model-btn" id="btn-cloud" onclick="switchModel('cloud')">☁ Cloud</button>
           <button class="model-btn active" id="btn-local" onclick="switchModel('local')">🏠 Locale</button>
+          <button class="model-btn" id="btn-deepseek" onclick="switchModel('deepseek')">⚡ DeepSeek</button>
         </div>
         <button class="btn-ghost" onclick="clearChat()">🗑 Pulisci</button>
       </div>
@@ -1723,6 +1956,11 @@ HTML = f"""<!DOCTYPE html>
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
   }}
 
+  function esc(s) {{
+    if (typeof s !== 'string') return s == null ? '' : String(s);
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }}
+
   function handleMessage(msg) {{
     if (msg.type === 'init') {{
       updateStats(msg.data.pi);
@@ -1866,8 +2104,8 @@ HTML = f"""<!DOCTYPE html>
     }}
     el.innerHTML = sessions.map(s => `
       <div class="session-item">
-        <div class="session-name"><div class="session-dot"></div><code>${{s.name}}</code></div>
-        <button class="btn-red" onclick="killSession('${{s.name}}')">✕ Kill</button>
+        <div class="session-name"><div class="session-dot"></div><code>${{esc(s.name)}}</code></div>
+        <button class="btn-red" onclick="killSession('${{esc(s.name)}}')">✕ Kill</button>
       </div>`).join('');
   }}
 
@@ -1879,11 +2117,15 @@ HTML = f"""<!DOCTYPE html>
     chatProvider = provider;
     document.getElementById('btn-cloud').classList.toggle('active', provider === 'cloud');
     document.getElementById('btn-local').classList.toggle('active', provider === 'local');
+    document.getElementById('btn-deepseek').classList.toggle('active', provider === 'deepseek');
     const dot = document.getElementById('model-dot');
     const label = document.getElementById('model-label');
     if (provider === 'local') {{
       dot.className = 'dot dot-local';
       label.textContent = 'Gemma 3 4B (locale)';
+    }} else if (provider === 'deepseek') {{
+      dot.className = 'dot dot-deepseek';
+      label.textContent = 'DeepSeek V3 (OpenRouter)';
     }} else {{
       dot.className = 'dot dot-cloud';
       label.textContent = 'Haiku (cloud)';
@@ -1976,7 +2218,7 @@ HTML = f"""<!DOCTYPE html>
   function renderCrypto(data) {{
     const el = document.getElementById('crypto-body');
     if (data.error && !data.btc) {{
-      el.innerHTML = `<div class="no-items">// errore: ${{data.error}}</div>
+      el.innerHTML = `<div class="no-items">// errore: ${{esc(data.error)}}</div>
         <div style="margin-top:8px;text-align:center;"><button class="btn-ghost" onclick="loadCrypto()">↻ Riprova</button></div>`;
       return;
     }}
@@ -2014,18 +2256,18 @@ HTML = f"""<!DOCTYPE html>
     const calTomorrow = b.calendar_tomorrow || [];
     const calTodayHtml = calToday.length > 0
       ? calToday.map(e => {{
-          const loc = e.location ? ` <span style="color:var(--muted)">@ ${{e.location}}</span>` : '';
-          return `<div style="margin:3px 0;font-size:11px;"><span style="color:var(--cyan);font-weight:600">${{e.time}}</span> <span style="color:var(--text2)">${{e.summary}}</span>${{loc}}</div>`;
+          const loc = e.location ? ` <span style="color:var(--muted)">@ ${{esc(e.location)}}</span>` : '';
+          return `<div style="margin:3px 0;font-size:11px;"><span style="color:var(--cyan);font-weight:600">${{esc(e.time)}}</span> <span style="color:var(--text2)">${{esc(e.summary)}}</span>${{loc}}</div>`;
         }}).join('')
       : '<div style="font-size:11px;color:var(--muted);font-style:italic">Nessun evento oggi</div>';
     const calTomorrowHtml = calTomorrow.length > 0
       ? `<div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px">📅 DOMANI (${{calTomorrow.length}} eventi)</div>` +
         calTomorrow.map(e =>
-          `<div style="margin:2px 0;font-size:10px;color:var(--text2)"><span style="color:var(--cyan)">${{e.time}}</span> ${{e.summary}}</div>`
+          `<div style="margin:2px 0;font-size:10px;color:var(--text2)"><span style="color:var(--cyan)">${{esc(e.time)}}</span> ${{esc(e.summary)}}</div>`
         ).join('')
       : '';
     const stories = (b.stories || []).map((s, i) =>
-      `<div style="margin:4px 0;font-size:11px;color:var(--text2);">${{i+1}}. ${{s.title}}</div>`
+      `<div style="margin:4px 0;font-size:11px;color:var(--text2);">${{i+1}}. ${{esc(s.title)}}</div>`
     ).join('');
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
@@ -2033,7 +2275,7 @@ HTML = f"""<!DOCTYPE html>
         <div style="font-size:10px;color:var(--muted);">PROSSIMO: <span style="color:var(--cyan)">${{data.next_run || '07:30'}}</span></div>
       </div>
       <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:8px;">
-        <div style="font-size:11px;color:var(--amber);margin-bottom:8px;">🌤 ${{weather}}</div>
+        <div style="font-size:11px;color:var(--amber);margin-bottom:8px;">🌤 ${{esc(weather)}}</div>
         <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">📅 CALENDARIO OGGI</div>
         ${{calTodayHtml}}
         ${{calTomorrowHtml}}
@@ -2055,10 +2297,10 @@ HTML = f"""<!DOCTYPE html>
         <div class="token-item"><div class="token-label">Chiamate</div><div class="token-value">${{data.total_calls||0}}</div></div>
       </div>
       <div style="margin-bottom:6px;font-size:10px;color:var(--muted);">
-        MODELLO: <span style="color:var(--cyan)">${{data.last_model||'N/A'}}</span>
+        MODELLO: <span style="color:var(--cyan)">${{esc(data.last_model||'N/A')}}</span>
         &nbsp;·&nbsp; FONTE: <span style="color:var(--text2)">${{src}}</span>
       </div>
-      <div class="mono-block" style="max-height:100px;">${{(data.log_lines||[]).join('\\n')||'// nessun log disponibile'}}</div>
+      <div class="mono-block" style="max-height:100px;">${{(data.log_lines||[]).map(l=>esc(l)).join('\\n')||'// nessun log disponibile'}}</div>
       <div style="margin-top:8px;"><button class="btn-ghost" onclick="loadTokens()">↻ Aggiorna</button></div>`;
   }}
 
@@ -2066,7 +2308,7 @@ HTML = f"""<!DOCTYPE html>
     const el = document.getElementById('logs-body');
     // data può essere stringa (vecchio formato) o oggetto {{lines, total, filtered}}
     if (typeof data === 'string') {{
-      el.innerHTML = `<div class="mono-block" style="max-height:200px;">${{data||'(nessun log)'}}</div>
+      el.innerHTML = `<div class="mono-block" style="max-height:200px;">${{esc(data)||'(nessun log)'}}</div>
         <div style="margin-top:8px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button></div>`;
       return;
     }}
@@ -2238,10 +2480,10 @@ HTML = f"""<!DOCTYPE html>
         const dur = t.duration_ms ? (t.duration_ms/1000).toFixed(1)+'s' : '';
         const ts = (t.ts || '').replace('T', ' ');
         return `<div class="claude-task-item">
-          <div class="claude-task-prompt" title="${{t.prompt}}">${{t.prompt}}</div>
+          <div class="claude-task-prompt" title="${{esc(t.prompt)}}">${{esc(t.prompt)}}</div>
           <div class="claude-task-meta">
-            <span class="claude-task-status ${{t.status}}">${{t.status}}</span>
-            <span>${{ts}}</span>
+            <span class="claude-task-status ${{esc(t.status)}}">${{esc(t.status)}}</span>
+            <span>${{esc(ts)}}</span>
             <span>${{dur}}</span>
           </div>
         </div>`;
@@ -2406,23 +2648,16 @@ LOGIN_HTML = f"""<!DOCTYPE html>
   .numpad-btn.fn {{ font-size: 13px; color: var(--muted); }}
   .numpad-btn.fn:active {{ color: var(--green); }}
   .numpad-bottom {{
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-    width: 240px; margin: 10px auto 0;
+    width: 240px; margin: 12px auto 0;
   }}
   .numpad-submit {{
-    font-family: var(--font); font-size: 18px; font-weight: 600;
-    padding: 14px 0; border: 1px solid var(--green3); border-radius: 6px;
-    background: var(--green-dim); color: var(--green2); cursor: pointer;
+    font-family: var(--font); font-size: 13px; font-weight: 600; letter-spacing: 2px;
+    width: 100%; padding: 14px 0; border: 1px solid var(--green3); border-radius: 6px;
+    background: var(--green-dim); color: var(--green); cursor: pointer;
     transition: all .15s; -webkit-tap-highlight-color: transparent;
-    user-select: none;
+    user-select: none; text-transform: uppercase;
   }}
-  .numpad-submit:active {{ background: #004422; color: var(--green); }}
-  .numpad-lock {{
-    font-family: var(--font); font-size: 18px;
-    padding: 14px 0; border: 1px solid var(--border2); border-radius: 6px;
-    background: var(--bg2); color: var(--muted); cursor: default;
-    display: flex; align-items: center; justify-content: center;
-  }}
+  .numpad-submit:active {{ background: #004422; }}
   #login-error {{
     margin-top: 12px; font-size: 11px; color: var(--red); min-height: 16px;
   }}
@@ -2436,7 +2671,7 @@ LOGIN_HTML = f"""<!DOCTYPE html>
   <div class="login-title">VESSEL</div>
   <div class="login-sub" id="login-sub">Inserisci PIN</div>
   <input id="pin-input" type="password" inputmode="none" pattern="[0-9]*"
-    maxlength="6" autocomplete="off" readonly>
+    maxlength="4" autocomplete="off" readonly>
   <div class="pin-display" id="pin-display"></div>
   <div class="pin-counter" id="pin-counter">0 / 6</div>
   <div class="numpad">
@@ -2454,13 +2689,12 @@ LOGIN_HTML = f"""<!DOCTYPE html>
     <button class="numpad-btn fn" onclick="numpadDel()">DEL</button>
   </div>
   <div class="numpad-bottom">
-    <div class="numpad-lock">&#x1f512;</div>
-    <button class="numpad-submit" onclick="doLogin()">&#x279c;</button>
+    <button class="numpad-submit" onclick="doLogin()">SBLOCCA</button>
   </div>
   <div id="login-error"></div>
 </div>
 <script>
-const MAX_PIN = 6;
+const MAX_PIN = 4;
 let pinValue = '';
 
 function updatePinDisplay() {{
@@ -2472,7 +2706,7 @@ function updatePinDisplay() {{
     dot.className = 'pin-dot' + (i < pinValue.length ? ' filled' : '');
     display.appendChild(dot);
   }}
-  counter.textContent = pinValue.length + ' / ' + MAX_PIN;
+  counter.textContent = '';
   document.getElementById('pin-input').value = pinValue;
 }}
 
@@ -2480,6 +2714,7 @@ function numpadPress(n) {{
   if (pinValue.length >= MAX_PIN) return;
   pinValue += n;
   updatePinDisplay();
+  if (pinValue.length === MAX_PIN) setTimeout(doLogin, 150);
 }}
 
 function numpadDel() {{
@@ -2500,7 +2735,7 @@ updatePinDisplay();
   const d = await r.json();
   if (d.authenticated) {{ window.location.href = '/'; return; }}
   if (d.setup) {{
-    document.getElementById('login-sub').textContent = 'Imposta il PIN (4-6 cifre)';
+    document.getElementById('login-sub').textContent = 'Imposta il PIN (4 cifre)';
   }}
 }})();
 
@@ -2548,8 +2783,8 @@ async def auth_login(request: Request):
     pin = body.get("pin", "")
     # Setup iniziale
     if not PIN_FILE.exists():
-        if len(pin) < 4 or len(pin) > 6 or not pin.isdigit():
-            return JSONResponse({"error": "Il PIN deve essere 4-6 cifre"}, status_code=400)
+        if len(pin) != 4 or not pin.isdigit():
+            return JSONResponse({"error": "Il PIN deve essere 4 cifre"}, status_code=400)
         _set_pin(pin)
         token = _create_session()
         resp = JSONResponse({"ok": True, "setup": True})
