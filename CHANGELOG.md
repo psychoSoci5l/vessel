@@ -5,6 +5,51 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-21] UX Redesign: Mobile-First 3-Zone Layout + Desktop Two-Column
+
+### Architettura nuova — 3 zone
+Dashboard ridisegnata da desktop-first (widget impilati, chat 260px) a mobile-first app layout:
+- **Status Bar** compatta (sticky top): logo + health dot + temp/CPU/uptime inline, espandibile in stats grid + chart + tmux + reboot
+- **Chat Area** principale (flex:1): occupa tutto lo spazio disponibile, non più 260px fissi
+- **Tab Bar** (fixed bottom): 7 widget accessibili via drawer (mobile) o pannello laterale (desktop)
+
+### Aggiunto
+- **Desktop two-column layout** (>=768px): chat a sinistra (flex:1) + widget panel laterale (380px), il drawer diventa pannello statico
+- **Icone tab bar monochrome**: simboli Unicode `▤ ₿ ¤ ≡ ◇ >_ ◎` che ereditano `color` CSS (no emoji colorate)
+- **Dot indicator** sotto tab attivo (::after 4px green dot)
+- **Toggle drawer**: cliccare lo stesso tab chiude il pannello
+- **Model buttons con label**: "☁ Cloud", "⌂ Local", "⚡ Deep" — font 13-14px, min-height 34-36px
+- **Status bar affordance**: bordo visibile, toggle ▼ a 14px verde, label "STATS", classe `.expanded` con bordo green3
+- **Swipe-down to close**: touch handler sul drawer per gesto nativo mobile
+- **Chat header snello su mobile**: bottone fullscreen ⛶ nascosto (la chat È già fullscreen), titolo ridotto
+- **Drawer bottom sheet** (mobile): pannello con handle, overlay semi-trasparente, max-height 75vh
+- **App-content wrapper**: div flessibile che contiene chat + drawer per layout responsive
+- **Login PIN ingrandita**: box 380px (da 310), numpad 300px (da 240), bottoni 24px/58px, `position:fixed` anti-resize iOS
+
+### Modificato
+- `#chat-messages` da `height: 260px` a `flex: 1; min-height: 0` — si adatta dinamicamente
+- `.chat-input-row` aggiunto `flex-shrink: 0` — non si comprime mai
+- Tab bar `height: calc(56px + env(safe-area-inset-bottom))` — fix overlap PWA su iPhone (border-box mangiava padding)
+- Widget rendering: da card collassabili a drawer-widget divs (stessi ID, stesse render functions)
+- Rimossi tutti i `expandCard()` da `handleMessage()` — i widget si aprono via drawer/panel
+- Media query mobile da `max-width: 600px` a `max-width: 767px` per coerenza con breakpoint desktop
+- DRAWER_CFG titoli: da emoji a simboli Unicode coerenti col tema
+
+### CSS chiave
+- `.app-layout` flex column 100dvh
+- `.app-content` flex row (desktop) / column (mobile)
+- `.status-bar` con transition border-color/box-shadow su `.expanded`
+- `.drawer-overlay` → `position: static` su desktop via media query, bottom sheet su mobile
+- `.tab-bar-btn span:first-child` font 16px JetBrains Mono (non emoji)
+
+### Note tecniche
+- Nessun file separato aggiunto — tutto resta inline
+- `env(safe-area-inset-bottom)` con `box-sizing: border-box` richiede `height: calc()` per non ridurre lo spazio contenuto
+- Simboli Unicode U+25A4, U+20BF, U+00A4, U+2261, U+25C7, U+25CE ereditano `color` CSS (le emoji no)
+- `100dvh` in iOS PWA funziona correttamente per viewport dinamico
+
+---
+
 ## [2026-02-21] Fase 9 (parziale): Hardening + Terzo Cervello DeepSeek V3
 
 ### Aggiunto

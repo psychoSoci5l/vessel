@@ -1317,6 +1317,7 @@ HTML = f"""<!DOCTYPE html>
     height: 100%;
     overscroll-behavior: none;
     -webkit-overflow-scrolling: touch;
+    overflow: hidden;
   }}
 
   body {{
@@ -1330,36 +1331,63 @@ HTML = f"""<!DOCTYPE html>
     );
   }}
 
-  /* ── Header ── */
-  header {{
-    background: var(--card);
-    border-bottom: 1px solid var(--border2);
-    padding: 10px 16px;
-    padding-top: calc(10px + var(--safe-top));
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    box-shadow: 0 0 20px rgba(0,255,65,0.06);
+  /* ── App Layout (3-zone mobile-first) ── */
+  .app-layout {{
+    display: flex; flex-direction: column;
+    height: 100%; height: 100dvh;
   }}
-  .logo {{ display: flex; align-items: center; gap: 10px; }}
+
+  /* ── Status Bar ── */
+  .status-bar {{
+    background: var(--card);
+    border: 1px solid var(--border2);
+    border-top: none;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    flex-shrink: 0;
+    margin: 0 0 2px 0;
+    transition: border-color .2s, box-shadow .2s;
+  }}
+  .status-bar.expanded {{
+    border-color: var(--green3);
+    box-shadow: 0 2px 12px rgba(0,255,65,0.1);
+  }}
+  .status-compact {{
+    display: flex; align-items: center;
+    padding: 8px 12px; padding-top: calc(8px + var(--safe-top));
+    gap: 8px; cursor: pointer; user-select: none; -webkit-user-select: none;
+  }}
+  .status-compact .logo-icon {{ width: 24px; height: 24px; }}
+  .status-values {{
+    display: flex; align-items: center; gap: 6px;
+    margin-left: auto; font-size: 11px; flex-wrap: nowrap;
+  }}
+  .sv {{ color: var(--text2); white-space: nowrap; }}
+  .sv-label {{ color: var(--muted); font-size: 9px; margin-right: 2px; }}
+  .status-toggle {{
+    color: var(--green3); font-size: 14px; transition: transform .2s;
+    margin-left: 4px; display: inline-block;
+  }}
+  .status-toggle.open {{ transform: rotate(180deg); }}
+  .status-toggle-label {{
+    font-size: 9px; color: var(--muted); margin-left: 2px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }}
+  .status-detail {{
+    max-height: 0; overflow: hidden; transition: max-height .35s ease;
+  }}
+  .status-detail.open {{ max-height: 600px; }}
+  .status-detail-inner {{
+    padding: 10px 12px; border-top: 1px solid var(--border);
+  }}
+
   .logo-icon {{
-    width: 38px; height: 38px;
-    border-radius: 50%;
-    object-fit: cover;
+    width: 24px; height: 24px;
+    border-radius: 50%; object-fit: cover;
     border: 1px solid var(--green3);
     filter: drop-shadow(0 0 6px rgba(0,255,65,0.4));
   }}
-  .logo h1 {{
-    font-size: 14px; font-weight: 700; letter-spacing: 1px;
-    color: var(--green);
-    text-shadow: 0 0 10px rgba(0,255,65,0.4);
-  }}
-  .logo small {{ color: var(--muted); font-size: 10px; display: block; }}
-  .header-right {{ display: flex; align-items: center; gap: 12px; }}
-  #clock {{ font-size: 12px; color: var(--amber); text-shadow: 0 0 6px rgba(255,176,0,0.4); letter-spacing: 1px; }}
+  #clock {{ font-size: 11px; color: var(--amber); text-shadow: 0 0 6px rgba(255,176,0,0.4); letter-spacing: 1px; white-space: nowrap; }}
   .version-badge {{
     font-size: 10px; background: var(--green-dim); border: 1px solid var(--green3);
     border-radius: 3px; padding: 2px 7px; color: var(--green2);
@@ -1377,32 +1405,133 @@ HTML = f"""<!DOCTYPE html>
   .health-dot.red {{ background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }}
 
   /* ── Layout ── */
-  .main {{
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 14px 14px;
-    padding-bottom: calc(14px + var(--safe-bot));
-    max-width: 900px;
-    margin: 0 auto;
+  .app-content {{
+    flex: 1; display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
   }}
-  .row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
-  @media (max-width: 600px) {{
-    .row {{ grid-template-columns: 1fr; }}
-    .main {{ padding: 10px 10px; gap: 10px; }}
+  .chat-area {{
+    flex: 1; display: flex; flex-direction: column;
+    min-height: 0; overflow: hidden;
+  }}
+  .chat-header {{
+    padding: 9px 13px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--card2); flex-shrink: 0;
+  }}
+  /* ── Desktop: two-column layout ── */
+  @media (min-width: 768px) {{
+    .app-content {{
+      flex-direction: row;
+    }}
+    .chat-area {{
+      border-right: 1px solid var(--border);
+    }}
+    .drawer-overlay {{
+      position: static !important; inset: auto !important;
+      background: none !important; opacity: 1 !important;
+      pointer-events: auto !important; z-index: auto !important;
+      display: none; flex: 0 0 380px;
+      transition: none !important;
+    }}
+    .drawer-overlay.show {{
+      display: flex;
+    }}
+    .drawer {{
+      position: static !important;
+      transform: none !important;
+      max-height: none !important;
+      border-radius: 0 !important;
+      border-top: none !important;
+      border-left: 1px solid var(--border2);
+      height: 100%;
+      flex: 1;
+    }}
+    .drawer-handle {{ display: none; }}
+    .tab-bar {{ height: 44px; }}
+    .tab-bar-btn {{ flex-direction: row; gap: 6px; }}
+    .tab-bar-btn.active::after {{ display: none; }}
+    .tab-bar-btn span:last-child {{ font-size: 10px; }}
+  }}
+  @media (max-width: 767px) {{
     .card-body {{ padding: 10px; }}
-    .card-header {{ padding: 8px 11px; }}
     .stats-grid {{ gap: 5px; }}
     .stat-item {{ padding: 7px 9px; }}
-    #chat-messages {{ height: 220px; padding: 8px 10px; }}
     .chat-input-row {{ padding: 7px 10px; }}
     .widget-placeholder {{ padding: 16px 10px; min-height: 60px; }}
     .mono-block {{ max-height: 150px; }}
     .token-grid {{ grid-template-columns: repeat(3, 1fr); gap: 5px; }}
     button {{ min-height: 44px; }}
+    /* Hide fullscreen button on mobile (chat IS already fullscreen) */
+    .chat-header .btn-ghost[title="Schermo intero"] {{ display: none; }}
+    .chat-header .card-title {{ font-size: 12px; }}
+    /* Model buttons bigger on mobile */
+    .model-btn {{ padding: 8px 10px; font-size: 14px; min-height: 36px; }}
   }}
-  @media (min-width: 1200px) {{
-    .main {{ max-width: 1000px; }}
+
+  /* ── Tab Bar (bottom) ── */
+  .tab-bar {{
+    flex-shrink: 0; height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: var(--card); border-top: 1px solid var(--border2);
+    display: flex; justify-content: space-around; align-items: center;
+    z-index: 100;
+  }}
+  .tab-bar-btn {{
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    color: var(--muted); background: none; border: none;
+    padding: 4px 6px; cursor: pointer; gap: 2px;
+    font-family: var(--font); min-height: 0; transition: color .15s;
+    position: relative;
+  }}
+  .tab-bar-btn span:first-child {{ font-size: 16px; line-height: 1; font-family: var(--font); }}
+  .tab-bar-btn span:last-child {{ font-size: 9px; letter-spacing: 0.5px; }}
+  .tab-bar-btn.active {{ color: var(--green); }}
+  .tab-bar-btn.active::after {{
+    content: ''; display: block;
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--green);
+    position: absolute; bottom: 0;
+  }}
+  .tab-bar-btn:hover {{ color: var(--green2); }}
+
+  /* ── Drawer (slide up) ── */
+  .drawer-overlay {{
+    position: fixed; inset: 0; z-index: 150;
+    background: rgba(0,0,0,0.5);
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }}
+  .drawer-overlay.show {{ opacity: 1; pointer-events: auto; }}
+  .drawer {{
+    position: fixed; bottom: 0; left: 0; right: 0;
+    max-height: 75vh; background: var(--card);
+    border-top: 2px solid var(--green3);
+    border-radius: 12px 12px 0 0;
+    transform: translateY(100%); transition: transform .3s ease;
+    display: flex; flex-direction: column;
+    z-index: 160;
+  }}
+  .drawer-overlay.show .drawer {{ transform: translateY(0); }}
+  .drawer-handle {{
+    width: 36px; height: 4px; background: var(--muted);
+    border-radius: 2px; margin: 8px auto 0; flex-shrink: 0;
+  }}
+  .drawer-header {{
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 16px; border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }}
+  .drawer-body {{
+    overflow-y: auto; flex: 1; min-height: 0;
+    -webkit-overflow-scrolling: touch;
+  }}
+  .drawer-widget {{ display: none; padding: 12px; }}
+  .drawer-widget.active {{ display: block; }}
+  #dw-memoria {{ padding: 0; }}
+  #dw-memoria .tab-row {{ margin: 0; }}
+  #dw-memoria .mem-content {{ padding: 12px; }}
+  /* drawer max-width su mobile landscape / tablet */
+  @media (min-width: 601px) and (max-width: 767px) {{
+    .drawer {{ max-width: 600px; margin: 0 auto; left: 0; right: 0; }}
   }}
 
   /* ── Cards ── */
@@ -1431,18 +1560,16 @@ HTML = f"""<!DOCTYPE html>
   }}
   .card-body {{ padding: 12px; }}
 
-  /* ── Chat (PRIMO WIDGET) ── */
+  /* ── Chat (area principale) ── */
   #chat-messages {{
-    height: 260px;
+    flex: 1;
     overflow-y: auto;
     padding: 10px 12px;
     display: flex; flex-direction: column; gap: 8px;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
-    transition: height .25s ease;
+    min-height: 0;
   }}
-  #chat-messages.expanded {{ height: calc(100vh - 200px); max-height: 700px; }}
-  @media (max-width: 600px) {{ #chat-messages.expanded {{ height: calc(100vh - 180px); max-height: none; }} }}
 
   /* ── Chat fullscreen overlay ── */
   .chat-fs-overlay {{
@@ -1503,6 +1630,7 @@ HTML = f"""<!DOCTYPE html>
   .chat-input-row {{
     display: flex; gap: 8px; padding: 9px 12px;
     border-top: 1px solid var(--border); background: var(--card2);
+    flex-shrink: 0;
   }}
   #chat-input {{
     flex: 1; background: var(--bg2); border: 1px solid var(--border2);
@@ -1521,7 +1649,7 @@ HTML = f"""<!DOCTYPE html>
     overflow: hidden;
   }}
   .model-btn {{
-    padding: 3px 9px; font-size: 10px; cursor: pointer;
+    padding: 6px 10px; font-size: 13px; min-height: 34px; cursor: pointer;
     background: transparent; color: var(--muted); border: none;
     font-family: var(--font); font-weight: 600; letter-spacing: 0.3px;
     transition: all .15s;
@@ -1694,7 +1822,7 @@ HTML = f"""<!DOCTYPE html>
 
   /* ── Toast ── */
   #toast {{
-    position: fixed; bottom: calc(20px + var(--safe-bot)); right: 16px;
+    position: fixed; bottom: calc(70px + var(--safe-bot)); right: 16px;
     background: var(--card); border: 1px solid var(--green3); border-radius: 4px;
     padding: 10px 16px; font-size: 12px; color: var(--green2);
     box-shadow: 0 0 20px rgba(0,255,65,0.15);
@@ -1757,214 +1885,169 @@ HTML = f"""<!DOCTYPE html>
 </style>
 </head>
 <body>
+<div class="app-layout">
 
-<header>
-  <div class="logo">
-    <img class="logo-icon" src="{VESSEL_ICON}" alt="Vessel">
-    <div>
-      <h1>VESSEL</h1>
-      <small id="hostname">picoclaw.local</small>
-    </div>
-  </div>
-  <div class="header-right">
+<!-- ─── Status Bar ─── -->
+<div class="status-bar">
+  <div class="status-compact" onclick="toggleStatusDetail()">
+    <img class="logo-icon" src="{VESSEL_ICON}" alt="V">
+    <span style="font-weight:700;color:var(--green);letter-spacing:1px;font-size:12px;">VESSEL</span>
     <div id="health-dot" class="health-dot" title="Salute Pi"></div>
-    <span id="version-badge" class="version-badge">—</span>
-    <span id="clock">--:--:--</span>
+    <div class="status-values">
+      <span class="sv" id="sb-temp">—</span>
+      <span class="sv" id="sb-cpu">—</span>
+      <span class="sv" id="sb-uptime">—</span>
+    </div>
+    <span id="clock">--:--</span>
     <div id="conn-dot" title="WebSocket"></div>
+    <span class="status-toggle" id="status-toggle">&#x25BE;</span><span class="status-toggle-label">stats</span>
   </div>
-</header>
-
-<div class="main">
-
-  <!-- ① CHAT — primo elemento visibile -->
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">💬 Chat con Vessel</span>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <div class="model-switch">
-          <button class="model-btn" id="btn-cloud" onclick="switchModel('cloud')">☁ Cloud</button>
-          <button class="model-btn active" id="btn-local" onclick="switchModel('local')">🏠 Locale</button>
-          <button class="model-btn" id="btn-deepseek" onclick="switchModel('deepseek')">⚡ DeepSeek</button>
-        </div>
-        <button class="btn-ghost" onclick="clearChat()">🗑 Pulisci</button>
-        <button class="btn-ghost" id="chat-expand-btn" onclick="toggleChatExpand()" title="Espandi chat">⤢</button>
-        <button class="btn-ghost" onclick="openChatFullscreen()" title="Schermo intero">⛶</button>
+  <div class="status-detail" id="status-detail">
+    <div class="status-detail-inner">
+      <div class="stats-grid">
+        <div class="stat-item"><div class="stat-label">CPU</div><div class="stat-value" id="stat-cpu">—</div></div>
+        <div class="stat-item"><div class="stat-label">Temp</div><div class="stat-value" id="stat-temp">—</div></div>
+        <div class="stat-item"><div class="stat-label">RAM</div><div class="stat-value" id="stat-mem">—</div></div>
+        <div class="stat-item"><div class="stat-label">Disco</div><div class="stat-value" id="stat-disk">—</div></div>
+        <div class="stat-item full"><div class="stat-label">Uptime</div><div class="stat-value" id="stat-uptime">—</div></div>
       </div>
-    </div>
-    <div class="model-indicator" id="model-indicator">
-      <span class="dot dot-local" id="model-dot"></span>
-      <span id="model-label">Gemma 3 4B (locale)</span>
-    </div>
-    <div id="chat-messages">
-      <div class="msg msg-bot">Eyyy, sono Vessel 🐈 — dimmi cosa vuoi, psychoSocial.</div>
-    </div>
-    <div class="chat-input-row">
-      <input id="chat-input" placeholder="scrivi qui…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-      <button class="btn-green" id="chat-send" onclick="sendChat()">Invia ↵</button>
-    </div>
-  </div>
-
-  <!-- ② Pi stats + tmux — riga due colonne -->
-  <div class="row">
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">🍓 Raspberry Pi 5</span>
-        <div style="display:flex;gap:6px;">
-          <button class="btn-ghost" onclick="requestStats()">↻</button>
-          <button class="btn-red" onclick="showRebootModal()">⏻ Reboot</button>
-        </div>
-      </div>
-      <div class="card-body">
-        <div class="stats-grid">
-          <div class="stat-item"><div class="stat-label">CPU</div><div class="stat-value" id="stat-cpu">—</div></div>
-          <div class="stat-item"><div class="stat-label">Temp</div><div class="stat-value" id="stat-temp">—</div></div>
-          <div class="stat-item"><div class="stat-label">RAM</div><div class="stat-value" id="stat-mem">—</div></div>
-          <div class="stat-item"><div class="stat-label">Disco</div><div class="stat-value" id="stat-disk">—</div></div>
-          <div class="stat-item full"><div class="stat-label">Uptime</div><div class="stat-value" id="stat-uptime">—</div></div>
-        </div>
-        <div class="chart-container">
-          <div class="chart-header">
-            <span class="chart-label">Ultimi 15 min</span>
-            <div class="chart-legend">
-              <span><div class="dot-cpu"></div> <span style="color:var(--text2)">CPU%</span></span>
-              <span><div class="dot-temp"></div> <span style="color:var(--text2)">Temp</span></span>
-            </div>
+      <div class="chart-container">
+        <div class="chart-header">
+          <span class="chart-label">Ultimi 15 min</span>
+          <div class="chart-legend">
+            <span><div class="dot-cpu"></div> <span style="color:var(--text2)">CPU%</span></span>
+            <span><div class="dot-temp"></div> <span style="color:var(--text2)">Temp</span></span>
           </div>
-          <canvas id="pi-chart"></canvas>
         </div>
+        <canvas id="pi-chart"></canvas>
       </div>
-    </div>
-
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">⚡ Sessioni tmux</span>
-        <button class="btn-green" onclick="gatewayRestart()">↺ Gateway</button>
-      </div>
-      <div class="card-body">
+      <div style="margin-top:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">⚡ Sessioni tmux</span>
+          <button class="btn-green" onclick="gatewayRestart()" style="min-height:28px;padding:3px 10px;font-size:10px;">↺ Gateway</button>
+        </div>
         <div class="session-list" id="session-list">
           <div class="no-items">Caricamento…</div>
         </div>
       </div>
-    </div>
-  </div>
-
-  <!-- ③ Widget on-demand: Briefing -->
-  <div class="card collapsible collapsed" id="card-briefing">
-    <div class="card-header" onclick="toggleCard('card-briefing')">
-      <span class="card-title"><span class="collapse-arrow">▾</span> 🌅 Morning Briefing</span>
-      <div style="display:flex;gap:6px;">
-        <button class="btn-ghost" onclick="loadBriefing(this); event.stopPropagation();">Carica</button>
-        <button class="btn-green" onclick="runBriefing(this); event.stopPropagation();">▶ Genera</button>
-      </div>
-    </div>
-    <div class="card-body" id="briefing-body">
-      <div class="widget-placeholder">
-        <span class="ph-icon">🌅</span>
-        <span>Premi Carica per vedere l'ultimo briefing</span>
+      <div style="display:flex;gap:6px;margin-top:10px;justify-content:space-between;align-items:center;">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn-ghost" onclick="requestStats()" style="min-height:28px;padding:3px 10px;font-size:10px;">↻ Refresh</button>
+          <span id="version-badge" class="version-badge">—</span>
+        </div>
+        <button class="btn-red" onclick="showRebootModal()" style="min-height:28px;padding:3px 10px;font-size:10px;">⏻ Reboot</button>
       </div>
     </div>
   </div>
+</div>
 
-  <!-- ④ Widget on-demand: Crypto -->
-  <div class="card collapsible collapsed" id="card-crypto">
-    <div class="card-header" onclick="toggleCard('card-crypto')">
-      <span class="card-title"><span class="collapse-arrow">▾</span> ₿ Crypto</span>
-      <button class="btn-ghost" onclick="loadCrypto(this); event.stopPropagation();">Carica</button>
+<!-- ─── App Content (chat + widget panel) ─── -->
+<div class="app-content">
+
+<!-- ─── Chat Area ─── -->
+<section class="chat-area">
+  <div class="chat-header">
+    <span class="card-title">💬 Chat</span>
+    <div style="display:flex;gap:4px;align-items:center;">
+      <div class="model-switch">
+        <button class="model-btn" id="btn-cloud" onclick="switchModel('cloud')">&#x2601; Cloud</button>
+        <button class="model-btn active" id="btn-local" onclick="switchModel('local')">&#x2302; Local</button>
+        <button class="model-btn" id="btn-deepseek" onclick="switchModel('deepseek')">&#x26A1; Deep</button>
+      </div>
+      <button class="btn-ghost" onclick="clearChat()" style="padding:3px 6px;min-height:28px;">🗑</button>
+      <button class="btn-ghost" onclick="openChatFullscreen()" title="Schermo intero" style="padding:3px 6px;min-height:28px;">⛶</button>
     </div>
-    <div class="card-body" id="crypto-body">
-      <div class="widget-placeholder">
-        <span class="ph-icon">₿</span>
-        <span>Premi Carica per vedere BTC/ETH</span>
+  </div>
+  <div class="model-indicator" id="model-indicator">
+    <span class="dot dot-local" id="model-dot"></span>
+    <span id="model-label">Gemma 3 4B (locale)</span>
+  </div>
+  <div id="chat-messages">
+    <div class="msg msg-bot">Eyyy, sono Vessel 🐈 — dimmi cosa vuoi, psychoSocial.</div>
+  </div>
+  <div class="chat-input-row">
+    <input id="chat-input" placeholder="scrivi qui…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+    <button class="btn-green" id="chat-send" onclick="sendChat()">Invia ↵</button>
+  </div>
+</section>
+
+<!-- ─── Drawer (side panel on desktop, bottom sheet on mobile) ─── -->
+<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()">
+  <div class="drawer" onclick="event.stopPropagation()">
+    <div class="drawer-handle"></div>
+    <div class="drawer-header">
+      <span class="card-title" id="drawer-title"></span>
+      <div style="display:flex;gap:6px;align-items:center;" id="drawer-actions"></div>
+    </div>
+    <div class="drawer-body">
+      <div class="drawer-widget" id="dw-briefing">
+        <div id="briefing-body">
+          <div class="widget-placeholder"><span class="ph-icon">&#x25A4;</span><span>Premi Carica per vedere l'ultimo briefing</span></div>
+        </div>
+      </div>
+      <div class="drawer-widget" id="dw-crypto">
+        <div id="crypto-body">
+          <div class="widget-placeholder"><span class="ph-icon">&#x20BF;</span><span>Premi Carica per vedere BTC/ETH</span></div>
+        </div>
+      </div>
+      <div class="drawer-widget" id="dw-tokens">
+        <div id="tokens-body">
+          <div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Premi Carica per vedere i dati token di oggi</span></div>
+        </div>
+      </div>
+      <div class="drawer-widget" id="dw-logs">
+        <div id="logs-body">
+          <div class="widget-placeholder"><span class="ph-icon">&#x2261;</span><span>Premi Carica per vedere i log recenti</span></div>
+        </div>
+      </div>
+      <div class="drawer-widget" id="dw-cron">
+        <div id="cron-body">
+          <div class="widget-placeholder"><span class="ph-icon">&#x25C7;</span><span>Premi Carica per vedere i cron job</span></div>
+        </div>
+      </div>
+      <div class="drawer-widget" id="dw-claude">
+        <div id="claude-body">
+          <div class="widget-placeholder"><span class="ph-icon">&gt;_</span><span>Premi Carica per verificare lo stato del bridge</span></div>
+        </div>
+      </div>
+      <div class="drawer-widget" id="dw-memoria">
+        <div class="tab-row">
+          <button class="tab active" onclick="switchTab('memory', this)">MEMORY.md</button>
+          <button class="tab" onclick="switchTab('history', this)">HISTORY.md</button>
+          <button class="tab" onclick="switchTab('quickref', this)">Quick Ref</button>
+        </div>
+        <div class="mem-content">
+          <div id="tab-memory" class="tab-content active">
+            <div class="mono-block" id="memory-content">Caricamento…</div>
+            <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="refreshMemory()">&#x21BB; Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('memory-content').textContent)">&#x25A4; Copia</button></div>
+          </div>
+          <div id="tab-history" class="tab-content">
+            <div class="mono-block" id="history-content">Premi Carica…</div>
+            <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="refreshHistory()">&#x21BB; Carica</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('history-content').textContent)">&#x25A4; Copia</button></div>
+          </div>
+          <div id="tab-quickref" class="tab-content">
+            <div class="mono-block" id="quickref-content">Caricamento…</div>
+            <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">&#x25A4; Copia</button></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
+</div>
+</div><!-- /app-content -->
 
-  <!-- ⑤ Widget on-demand: Token -->
-  <div class="card collapsible collapsed" id="card-tokens">
-    <div class="card-header" onclick="toggleCard('card-tokens')">
-      <span class="card-title"><span class="collapse-arrow">▾</span> 📊 Token &amp; API</span>
-      <button class="btn-ghost" onclick="loadTokens(this); event.stopPropagation();">Carica</button>
-    </div>
-    <div class="card-body" id="tokens-body">
-      <div class="widget-placeholder">
-        <span class="ph-icon">📊</span>
-        <span>Premi Carica per vedere i dati token di oggi</span>
-      </div>
-    </div>
-  </div>
+<!-- ─── Tab Bar ─── -->
+<nav class="tab-bar">
+  <button class="tab-bar-btn" data-widget="briefing" onclick="openDrawer('briefing')"><span>&#x25A4;</span><span>Brief</span></button>
+  <button class="tab-bar-btn" data-widget="crypto" onclick="openDrawer('crypto')"><span>&#x20BF;</span><span>Crypto</span></button>
+  <button class="tab-bar-btn" data-widget="tokens" onclick="openDrawer('tokens')"><span>&#x00A4;</span><span>Token</span></button>
+  <button class="tab-bar-btn" data-widget="logs" onclick="openDrawer('logs')"><span>&#x2261;</span><span>Log</span></button>
+  <button class="tab-bar-btn" data-widget="cron" onclick="openDrawer('cron')"><span>&#x25C7;</span><span>Cron</span></button>
+  <button class="tab-bar-btn" data-widget="claude" onclick="openDrawer('claude')"><span>&gt;_</span><span>Code</span></button>
+  <button class="tab-bar-btn" data-widget="memoria" onclick="openDrawer('memoria')"><span>&#x25CE;</span><span>Mem</span></button>
+</nav>
 
-  <!-- ⑥ Widget on-demand: Log Nanobot -->
-  <div class="card collapsible collapsed" id="card-logs">
-    <div class="card-header" onclick="toggleCard('card-logs')">
-      <span class="card-title"><span class="collapse-arrow">▾</span> 📜 Log Nanobot</span>
-      <button class="btn-ghost" onclick="loadLogs(this); event.stopPropagation();">Carica</button>
-    </div>
-    <div class="card-body" id="logs-body">
-      <div class="widget-placeholder">
-        <span class="ph-icon">📜</span>
-        <span>Premi Carica per vedere i log recenti</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ⑦ Widget on-demand: Task schedulati -->
-  <div class="card collapsible collapsed" id="card-cron">
-    <div class="card-header" onclick="toggleCard('card-cron')">
-      <span class="card-title"><span class="collapse-arrow">▾</span> 🕐 Task schedulati</span>
-      <button class="btn-ghost" onclick="loadCron(this); event.stopPropagation();">Carica</button>
-    </div>
-    <div class="card-body" id="cron-body">
-      <div class="widget-placeholder">
-        <span class="ph-icon">🕐</span>
-        <span>Premi Carica per vedere i cron job</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ⑧ Remote Code -->
-  <div class="card collapsible collapsed" id="card-claude">
-    <div class="card-header" onclick="toggleCard('card-claude')">
-      <span class="card-title"><span class="collapse-arrow">▾</span> 💻 Remote Code</span>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <span id="bridge-dot" class="health-dot" title="Bridge offline" style="width:8px;height:8px;"></span>
-        <button class="btn-ghost" onclick="loadBridge(this); event.stopPropagation();">Carica</button>
-      </div>
-    </div>
-    <div class="card-body" id="claude-body">
-      <div class="widget-placeholder">
-        <span class="ph-icon">💻</span>
-        <span>Premi Carica per verificare lo stato del bridge</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- ⑨ Memoria tabs -->
-  <div class="card collapsible" id="card-memoria">
-    <div class="card-header" onclick="toggleCard('card-memoria')">
-      <span class="card-title"><span class="collapse-arrow">▾</span> 🧠 Memoria</span>
-    </div>
-    <div class="tab-row">
-      <button class="tab active" onclick="switchTab('memory', this)">MEMORY.md</button>
-      <button class="tab" onclick="switchTab('history', this)">HISTORY.md</button>
-      <button class="tab" onclick="switchTab('quickref', this)">Quick Ref</button>
-    </div>
-    <div class="card-body">
-      <div id="tab-memory" class="tab-content active">
-        <div class="mono-block" id="memory-content">Caricamento…</div>
-        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="refreshMemory()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('memory-content').textContent)">📋 Copia</button></div>
-      </div>
-      <div id="tab-history" class="tab-content">
-        <div class="mono-block" id="history-content">Premi Carica…</div>
-        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="refreshHistory()">↻ Carica</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('history-content').textContent)">📋 Copia</button></div>
-      </div>
-      <div id="tab-quickref" class="tab-content">
-        <div class="mono-block" id="quickref-content">Caricamento…</div>
-        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">📋 Copia</button></div>
-      </div>
-    </div>
-  </div>
-
-</div><!-- /main -->
+</div><!-- /app-layout -->
 
 <!-- Modale conferma reboot -->
 <div class="modal-overlay" id="reboot-modal">
@@ -2062,15 +2145,14 @@ HTML = f"""<!DOCTYPE html>
     else if (msg.type === 'memory')   {{ document.getElementById('memory-content').textContent = msg.text; }}
     else if (msg.type === 'history')  {{ document.getElementById('history-content').textContent = msg.text; }}
     else if (msg.type === 'quickref') {{ document.getElementById('quickref-content').textContent = msg.text; }}
-    else if (msg.type === 'logs')    {{ expandCard('card-logs'); renderLogs(msg.data); }}
-    else if (msg.type === 'cron')    {{ expandCard('card-cron'); renderCron(msg.jobs); }}
-    else if (msg.type === 'tokens')  {{ expandCard('card-tokens'); renderTokens(msg.data); }}
-    else if (msg.type === 'briefing') {{ expandCard('card-briefing'); renderBriefing(msg.data); }}
-    else if (msg.type === 'crypto')   {{ expandCard('card-crypto'); renderCrypto(msg.data); }}
+    else if (msg.type === 'logs')    {{ renderLogs(msg.data); }}
+    else if (msg.type === 'cron')    {{ renderCron(msg.jobs); }}
+    else if (msg.type === 'tokens')  {{ renderTokens(msg.data); }}
+    else if (msg.type === 'briefing') {{ renderBriefing(msg.data); }}
+    else if (msg.type === 'crypto')   {{ renderCrypto(msg.data); }}
     else if (msg.type === 'toast')   {{ showToast(msg.text); }}
     else if (msg.type === 'reboot_ack') {{ startRebootWait(); }}
     else if (msg.type === 'claude_thinking') {{
-      expandCard('card-claude');
       const wrap = document.getElementById('claude-output-wrap');
       if (wrap) wrap.style.display = 'block';
       const out = document.getElementById('claude-output');
@@ -2120,7 +2202,7 @@ HTML = f"""<!DOCTYPE html>
       showToast('Task cancellato');
     }}
     else if (msg.type === 'bridge_status') {{ renderBridgeStatus(msg.data); }}
-    else if (msg.type === 'claude_tasks') {{ expandCard('card-claude'); renderClaudeTasks(msg.tasks); }}
+    else if (msg.type === 'claude_tasks') {{ renderClaudeTasks(msg.tasks); }}
   }}
 
   // ── Storico campioni per grafico ──
@@ -2144,6 +2226,7 @@ HTML = f"""<!DOCTYPE html>
     if (cpuHistory.length > MAX_SAMPLES) cpuHistory.shift();
     if (tempHistory.length > MAX_SAMPLES) tempHistory.shift();
     drawChart();
+    updateStatusBar(pi);
   }}
 
   function drawChart() {{
@@ -2296,18 +2379,77 @@ HTML = f"""<!DOCTYPE html>
     send({{ action: 'clear_chat' }});
   }}
 
-  // ── Chat expand / fullscreen ──
-  let chatExpanded = false;
-  let chatFullscreen = false;
-  function toggleChatExpand() {{
-    chatExpanded = !chatExpanded;
-    const msgs = document.getElementById('chat-messages');
-    const btn = document.getElementById('chat-expand-btn');
-    msgs.classList.toggle('expanded', chatExpanded);
-    btn.textContent = chatExpanded ? '⤡' : '⤢';
-    btn.title = chatExpanded ? 'Comprimi chat' : 'Espandi chat';
-    msgs.scrollTop = msgs.scrollHeight;
+  // ── Status Bar toggle ──
+  function toggleStatusDetail() {{
+    const bar = document.querySelector('.status-bar');
+    const detail = document.getElementById('status-detail');
+    const toggle = document.getElementById('status-toggle');
+    detail.classList.toggle('open');
+    toggle.classList.toggle('open');
+    bar.classList.toggle('expanded');
   }}
+  function updateStatusBar(pi) {{
+    const t = document.getElementById('sb-temp');
+    const c = document.getElementById('sb-cpu');
+    const u = document.getElementById('sb-uptime');
+    if (t) t.textContent = pi.temp || '—';
+    if (c) c.textContent = pi.cpu || '—';
+    if (u) u.textContent = pi.uptime || '—';
+  }}
+
+  // ── Drawer (bottom sheet) ──
+  let activeDrawer = null;
+  const DRAWER_CFG = {{
+    briefing: {{ title: '\u25A4 Morning Briefing', actions: '<button class="btn-ghost" onclick="loadBriefing(this)">Carica</button><button class="btn-green" onclick="runBriefing(this)">\u25B6 Genera</button>' }},
+    crypto:   {{ title: '\u20BF Crypto', actions: '<button class="btn-ghost" onclick="loadCrypto(this)">Carica</button>' }},
+    tokens:   {{ title: '\u00A4 Token & API', actions: '<button class="btn-ghost" onclick="loadTokens(this)">Carica</button>' }},
+    logs:     {{ title: '\u2261 Log Nanobot', actions: '<button class="btn-ghost" onclick="loadLogs(this)">Carica</button>' }},
+    cron:     {{ title: '\u25C7 Task schedulati', actions: '<button class="btn-ghost" onclick="loadCron(this)">Carica</button>' }},
+    claude:   {{ title: '>_ Remote Code', actions: '<span id="bridge-dot" class="health-dot" title="Bridge" style="width:8px;height:8px;"></span><button class="btn-ghost" onclick="loadBridge(this)">Carica</button>' }},
+    memoria:  {{ title: '\u25CE Memoria', actions: '' }}
+  }};
+  function openDrawer(widgetId) {{
+    // Toggle: se clicchi lo stesso tab, chiudi
+    if (activeDrawer === widgetId) {{ closeDrawer(); return; }}
+    // Hide all, show target
+    document.querySelectorAll('.drawer-widget').forEach(w => w.classList.remove('active'));
+    const dw = document.getElementById('dw-' + widgetId);
+    if (dw) dw.classList.add('active');
+    // Header
+    const cfg = DRAWER_CFG[widgetId];
+    document.getElementById('drawer-title').textContent = cfg ? cfg.title : widgetId;
+    document.getElementById('drawer-actions').innerHTML =
+      (cfg ? cfg.actions : '') +
+      '<button class="btn-ghost" onclick="closeDrawer()" style="min-height:28px;padding:3px 8px;">\u2715</button>';
+    // Show overlay
+    document.getElementById('drawer-overlay').classList.add('show');
+    // Tab bar highlight
+    document.querySelectorAll('.tab-bar-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.widget === widgetId));
+    activeDrawer = widgetId;
+  }}
+  function closeDrawer() {{
+    document.getElementById('drawer-overlay').classList.remove('show');
+    document.querySelectorAll('.tab-bar-btn').forEach(b => b.classList.remove('active'));
+    activeDrawer = null;
+  }}
+
+  // ── Drawer swipe-down to close (mobile) ──
+  (function() {{
+    const drawer = document.querySelector('.drawer');
+    if (!drawer) return;
+    let touchStartY = 0;
+    drawer.addEventListener('touchstart', function(e) {{
+      touchStartY = e.touches[0].clientY;
+    }}, {{ passive: true }});
+    drawer.addEventListener('touchmove', function(e) {{
+      const dy = e.touches[0].clientY - touchStartY;
+      if (dy > 80) {{ closeDrawer(); touchStartY = 9999; }}
+    }}, {{ passive: true }});
+  }})();
+
+  // ── Chat fullscreen ──
+  let chatFullscreen = false;
   function openChatFullscreen() {{
     chatFullscreen = true;
     const overlay = document.getElementById('chat-fullscreen');
@@ -2334,10 +2476,11 @@ HTML = f"""<!DOCTYPE html>
     card.appendChild(document.getElementById('chat-send'));
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }}
-  // Escape chiude overlay
+  // Escape chiude overlay/drawer
   document.addEventListener('keydown', (e) => {{
     if (e.key === 'Escape') {{
       if (chatFullscreen) closeChatFullscreen();
+      else if (activeDrawer) closeDrawer();
       const outFs = document.getElementById('output-fullscreen');
       if (outFs && outFs.classList.contains('show')) closeOutputFullscreen();
     }}
@@ -2806,26 +2949,27 @@ LOGIN_HTML = f"""<!DOCTYPE html>
   * {{ box-sizing: border-box; margin: 0; padding: 0; }}
   body {{
     background: var(--bg); color: var(--text); font-family: var(--font);
-    height: 100vh; display: flex; align-items: center; justify-content: center;
+    height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center;
+    overflow: hidden; position: fixed; inset: 0;
     background-image: repeating-linear-gradient(0deg, transparent, transparent 2px,
       rgba(0,255,65,0.012) 2px, rgba(0,255,65,0.012) 4px);
   }}
   .login-box {{
     background: var(--card); border: 1px solid var(--border2); border-radius: 8px;
-    padding: 32px 28px 24px; width: 310px; text-align: center;
+    padding: 36px 32px 28px; width: min(380px, 90vw); text-align: center;
     box-shadow: 0 0 60px rgba(0,255,65,0.06);
   }}
-  .login-icon {{ width: 56px; height: 56px; border-radius: 50%; border: 2px solid var(--green3);
-    filter: drop-shadow(0 0 10px rgba(0,255,65,0.4)); margin-bottom: 16px; }}
-  .login-title {{ font-size: 16px; font-weight: 700; color: var(--green); letter-spacing: 1px;
-    text-shadow: 0 0 10px rgba(0,255,65,0.4); margin-bottom: 4px; }}
-  .login-sub {{ font-size: 11px; color: var(--muted); margin-bottom: 24px; }}
+  .login-icon {{ width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--green3);
+    filter: drop-shadow(0 0 10px rgba(0,255,65,0.4)); margin-bottom: 18px; }}
+  .login-title {{ font-size: 20px; font-weight: 700; color: var(--green); letter-spacing: 2px;
+    text-shadow: 0 0 10px rgba(0,255,65,0.4); margin-bottom: 6px; }}
+  .login-sub {{ font-size: 12px; color: var(--muted); margin-bottom: 24px; }}
   #pin-input {{ position: absolute; opacity: 0; pointer-events: none; }}
   .pin-display {{
     display: flex; gap: 10px; justify-content: center; margin-bottom: 6px;
   }}
   .pin-dot {{
-    width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--green3);
+    width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--green3);
     background: transparent; transition: background .15s, box-shadow .15s;
   }}
   .pin-dot.filled {{
@@ -2835,25 +2979,25 @@ LOGIN_HTML = f"""<!DOCTYPE html>
     font-size: 11px; color: var(--muted); margin-bottom: 16px; letter-spacing: 1px;
   }}
   .numpad {{
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-    width: 240px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    width: min(300px, 80vw); margin: 0 auto;
   }}
   .numpad-btn {{
-    font-family: var(--font); font-size: 20px; font-weight: 600;
-    padding: 14px 0; border: 1px solid var(--border2); border-radius: 6px;
+    font-family: var(--font); font-size: 24px; font-weight: 600;
+    padding: 16px 0; border: 1px solid var(--border2); border-radius: 8px;
     background: var(--bg2); color: var(--green); cursor: pointer;
     transition: all .15s; -webkit-tap-highlight-color: transparent;
-    user-select: none; min-height: 52px;
+    user-select: none; min-height: 58px;
   }}
   .numpad-btn:active {{ background: var(--green-dim); border-color: var(--green3); }}
-  .numpad-btn.fn {{ font-size: 13px; color: var(--muted); }}
+  .numpad-btn.fn {{ font-size: 14px; color: var(--muted); }}
   .numpad-btn.fn:active {{ color: var(--green); }}
   .numpad-bottom {{
-    width: 240px; margin: 12px auto 0;
+    width: min(300px, 80vw); margin: 14px auto 0;
   }}
   .numpad-submit {{
-    font-family: var(--font); font-size: 13px; font-weight: 600; letter-spacing: 2px;
-    width: 100%; padding: 14px 0; border: 1px solid var(--green3); border-radius: 6px;
+    font-family: var(--font); font-size: 14px; font-weight: 600; letter-spacing: 2px;
+    width: 100%; padding: 16px 0; border: 1px solid var(--green3); border-radius: 8px;
     background: var(--green-dim); color: var(--green); cursor: pointer;
     transition: all .15s; -webkit-tap-highlight-color: transparent;
     user-select: none; text-transform: uppercase;

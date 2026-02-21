@@ -68,16 +68,23 @@
 - Icona Vessel: JPEG base64 embedded (ottimizzata 64x64, ~1KB)
 - Porta default: 8090, test: `PORT=8091`
 
-### Layout (dall'alto)
-1. Header sticky: icona, "VESSEL", hostname, health dot, version, clock, WS dot
-2. Chat con Vessel (full width, primo widget) — 3 provider: Cloud/Locale/DeepSeek, tutti streaming
-3. Row 2 colonne: Pi Stats (con chart CPU/temp + reboot btn) | Sessioni tmux
-4. Morning Briefing (on-demand) — ultimo briefing + genera nuovo + cron 7:30
-5. Crypto (on-demand) — BTC/ETH prezzi USD/EUR + 24h change via CoinGecko
-6. Token & API (on-demand) — mostra input/output/chiamate da log locale
-7. Log Nanobot (on-demand) — con filtro data + ricerca testo + evidenziazione
-8. Task schedulati / cron (on-demand) — lista + aggiungi/elimina cron job
-9. Memoria (tabs: MEMORY.md / HISTORY.md / Quick Ref)
+### Layout — Mobile-First 3 Zone (2026-02-21)
+**Architettura**: `.app-layout` flex column 100dvh con 3 zone:
+
+1. **Status Bar** (compatta, sticky top): logo Vessel + health dot + temp/CPU/uptime inline + clock + WS dot + "▼ STATS"
+   - Tap espande: stats grid + chart 15min + sessioni tmux + reboot
+   - Classe `.expanded` con bordo green3
+2. **Chat Area** (flex:1, area principale): header con model switch + messaggi + input
+   - 3 provider: "☁ Cloud" / "⌂ Local" / "⚡ Deep" — tutti streaming
+   - Su desktop: occupa sinistra della two-column
+3. **Tab Bar** (fixed bottom): 7 icone monochrome Unicode
+   - `▤` Brief | `₿` Crypto | `¤` Token | `≡` Log | `◇` Cron | `>_` Code | `◎` Mem
+   - Tap apre: **drawer bottom sheet** (mobile) o **pannello laterale 380px** (desktop >=768px)
+   - Stesso tap chiude (toggle)
+   - `height: calc(56px + env(safe-area-inset-bottom))` per PWA iPhone
+
+**Desktop (>=768px)**: `.app-content` flex-direction: row → chat + widget panel side-by-side
+**Mobile (<768px)**: drawer-overlay position:fixed bottom sheet con swipe-down to close
 
 ### Tema
 - Verde terminal `#00ff41` su `#060a06`, JetBrains Mono, scanline

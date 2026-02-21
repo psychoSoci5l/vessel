@@ -137,6 +137,19 @@
 - [x] Bottoni 📋 copia su Briefing, Log, Token, Memoria
 - [x] Escape key chiude overlay chat e output
 
+### UX Redesign Mobile-First ✅ COMPLETATA (2026-02-21)
+> Dashboard trasformata da desktop-first a mobile-first app layout con 3 zone.
+- [x] Status bar compatta: logo + health + stats inline, espandibile in dashboard completa
+- [x] Chat area flex:1: occupa tutto lo spazio disponibile (no più 260px fissi)
+- [x] Tab bar bottom: 7 icone monochrome Unicode (▤ ₿ ¤ ≡ ◇ >_ ◎) con drawer/panel
+- [x] Desktop two-column: chat + widget panel laterale 380px (>=768px)
+- [x] Drawer bottom sheet (mobile): swipe-down to close, overlay, handle
+- [x] Model buttons leggibili: "☁ Cloud", "⌂ Local", "⚡ Deep" con label testuali
+- [x] Status bar affordance: bordo, toggle ▼ 14px, label "STATS", .expanded
+- [x] Tab toggle: stesso tab chiude il pannello + dot indicator attivo
+- [x] PWA fix: tab bar height calc() per safe-area-inset-bottom con border-box
+- [x] Login PIN ingrandita: box 380px, bottoni 24px/58px, anti-resize iOS
+
 ### P1 — Sicurezza e robustezza
 - [ ] Cap chat history per connessione (es. max 100 messaggi, trim a 60) — previene memory leak su sessioni PWA lunghe
 - [ ] Limite connessioni WebSocket in `Manager.connect()` (es. max 10) — protezione DoS base
