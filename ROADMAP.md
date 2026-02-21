@@ -40,8 +40,6 @@
 - [x] Rate limiting: auth (5/5min), chat (20/min), cron (10/min), reboot (1/5min), file (30/min)
 - [x] Security headers middleware: CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy
 - [x] Pulizia periodica rate limits e sessioni scadute (ogni 5 min)
-- [ ] HTTPS locale con self-signed cert (opzionale, Cloudflare già copre esterno)
-
 ## Fase 4.5 — Polish e consolidamento ✅ COMPLETATA
 > Solidificazione del codebase prima di nuove feature.
 
@@ -109,39 +107,65 @@
 - [ ] Gate deploy: conferma utente prima di deployare (futuro)
 - [ ] UI: toggle loop on/off nel widget Remote Code (futuro)
 
-## Fase 9 — Hardening e qualità (da autoanalisi 2026-02-20)
+## Fase 9 — Hardening e qualità ✅ COMPLETATA (2026-02-20)
 > Criticità e miglioramenti identificati dall'autoanalisi del codebase via Remote Code.
 
 ### Sicurezza (priorità alta)
 - [x] Fix XSS: `esc()` centralizzata per `renderLogs()`, `updateSessions()`, `renderClaudeTasks()`, `renderBriefing()`, `renderTokens()`, `renderCrypto()`
 - [x] Hardening PIN: da SHA-256 puro a `pbkdf2_hmac` con salt random (600k iter, auto-migrazione)
-- [ ] Audit `run()` shell=True: verificare che nessuna variabile utente entri nei comandi
-
-### UX Chat (priorità alta)
 - [x] Streaming per chat Anthropic cloud (parità con Ollama)
 - [x] Chat history cloud multi-turno (come già fatto per Ollama)
 - [x] Terzo provider: DeepSeek V3 via OpenRouter (ModelRun, 43 tok/s, ~$0.0002/msg)
 - [x] PIN semplificato: 4 cifre, auto-submit, pulsante SBLOCCA
 
-### Performance
-- [ ] `stats_broadcaster()`: wrappare `get_pi_stats()` e `get_tmux_sessions()` in `await bg()`
+## Fase 10 — Robustezza e polish (da doppia autoanalisi 2026-02-21)
+> Punti convergenti tra autoanalisi Claude Code (Fase 9) e DeepSeek V3 via Ralph.
+> Due LLM indipendenti hanno analizzato il codebase e concordano su queste priorità.
+
+### P0 — Quick wins ✅ COMPLETATI
+- [x] `stats_broadcaster()`: wrappare `get_pi_stats()` e `get_tmux_sessions()` in `await bg()`
+- [x] Spostare `TASK_TIMEOUT = 300` prima del suo primo uso
+- [x] Import `datetime` al top-level
+
+### UX Fruibilità ✅ COMPLETATA (2026-02-21)
+- [x] Infrastruttura copia: `copyToClipboard()` con fallback, CSS `.copy-btn`/`.copy-wrap`
+- [x] Bottone 📋 copia su messaggi chat bot (hover desktop, visibile su mobile)
+- [x] Chat espandibile ⤢: toggle 260px ↔ calc(100vh - 200px) con transizione
+- [x] Chat fullscreen ⛶: overlay dedicato z-index 250 con DOM relocation (zero duplicazione JS)
+- [x] Remote Code output: max-height da 300px a 500px + header con Copia/Espandi
+- [x] Remote Code fullscreen: modale output espandibile a 90vh
+- [x] Bottoni 📋 copia su Briefing, Log, Token, Memoria
+- [x] Escape key chiude overlay chat e output
+
+### P1 — Sicurezza e robustezza
+- [ ] Cap chat history per connessione (es. max 100 messaggi, trim a 60) — previene memory leak su sessioni PWA lunghe
+- [ ] Limite connessioni WebSocket in `Manager.connect()` (es. max 10) — protezione DoS base
+- [ ] Audit `run()` shell=True: verificare che nessuna variabile utente entri nei comandi
+- [ ] Cookie di sessione: aggiungere flag `secure=True` condizionale (se HTTPS)
+
+### P2 — Performance e UX
 - [ ] Persistenza sessioni su file (`~/.nanobot/sessions.json`) — no ri-login dopo deploy
-
-### Nuove feature
-- [ ] Notifiche push (Web Push API) per briefing, alert temperatura, task completato
+- [ ] Parallelizzare `get_pi_stats()`: 5 subprocess via `asyncio.gather` + `bg()` invece di sequenziali
+- [ ] `/api/health` endpoint: status aggregato di tutti i servizi (Ollama, bridge, Pi)
 - [ ] Auto-refresh widget on-demand configurabile (crypto ogni 5min, token ogni 10min)
-- [ ] Temi alternativi (amber-on-black, blue-on-dark) con switch + localStorage
 
-### Refactoring
+### P3 — Refactoring (convergenti tra i due report)
+- [ ] Fattorizzare le 3 funzioni di chat streaming in `_stream_chat()` generica (~300 righe → ~120)
+- [ ] Dispatch dict per WebSocket handler (sostituire if/elif 20+ branch)
 - [ ] Unificare `_get_nanobot_config()` e `_get_bridge_config()` in `_get_config()` cached
 - [ ] Unificare `_rate_limit()` e `_check_auth_rate()` in un unico pattern
 - [ ] Separare cleanup dal broadcaster in funzione dedicata `_cleanup_expired()`
-- [ ] Costanti in `@dataclass Config` con valori da env/file
+
+### P4 — Nuove feature
+- [ ] Notifiche push (Web Push API) per briefing, alert temperatura, task completato
+- [ ] Export dati: endpoint ZIP scaricabile (MEMORY, HISTORY, cron, token stats, claude tasks)
+- [ ] Temi alternativi (amber-on-black, blue-on-dark) con switch + localStorage
 
 ### Visione futura
 - [ ] Sistema plugin/widget esterni da `~/.nanobot/widgets/`
 - [ ] Dashboard multi-host (monitoraggio altri device LAN)
-- [ ] Provider chat astratto (`ChatProvider` con `OllamaProvider` / `AnthropicProvider` / `OpenRouterProvider`)
+- [ ] Provider chat astratto (`ChatProvider` con strategy pattern per provider)
+- [ ] HTTPS locale con self-signed cert (opzionale)
 
 ---
 
@@ -153,3 +177,5 @@
 - Google Workspace integrato via script helper (`~/scripts/google_helper.py`) — NO MCP server
 - PC Windows: AMD Ryzen 5 5600X, 16GB RAM, RTX 3060 12GB — Ollama supervisor per Ralph Loop
 - Ralph Loop: Claude Code + Ollama eseguono sequenzialmente (non in parallelo) per evitare contesa VRAM
+- **Doppia autoanalisi** (2026-02-21): Claude Code + DeepSeek V3 hanno analizzato indipendentemente il codebase. I punti convergenti formano la Fase 10
+- Report salvati: `analysis-report.md` (Claude Code) + report DeepSeek inline nel CHANGELOG

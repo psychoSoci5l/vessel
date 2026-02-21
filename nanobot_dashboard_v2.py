@@ -16,6 +16,7 @@ import secrets
 import subprocess
 import time
 import urllib.request
+from datetime import datetime as _dt
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -86,6 +87,7 @@ _bridge_cfg = _get_bridge_config()
 CLAUDE_BRIDGE_URL = os.environ.get("CLAUDE_BRIDGE_URL", _bridge_cfg.get("url", "http://192.168.178.34:8095"))
 CLAUDE_BRIDGE_TOKEN = os.environ.get("CLAUDE_BRIDGE_TOKEN", _bridge_cfg.get("token", ""))
 CLAUDE_TASKS_LOG = Path.home() / ".nanobot" / "claude_tasks.jsonl"
+TASK_TIMEOUT = 300  # 5 min max per task Claude Bridge
 
 # ─── OpenRouter (DeepSeek V3) ────────────────────────────────────────────────
 def _get_openrouter_config() -> dict:
@@ -347,7 +349,6 @@ def get_nanobot_logs(n: int = 80, search: str = "", date_filter: str = "") -> di
     if date_filter:
         # journalctl usa formato "Feb 20 07:30:01" — convertiamo YYYY-MM-DD in "Mon DD"
         try:
-            from datetime import datetime as _dt
             dt = _dt.strptime(date_filter, "%Y-%m-%d")
             month_abbr = dt.strftime("%b")  # "Feb"
             day_str = f"{dt.day:2d}"  # " 4" o "20"
@@ -1048,7 +1049,6 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str):
     })
     log_claude_task(prompt, status, exit_code, elapsed, full_output[:200])
 
-TASK_TIMEOUT = 300  # 5 min max per task Claude Bridge
 
 # ─── Background broadcaster ───────────────────────────────────────────────────
 async def stats_broadcaster():
@@ -1071,11 +1071,13 @@ async def stats_broadcaster():
                 if not AUTH_ATTEMPTS[ip]:
                     del AUTH_ATTEMPTS[ip]
         if manager.connections:
+            pi = await bg(get_pi_stats)
+            tmux = await bg(get_tmux_sessions)
             await manager.broadcast({
                 "type": "stats",
                 "data": {
-                    "pi": get_pi_stats(),
-                    "tmux": get_tmux_sessions(),
+                    "pi": pi,
+                    "tmux": tmux,
                     "time": time.strftime("%H:%M:%S"),
                 }
             })
@@ -1437,6 +1439,32 @@ HTML = f"""<!DOCTYPE html>
     display: flex; flex-direction: column; gap: 8px;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
+    transition: height .25s ease;
+  }}
+  #chat-messages.expanded {{ height: calc(100vh - 200px); max-height: 700px; }}
+  @media (max-width: 600px) {{ #chat-messages.expanded {{ height: calc(100vh - 180px); max-height: none; }} }}
+
+  /* ── Chat fullscreen overlay ── */
+  .chat-fs-overlay {{
+    position: fixed; inset: 0; background: var(--bg); z-index: 250;
+    display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }}
+  .chat-fs-overlay.show {{ opacity: 1; pointer-events: auto; }}
+  .chat-fs-header {{
+    padding: 10px 16px; padding-top: calc(10px + var(--safe-top));
+    border-bottom: 1px solid var(--border2);
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--card);
+  }}
+  .chat-fs-slot {{ flex: 1; display: flex; flex-direction: column; overflow: hidden; }}
+  .chat-fs-input-slot {{
+    display: flex; gap: 8px; padding: 10px 16px;
+    padding-bottom: calc(10px + var(--safe-bot));
+    border-top: 1px solid var(--border); background: var(--card2);
+  }}
+  .chat-fs-overlay #chat-messages {{
+    height: auto !important; max-height: none !important; flex: 1;
   }}
   .msg {{ max-width: 85%; padding: 8px 12px; border-radius: 4px; line-height: 1.5; font-size: 12px; }}
   .msg-user {{
@@ -1448,6 +1476,20 @@ HTML = f"""<!DOCTYPE html>
     align-self: flex-start; background: var(--card2);
     border: 1px solid var(--border); color: var(--text2); white-space: pre-wrap;
   }}
+
+  /* ── Copy button ── */
+  .copy-btn {{
+    position: absolute; top: 4px; right: 4px;
+    background: var(--card2); border: 1px solid var(--border); border-radius: 3px;
+    color: var(--muted); font-size: 12px; cursor: pointer; padding: 2px 6px;
+    opacity: 0; transition: opacity .15s; z-index: 2; line-height: 1;
+    min-height: 0; font-family: var(--font);
+  }}
+  .copy-btn:hover {{ color: var(--green2); border-color: var(--green3); }}
+  .copy-wrap {{ position: relative; }}
+  .copy-wrap:hover .copy-btn {{ opacity: 1; }}
+  @media (hover: none) {{ .copy-btn {{ opacity: 0.5; }} }}
+
   .msg-thinking {{
     align-self: flex-start; color: var(--muted); font-style: italic; font-size: 11px;
     display: flex; align-items: center; gap: 6px;
@@ -1599,7 +1641,17 @@ HTML = f"""<!DOCTYPE html>
   .claude-output {{
     background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
     padding: 9px 11px; font-family: var(--font); font-size: 11px; line-height: 1.6;
-    color: var(--text2); max-height: 300px; overflow-y: auto; white-space: pre-wrap;
+    color: var(--text2); max-height: 500px; overflow-y: auto; white-space: pre-wrap;
+    word-break: break-word; -webkit-overflow-scrolling: touch;
+  }}
+  .claude-output-header {{
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;
+  }}
+  .claude-output-header span {{ font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }}
+  .output-fs-content {{
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 12px; font-family: var(--font); font-size: 12px; line-height: 1.6;
+    color: var(--text2); max-height: calc(90vh - 90px); overflow-y: auto; white-space: pre-wrap;
     word-break: break-word; -webkit-overflow-scrolling: touch;
   }}
   .claude-task-item {{
@@ -1735,6 +1787,8 @@ HTML = f"""<!DOCTYPE html>
           <button class="model-btn" id="btn-deepseek" onclick="switchModel('deepseek')">⚡ DeepSeek</button>
         </div>
         <button class="btn-ghost" onclick="clearChat()">🗑 Pulisci</button>
+        <button class="btn-ghost" id="chat-expand-btn" onclick="toggleChatExpand()" title="Espandi chat">⤢</button>
+        <button class="btn-ghost" onclick="openChatFullscreen()" title="Schermo intero">⛶</button>
       </div>
     </div>
     <div class="model-indicator" id="model-indicator">
@@ -1897,14 +1951,15 @@ HTML = f"""<!DOCTYPE html>
     <div class="card-body">
       <div id="tab-memory" class="tab-content active">
         <div class="mono-block" id="memory-content">Caricamento…</div>
-        <div style="margin-top:8px;"><button class="btn-ghost" onclick="refreshMemory()">↻ Aggiorna</button></div>
+        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="refreshMemory()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('memory-content').textContent)">📋 Copia</button></div>
       </div>
       <div id="tab-history" class="tab-content">
         <div class="mono-block" id="history-content">Premi Carica…</div>
-        <div style="margin-top:8px;"><button class="btn-ghost" onclick="refreshHistory()">↻ Carica</button></div>
+        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="refreshHistory()">↻ Carica</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('history-content').textContent)">📋 Copia</button></div>
       </div>
       <div id="tab-quickref" class="tab-content">
         <div class="mono-block" id="quickref-content">Caricamento…</div>
+        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">📋 Copia</button></div>
       </div>
     </div>
   </div>
@@ -1928,6 +1983,33 @@ HTML = f"""<!DOCTYPE html>
   <div class="reboot-spinner"></div>
   <div class="reboot-text">Riavvio in corso…</div>
   <div class="reboot-status" id="reboot-status">In attesa che il Pi torni online</div>
+</div>
+
+<!-- Overlay chat fullscreen -->
+<div class="chat-fs-overlay" id="chat-fullscreen">
+  <div class="chat-fs-header">
+    <span class="card-title">💬 Chat con Vessel</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div class="model-switch" id="fs-model-switch"></div>
+      <button class="btn-ghost" onclick="closeChatFullscreen()">✕ Chiudi</button>
+    </div>
+  </div>
+  <div class="chat-fs-slot" id="chat-fs-slot"></div>
+  <div class="chat-fs-input-slot" id="chat-fs-input-slot"></div>
+</div>
+
+<!-- Overlay output fullscreen -->
+<div class="modal-overlay" id="output-fullscreen" onclick="closeOutputFullscreen()">
+  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:90%;width:900px;max-height:90vh;text-align:left;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Output Remote Code</span>
+      <div style="display:flex;gap:6px;">
+        <button class="btn-ghost" style="min-height:28px;" onclick="copyToClipboard(document.getElementById('output-fs-content').textContent)">📋 Copia tutto</button>
+        <button class="btn-ghost" style="min-height:28px;" onclick="closeOutputFullscreen()">✕ Chiudi</button>
+      </div>
+    </div>
+    <div id="output-fs-content" class="output-fs-content"></div>
+  </div>
 </div>
 
 <div id="toast"></div>
@@ -1989,8 +2071,10 @@ HTML = f"""<!DOCTYPE html>
     else if (msg.type === 'reboot_ack') {{ startRebootWait(); }}
     else if (msg.type === 'claude_thinking') {{
       expandCard('card-claude');
+      const wrap = document.getElementById('claude-output-wrap');
+      if (wrap) wrap.style.display = 'block';
       const out = document.getElementById('claude-output');
-      if (out) {{ out.style.display = 'block'; out.innerHTML = ''; out.appendChild(document.createTextNode('Connessione al bridge...\\n')); }}
+      if (out) {{ out.innerHTML = ''; out.appendChild(document.createTextNode('Connessione al bridge...\\n')); }}
     }}
     else if (msg.type === 'claude_chunk') {{
       const out = document.getElementById('claude-output');
@@ -2145,6 +2229,19 @@ HTML = f"""<!DOCTYPE html>
   }}
 
   function finalizeStream() {{
+    if (streamDiv) {{
+      const box = streamDiv.parentNode;
+      const wrap = document.createElement('div');
+      wrap.className = 'copy-wrap';
+      wrap.style.cssText = 'align-self:flex-start;max-width:85%;';
+      streamDiv.style.maxWidth = '100%';
+      box.insertBefore(wrap, streamDiv);
+      wrap.appendChild(streamDiv);
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';
+      btn.onclick = () => copyToClipboard(streamDiv.textContent);
+      wrap.appendChild(btn);
+    }}
     streamDiv = null;
   }}
 
@@ -2164,10 +2261,25 @@ HTML = f"""<!DOCTYPE html>
   }});
   function appendMessage(text, role) {{
     const box = document.getElementById('chat-messages');
-    const div = document.createElement('div');
-    div.className = `msg msg-${{role}}`;
-    div.textContent = text;
-    box.appendChild(div);
+    if (role === 'bot') {{
+      const wrap = document.createElement('div');
+      wrap.className = 'copy-wrap';
+      wrap.style.cssText = 'align-self:flex-start;max-width:85%;';
+      const div = document.createElement('div');
+      div.className = 'msg msg-bot';
+      div.style.maxWidth = '100%';
+      div.textContent = text;
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';
+      btn.onclick = () => copyToClipboard(div.textContent);
+      wrap.appendChild(div); wrap.appendChild(btn);
+      box.appendChild(wrap);
+    }} else {{
+      const div = document.createElement('div');
+      div.className = `msg msg-${{role}}`;
+      div.textContent = text;
+      box.appendChild(div);
+    }}
     box.scrollTop = box.scrollHeight;
   }}
   function appendThinking() {{
@@ -2183,6 +2295,53 @@ HTML = f"""<!DOCTYPE html>
       '<div class="msg msg-bot">Chat pulita 🧹</div>';
     send({{ action: 'clear_chat' }});
   }}
+
+  // ── Chat expand / fullscreen ──
+  let chatExpanded = false;
+  let chatFullscreen = false;
+  function toggleChatExpand() {{
+    chatExpanded = !chatExpanded;
+    const msgs = document.getElementById('chat-messages');
+    const btn = document.getElementById('chat-expand-btn');
+    msgs.classList.toggle('expanded', chatExpanded);
+    btn.textContent = chatExpanded ? '⤡' : '⤢';
+    btn.title = chatExpanded ? 'Comprimi chat' : 'Espandi chat';
+    msgs.scrollTop = msgs.scrollHeight;
+  }}
+  function openChatFullscreen() {{
+    chatFullscreen = true;
+    const overlay = document.getElementById('chat-fullscreen');
+    const slot = document.getElementById('chat-fs-slot');
+    const inputSlot = document.getElementById('chat-fs-input-slot');
+    // Sposta nodi reali dentro il fullscreen
+    slot.appendChild(document.getElementById('chat-messages'));
+    const chatInput = document.getElementById('chat-input');
+    const chatSend = document.getElementById('chat-send');
+    inputSlot.appendChild(chatInput);
+    inputSlot.appendChild(chatSend);
+    overlay.classList.add('show');
+    chatInput.focus();
+    document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+  }}
+  function closeChatFullscreen() {{
+    chatFullscreen = false;
+    document.getElementById('chat-fullscreen').classList.remove('show');
+    // Rimetti i nodi nella card originale
+    const card = document.querySelector('.chat-input-row');
+    const chatMessages = document.getElementById('chat-messages');
+    card.parentNode.insertBefore(chatMessages, card);
+    card.appendChild(document.getElementById('chat-input'));
+    card.appendChild(document.getElementById('chat-send'));
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }}
+  // Escape chiude overlay
+  document.addEventListener('keydown', (e) => {{
+    if (e.key === 'Escape') {{
+      if (chatFullscreen) closeChatFullscreen();
+      const outFs = document.getElementById('output-fullscreen');
+      if (outFs && outFs.classList.contains('show')) closeOutputFullscreen();
+    }}
+  }});
 
   // ── On-demand widget loaders ──
   function loadTokens(btn) {{
@@ -2285,6 +2444,7 @@ HTML = f"""<!DOCTYPE html>
       <div style="display:flex;gap:6px;">
         <button class="btn-ghost" onclick="loadBriefing()">↻ Aggiorna</button>
         <button class="btn-green" onclick="runBriefing()">▶ Genera nuovo</button>
+        <button class="btn-ghost" onclick="copyToClipboard(document.getElementById('briefing-body').textContent)">📋 Copia</button>
       </div>`;
   }}
 
@@ -2301,7 +2461,7 @@ HTML = f"""<!DOCTYPE html>
         &nbsp;·&nbsp; FONTE: <span style="color:var(--text2)">${{src}}</span>
       </div>
       <div class="mono-block" style="max-height:100px;">${{(data.log_lines||[]).map(l=>esc(l)).join('\\n')||'// nessun log disponibile'}}</div>
-      <div style="margin-top:8px;"><button class="btn-ghost" onclick="loadTokens()">↻ Aggiorna</button></div>`;
+      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadTokens()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('tokens-body').textContent)">📋 Copia</button></div>`;
   }}
 
   function renderLogs(data) {{
@@ -2309,7 +2469,7 @@ HTML = f"""<!DOCTYPE html>
     // data può essere stringa (vecchio formato) o oggetto {{lines, total, filtered}}
     if (typeof data === 'string') {{
       el.innerHTML = `<div class="mono-block" style="max-height:200px;">${{esc(data)||'(nessun log)'}}</div>
-        <div style="margin-top:8px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button></div>`;
+        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">📋 Copia</button></div>`;
       return;
     }}
     const dateVal = document.getElementById('log-date-filter')?.value || '';
@@ -2339,7 +2499,7 @@ HTML = f"""<!DOCTYPE html>
       </div>
       <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">${{countInfo}}</div>
       <div class="mono-block" style="max-height:240px;">${{content}}</div>
-      <div style="margin-top:8px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button></div>`;
+      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">📋 Copia</button></div>`;
     // Enter su campo ricerca = filtra
     document.getElementById('log-search-filter')?.addEventListener('keydown', e => {{
       if (e.key === 'Enter') loadLogs();
@@ -2402,8 +2562,10 @@ HTML = f"""<!DOCTYPE html>
     claudeRunning = true;
     document.getElementById('claude-run-btn').disabled = true;
     document.getElementById('claude-cancel-btn').style.display = 'inline-block';
+    const wrap = document.getElementById('claude-output-wrap');
+    if (wrap) wrap.style.display = 'block';
     const out = document.getElementById('claude-output');
-    if (out) {{ out.style.display = 'block'; out.innerHTML = ''; }}
+    if (out) out.innerHTML = '';
     send({{ action: 'claude_task', prompt: prompt }});
   }}
 
@@ -2458,7 +2620,16 @@ HTML = f"""<!DOCTYPE html>
           <button class="btn-ghost" onclick="loadBridge()">↻ Stato</button>
         </div>
       </div>
-      <div id="claude-output" class="claude-output" style="display:none;margin-bottom:10px;"></div>
+      <div id="claude-output-wrap" style="display:none;margin-bottom:10px;">
+        <div class="claude-output-header">
+          <span>OUTPUT</span>
+          <div style="display:flex;gap:4px;">
+            <button class="btn-ghost" style="padding:2px 8px;font-size:10px;min-height:24px;" onclick="copyClaudeOutput()">📋 Copia</button>
+            <button class="btn-ghost" style="padding:2px 8px;font-size:10px;min-height:24px;" onclick="openOutputFullscreen()">⛶ Espandi</button>
+          </div>
+        </div>
+        <div id="claude-output" class="claude-output"></div>
+      </div>
       <div id="claude-tasks-list"></div>`;
   }}
 
@@ -2565,6 +2736,36 @@ HTML = f"""<!DOCTYPE html>
     el.textContent = text; el.classList.add('show');
     const ms = Math.max(2500, Math.min(text.length * 60, 6000));
     setTimeout(() => el.classList.remove('show'), ms);
+  }}
+
+  function copyToClipboard(text) {{
+    if (navigator.clipboard && navigator.clipboard.writeText) {{
+      navigator.clipboard.writeText(text).then(() => showToast('📋 Copiato'))
+        .catch(() => _fallbackCopy(text));
+    }} else {{ _fallbackCopy(text); }}
+  }}
+  function _fallbackCopy(text) {{
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
+    document.body.appendChild(ta); ta.select();
+    try {{ document.execCommand('copy'); showToast('📋 Copiato'); }}
+    catch(e) {{ showToast('Copia non riuscita'); }}
+    document.body.removeChild(ta);
+  }}
+
+  // ── Remote Code output helpers ──
+  function copyClaudeOutput() {{
+    const out = document.getElementById('claude-output');
+    if (out) copyToClipboard(out.textContent);
+  }}
+  function openOutputFullscreen() {{
+    const out = document.getElementById('claude-output');
+    if (!out) return;
+    document.getElementById('output-fs-content').textContent = out.textContent;
+    document.getElementById('output-fullscreen').classList.add('show');
+  }}
+  function closeOutputFullscreen() {{
+    document.getElementById('output-fullscreen').classList.remove('show');
   }}
 
   setInterval(() => {{
