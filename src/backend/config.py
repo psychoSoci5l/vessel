@@ -108,6 +108,16 @@ _tg_cfg = _get_config("telegram.json")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   _tg_cfg.get("token", ""))
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", str(_tg_cfg.get("chat_id", "")))
 
+# ─── Groq (Whisper STT) ─────────────────────────────────────────────────────
+_groq_cfg = _get_config("groq.json")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", _groq_cfg.get("apiKey", ""))
+GROQ_WHISPER_MODEL = _groq_cfg.get("whisperModel", "whisper-large-v3-turbo")
+GROQ_WHISPER_LANGUAGE = _groq_cfg.get("language", "it")
+
+# ─── TTS (Edge TTS) ───────────────────────────────────────────────────────
+TTS_VOICE = "it-IT-DiegoNeural"
+TTS_MAX_CHARS = 2000  # limite caratteri per TTS (evita vocali troppo lunghi)
+
 # ─── Provider Failover ──────────────────────────────────────────────────────
 PROVIDER_FALLBACKS = {
     "anthropic":       "openrouter",

@@ -65,6 +65,82 @@ async def _handle_telegram_message(text: str):
     reply = await _chat_response(text, history, provider_id, system, model, channel="telegram")
     telegram_send(reply)
 
+VOICE_MAX_DURATION = 180  # max 3 minuti per vocale (evita muri di testo)
+
+async def _handle_telegram_voice(voice: dict):
+    """Gestisce un messaggio vocale Telegram: scarica → trascrivi → rispondi."""
+    file_id = voice.get("file_id", "")
+    duration = voice.get("duration", 0)
+    if not file_id:
+        return
+    if duration > VOICE_MAX_DURATION:
+        telegram_send(f"Il vocale è troppo lungo ({duration}s, max {VOICE_MAX_DURATION}s). Prova con uno più breve.")
+        return
+
+    # 1) Scarica il file OGG da Telegram
+    file_path = await bg(telegram_get_file, file_id)
+    if not file_path:
+        telegram_send("Non riesco a recuperare il vocale. Riprova.")
+        return
+    audio_bytes = await bg(telegram_download_file, file_path)
+    if not audio_bytes:
+        telegram_send("Non riesco a scaricare il vocale. Riprova.")
+        return
+
+    # 2) Trascrivi via Groq Whisper
+    text = await bg(transcribe_voice, audio_bytes)
+    if not text:
+        telegram_send("Non sono riuscito a trascrivere il vocale. Prova a scrivere.")
+        return
+
+    # 3) Rispondi con testo + vocale
+    print(f"[Telegram] Vocale trascritto ({duration}s): {text[:80]}...")
+
+    # Routing provider (riusa logica standard)
+    provider_id = "openrouter"
+    system = OLLAMA_SYSTEM
+    model = OPENROUTER_MODEL
+    low = text.lower()
+    if low.startswith("@coder ") or low.startswith("@pc "):
+        provider_id = "ollama_pc_coder"
+        system = OLLAMA_PC_CODER_SYSTEM
+        model = OLLAMA_PC_CODER_MODEL
+        text = text.split(" ", 1)[1]
+    elif low.startswith("@deep "):
+        provider_id = "ollama_pc_deep"
+        system = OLLAMA_PC_DEEP_SYSTEM
+        model = OLLAMA_PC_DEEP_MODEL
+        text = text.split(" ", 1)[1]
+    elif low.startswith("@local "):
+        provider_id = "ollama"
+        system = OLLAMA_SYSTEM
+        model = OLLAMA_MODEL
+        text = text.split(" ", 1)[1]
+
+    voice_prefix = (
+        "[Messaggio vocale trascritto — rispondi in modo conciso e naturale, "
+        "come in una conversazione parlata. Niente emoji, asterischi, elenchi, "
+        "formattazione markdown o roleplay. Max 2-3 frasi.] "
+    )
+    voice_text = voice_prefix + text
+
+    history = _tg_history(provider_id)
+    reply = await _chat_response(voice_text, history, provider_id, system, model, channel="telegram")
+
+    # Invia risposta testuale
+    telegram_send(reply)
+
+    # Genera e invia risposta vocale (fire-and-forget in background)
+    loop = asyncio.get_running_loop()
+    def _tts_and_send():
+        ogg = text_to_voice(reply)
+        if ogg:
+            telegram_send_voice(ogg)
+        else:
+            print("[TTS] Generazione vocale fallita, risposta solo testo")
+    loop.run_in_executor(None, _tts_and_send)
+
+
 async def telegram_polling_task():
     """Long polling Telegram. Avviato nel lifespan se token configurato."""
     offset = 0
@@ -87,6 +163,11 @@ async def telegram_polling_task():
                 chat_id = str(msg.get("chat", {}).get("id", ""))
                 if chat_id != TELEGRAM_CHAT_ID:
                     print(f"[Telegram] Messaggio da chat non autorizzata: {chat_id}")
+                    continue
+                # Voice message → STT pipeline
+                voice = msg.get("voice")
+                if voice:
+                    asyncio.create_task(_handle_telegram_voice(voice))
                     continue
                 text = msg.get("text", "").strip()
                 if not text:

@@ -145,6 +145,16 @@ _tg_cfg = _get_config("telegram.json")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   _tg_cfg.get("token", ""))
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", str(_tg_cfg.get("chat_id", "")))
 
+# ─── Groq (Whisper STT) ─────────────────────────────────────────────────────
+_groq_cfg = _get_config("groq.json")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", _groq_cfg.get("apiKey", ""))
+GROQ_WHISPER_MODEL = _groq_cfg.get("whisperModel", "whisper-large-v3-turbo")
+GROQ_WHISPER_LANGUAGE = _groq_cfg.get("language", "it")
+
+# ─── TTS (Edge TTS) ───────────────────────────────────────────────────────
+TTS_VOICE = "it-IT-DiegoNeural"
+TTS_MAX_CHARS = 2000  # limite caratteri per TTS (evita vocali troppo lunghi)
+
 # ─── Provider Failover ──────────────────────────────────────────────────────
 PROVIDER_FALLBACKS = {
     "anthropic":       "openrouter",
@@ -1792,6 +1802,192 @@ def telegram_send(text: str) -> bool:
         print(f"[Telegram] send error: {e}")
         return False
 
+def telegram_get_file(file_id: str) -> str:
+    """Ottiene il file_path dal file_id Telegram. Restituisce stringa vuota su errore."""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getFile?file_id={file_id}"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        return data.get("result", {}).get("file_path", "")
+    except Exception as e:
+        print(f"[Telegram] getFile error: {e}")
+        return ""
+
+
+def telegram_download_file(file_path: str) -> bytes:
+    """Scarica un file dai server Telegram. Restituisce bytes vuoti su errore."""
+    try:
+        url = f"https://api.telegram.org/file/bot{TELEGRAM_TOKEN}/{file_path}"
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.read()
+    except Exception as e:
+        print(f"[Telegram] download error: {e}")
+        return b""
+
+
+def transcribe_voice(audio_bytes: bytes, filename: str = "voice.ogg") -> str:
+    """Trascrive audio via Groq Whisper API (urllib puro, multipart/form-data).
+    Restituisce il testo trascritto, stringa vuota su errore."""
+    if not GROQ_API_KEY:
+        print("[STT] Groq API key non configurata")
+        return ""
+    if not audio_bytes:
+        return ""
+    try:
+        boundary = "----VesselSTTBoundary"
+        body = b""
+        # Campo: file
+        body += f"--{boundary}\r\n".encode()
+        body += f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'.encode()
+        body += b"Content-Type: audio/ogg\r\n\r\n"
+        body += audio_bytes
+        body += b"\r\n"
+        # Campo: model
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="model"\r\n\r\n'
+        body += f"{GROQ_WHISPER_MODEL}\r\n".encode()
+        # Campo: language
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="language"\r\n\r\n'
+        body += f"{GROQ_WHISPER_LANGUAGE}\r\n".encode()
+        # Campo: response_format
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="response_format"\r\n\r\n'
+        body += b"json\r\n"
+        # Campo: temperature
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="temperature"\r\n\r\n'
+        body += b"0\r\n"
+        # Chiudi boundary
+        body += f"--{boundary}--\r\n".encode()
+
+        req = urllib.request.Request(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            data=body, method="POST"
+        )
+        req.add_header("Authorization", f"Bearer {GROQ_API_KEY}")
+        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        req.add_header("User-Agent", "Vessel-Dashboard/1.0")
+
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+        text = result.get("text", "").strip()
+        if text:
+            print(f"[STT] Trascritto: {text[:80]}...")
+        return text
+    except Exception as e:
+        print(f"[STT] Groq Whisper error: {e}")
+        return ""
+
+
+def text_to_voice(text: str) -> bytes:
+    """Converte testo in audio OGG Opus via Edge TTS + ffmpeg.
+    Restituisce bytes OGG pronti per Telegram sendVoice, bytes vuoti su errore."""
+    if not text or not text.strip():
+        return b""
+    # Tronca testo troppo lungo
+    if len(text) > TTS_MAX_CHARS:
+        text = text[:TTS_MAX_CHARS]
+    try:
+        import edge_tts
+        import tempfile
+        # Edge TTS genera MP3 — scriviamo su temp file
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as mp3_f:
+            mp3_path = mp3_f.name
+        ogg_path = mp3_path.replace(".mp3", ".ogg")
+        # Esegui edge-tts in modo sincrono (asyncio.run in thread separato)
+        async def _generate():
+            comm = edge_tts.Communicate(text, TTS_VOICE)
+            await comm.save(mp3_path)
+        # Usa un nuovo event loop (siamo in un thread executor)
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop and loop.is_running():
+            # Siamo già in un event loop — usa asyncio.run_coroutine_threadsafe
+            # Non dovrebbe succedere, ma gestiamo il caso
+            new_loop = asyncio.new_event_loop()
+            new_loop.run_until_complete(_generate())
+            new_loop.close()
+        else:
+            asyncio.run(_generate())
+        # Converti MP3 → OGG Opus via ffmpeg
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", mp3_path, "-c:a", "libopus", "-b:a", "48k",
+             "-application", "voip", ogg_path],
+            capture_output=True, timeout=30
+        )
+        if result.returncode != 0:
+            print(f"[TTS] ffmpeg error: {result.stderr.decode()[:200]}")
+            return b""
+        with open(ogg_path, "rb") as f:
+            ogg_bytes = f.read()
+        # Cleanup temp files
+        import os
+        try:
+            os.unlink(mp3_path)
+        except Exception:
+            pass
+        try:
+            os.unlink(ogg_path)
+        except Exception:
+            pass
+        if ogg_bytes:
+            print(f"[TTS] Generato vocale: {len(ogg_bytes)} bytes, {len(text)} chars")
+        return ogg_bytes
+    except Exception as e:
+        print(f"[TTS] Error: {e}")
+        return b""
+
+
+def telegram_send_voice(ogg_bytes: bytes, caption: str = "") -> bool:
+    """Invia un messaggio vocale OGG Opus a Telegram via sendVoice API (multipart).
+    Restituisce True se successo."""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    if not ogg_bytes:
+        return False
+    try:
+        boundary = "----VesselTTSBoundary"
+        body = b""
+        # Campo: chat_id
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+        body += f"{TELEGRAM_CHAT_ID}\r\n".encode()
+        # Campo: voice (file OGG)
+        body += f"--{boundary}\r\n".encode()
+        body += b'Content-Disposition: form-data; name="voice"; filename="voice.ogg"\r\n'
+        body += b"Content-Type: audio/ogg\r\n\r\n"
+        body += ogg_bytes
+        body += b"\r\n"
+        # Campo: caption (opzionale)
+        if caption:
+            body += f"--{boundary}\r\n".encode()
+            body += b'Content-Disposition: form-data; name="caption"\r\n\r\n'
+            body += f"{caption[:1024]}\r\n".encode()
+        # Chiudi boundary
+        body += f"--{boundary}--\r\n".encode()
+
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendVoice"
+        req = urllib.request.Request(url, data=body, method="POST")
+        req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+        req.add_header("User-Agent", "Vessel-Dashboard/1.0")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            result = json.loads(resp.read().decode())
+        if result.get("ok"):
+            print("[TTS] Vocale inviato su Telegram")
+            return True
+        print(f"[TTS] sendVoice failed: {result}")
+        return False
+    except Exception as e:
+        print(f"[TTS] sendVoice error: {e}")
+        return False
+
+
 async def _chat_response(
     message: str, chat_history: list,
     provider_id: str, system_prompt: str, model: str,
@@ -2143,6 +2339,82 @@ async def _handle_telegram_message(text: str):
     reply = await _chat_response(text, history, provider_id, system, model, channel="telegram")
     telegram_send(reply)
 
+VOICE_MAX_DURATION = 180  # max 3 minuti per vocale (evita muri di testo)
+
+async def _handle_telegram_voice(voice: dict):
+    """Gestisce un messaggio vocale Telegram: scarica → trascrivi → rispondi."""
+    file_id = voice.get("file_id", "")
+    duration = voice.get("duration", 0)
+    if not file_id:
+        return
+    if duration > VOICE_MAX_DURATION:
+        telegram_send(f"Il vocale è troppo lungo ({duration}s, max {VOICE_MAX_DURATION}s). Prova con uno più breve.")
+        return
+
+    # 1) Scarica il file OGG da Telegram
+    file_path = await bg(telegram_get_file, file_id)
+    if not file_path:
+        telegram_send("Non riesco a recuperare il vocale. Riprova.")
+        return
+    audio_bytes = await bg(telegram_download_file, file_path)
+    if not audio_bytes:
+        telegram_send("Non riesco a scaricare il vocale. Riprova.")
+        return
+
+    # 2) Trascrivi via Groq Whisper
+    text = await bg(transcribe_voice, audio_bytes)
+    if not text:
+        telegram_send("Non sono riuscito a trascrivere il vocale. Prova a scrivere.")
+        return
+
+    # 3) Rispondi con testo + vocale
+    print(f"[Telegram] Vocale trascritto ({duration}s): {text[:80]}...")
+
+    # Routing provider (riusa logica standard)
+    provider_id = "openrouter"
+    system = OLLAMA_SYSTEM
+    model = OPENROUTER_MODEL
+    low = text.lower()
+    if low.startswith("@coder ") or low.startswith("@pc "):
+        provider_id = "ollama_pc_coder"
+        system = OLLAMA_PC_CODER_SYSTEM
+        model = OLLAMA_PC_CODER_MODEL
+        text = text.split(" ", 1)[1]
+    elif low.startswith("@deep "):
+        provider_id = "ollama_pc_deep"
+        system = OLLAMA_PC_DEEP_SYSTEM
+        model = OLLAMA_PC_DEEP_MODEL
+        text = text.split(" ", 1)[1]
+    elif low.startswith("@local "):
+        provider_id = "ollama"
+        system = OLLAMA_SYSTEM
+        model = OLLAMA_MODEL
+        text = text.split(" ", 1)[1]
+
+    voice_prefix = (
+        "[Messaggio vocale trascritto — rispondi in modo conciso e naturale, "
+        "come in una conversazione parlata. Niente emoji, asterischi, elenchi, "
+        "formattazione markdown o roleplay. Max 2-3 frasi.] "
+    )
+    voice_text = voice_prefix + text
+
+    history = _tg_history(provider_id)
+    reply = await _chat_response(voice_text, history, provider_id, system, model, channel="telegram")
+
+    # Invia risposta testuale
+    telegram_send(reply)
+
+    # Genera e invia risposta vocale (fire-and-forget in background)
+    loop = asyncio.get_running_loop()
+    def _tts_and_send():
+        ogg = text_to_voice(reply)
+        if ogg:
+            telegram_send_voice(ogg)
+        else:
+            print("[TTS] Generazione vocale fallita, risposta solo testo")
+    loop.run_in_executor(None, _tts_and_send)
+
+
 async def telegram_polling_task():
     """Long polling Telegram. Avviato nel lifespan se token configurato."""
     offset = 0
@@ -2165,6 +2437,11 @@ async def telegram_polling_task():
                 chat_id = str(msg.get("chat", {}).get("id", ""))
                 if chat_id != TELEGRAM_CHAT_ID:
                     print(f"[Telegram] Messaggio da chat non autorizzata: {chat_id}")
+                    continue
+                # Voice message → STT pipeline
+                voice = msg.get("voice")
+                if voice:
+                    asyncio.create_task(_handle_telegram_voice(voice))
                     continue
                 text = msg.get("text", "").strip()
                 if not text:

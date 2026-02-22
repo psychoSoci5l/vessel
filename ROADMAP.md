@@ -235,12 +235,36 @@
 
 ---
 
+## Fase 20 — Vessel Parla e Ascolta
+
+> Vocali su Telegram: Vessel riceve messaggi vocali e (presto) risponde con voce.
+> Scelte tecniche: **Groq Whisper** (STT gratuito, velocissimo) + **Edge TTS** (TTS gratuito, offline-friendly).
+> Niente ElevenLabs: Edge TTS copre il caso d'uso senza costi.
+
+**Blocco A — STT (Speech-to-Text)** ✅ (2026-02-22):
+- [x] Config Groq: `~/.nanobot/groq.json` (apiKey), `GROQ_API_KEY` + `GROQ_WHISPER_MODEL` in config.py
+- [x] `transcribe_voice()` in services.py: multipart/form-data via urllib puro, model `whisper-large-v3-turbo`
+- [x] `telegram_get_file()` + `telegram_download_file()` in services.py
+- [x] `_handle_telegram_voice()` in routes.py: scarica OGG → trascrivi → handler standard
+- [x] Prefisso `[Messaggio vocale trascritto]` per dare contesto al LLM
+- [x] Fix Cloudflare 403: header `User-Agent: Vessel-Dashboard/1.0` (error 1010 = urllib blocked)
+- [x] Testato end-to-end: trascrizione accurata, Vessel risponde correttamente
+
+**Blocco B — TTS (Text-to-Speech)** ✅ (2026-02-22):
+- [x] Installare `edge-tts` sul Pi (`pip install --break-system-packages edge-tts` v7.2.7)
+- [x] `text_to_voice()` in services.py: Edge TTS → MP3 → ffmpeg → OGG Opus (temp files, cleanup)
+- [x] `telegram_send_voice()` in services.py: sendVoice API multipart (urllib puro)
+- [x] Hook in `_handle_telegram_voice()`: risposta vocale fire-and-forget dopo testo
+- [x] Voce: `it-IT-DiegoNeural` (mascolina, naturale), config `TTS_VOICE` + `TTS_MAX_CHARS`
+- [x] **Stile vocale**: prefisso istruisce LLM per risposte concise, naturali, senza emoji/markdown
+  - Pipeline completa: vocale → STT → LLM (stile parlato) → testo + TTS → vocale di ritorno
+
+---
+
 ## Visione futura (no timeline, complessità crescente)
 
 **Medio termine:**
 - Nanobot aggiornamento versione (attuale 0.1.4 — monitorare release)
-- Whisper STT: messaggi vocali Discord/Telegram → testo
-- ElevenLabs TTS: Vessel risponde con voce realistica
 - Smart Home integration (Tuya/Smart Life): sensori fumo, automazioni domotiche via Pi
 
 **Lungo termine:**
