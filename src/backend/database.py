@@ -102,6 +102,16 @@ def init_db():
                 FOREIGN KEY(entity_a) REFERENCES entities(id),
                 FOREIGN KEY(entity_b) REFERENCES entities(id)
             );
+
+            CREATE TABLE IF NOT EXISTS weekly_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                week_start TEXT NOT NULL,
+                week_end TEXT NOT NULL,
+                summary TEXT NOT NULL DEFAULT '',
+                stats TEXT NOT NULL DEFAULT '{}'
+            );
+            CREATE INDEX IF NOT EXISTS idx_weekly_ts ON weekly_summaries(ts);
         """)
         # Schema version
         row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -453,6 +463,15 @@ def db_get_entities(type: str = "", limit: int = 100) -> list:
         return [dict(r) for r in rows]
 
 
+def db_delete_entity(entity_id: int) -> bool:
+    """Elimina un'entity e tutte le relazioni associate (cascade)."""
+    with _db_conn() as conn:
+        conn.execute("DELETE FROM relations WHERE entity_a = ? OR entity_b = ?",
+                     (entity_id, entity_id))
+        cur = conn.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+        return cur.rowcount > 0
+
+
 def db_get_relations(entity_id: int = 0) -> list:
     """Relazioni di un'entity o tutte. Ritorna con nomi delle entities."""
     with _db_conn() as conn:
@@ -474,3 +493,31 @@ def db_get_relations(entity_id: int = 0) -> list:
                 ORDER BY r.frequency DESC LIMIT 100
             """).fetchall()
         return [dict(r) for r in rows]
+
+
+# ─── Weekly Summaries ────────────────────────────────────────────────────────
+
+def db_save_weekly_summary(week_start: str, week_end: str,
+                           summary: str, stats: dict):
+    """Salva un riassunto settimanale generato da Ollama."""
+    with _db_conn() as conn:
+        conn.execute(
+            "INSERT INTO weekly_summaries (ts, week_start, week_end, summary, stats) VALUES (?, ?, ?, ?, ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%S"), week_start, week_end,
+             summary, json.dumps(stats, ensure_ascii=False))
+        )
+
+
+def db_get_latest_weekly_summary() -> dict | None:
+    """Ritorna l'ultimo riassunto settimanale, o None."""
+    with _db_conn() as conn:
+        row = conn.execute(
+            "SELECT ts, week_start, week_end, summary, stats FROM weekly_summaries ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row:
+            return {
+                "ts": row["ts"], "week_start": row["week_start"],
+                "week_end": row["week_end"], "summary": row["summary"],
+                "stats": json.loads(row["stats"]),
+            }
+        return None

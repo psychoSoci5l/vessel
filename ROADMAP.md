@@ -154,21 +154,101 @@
   - HDD 1TB exfat montato su `/mnt/backup` via fstab (UUID, nofail)
   - sqlite3 CLI installato per backup .backup consistente
 
-**Task futuri:**
-- [ ] Reminder task Google: legge Tasks API → notifica X minuti prima su Telegram
-- [ ] Routine "buonanotte": briefing serale, reminder domani, spegni luci Smart Life
-- [ ] Whisper voice: STT su Pi per messaggi vocali Discord/Telegram → testo
+---
+
+## Fase 18 — Memoria Viva
+
+> Il KG raccoglie dati da ogni conversazione. Il self-evolve pulisce. Ma nessuno dei due retroalimenta
+> il contesto. Questa fase chiude il loop: **i dati raccolti tornano nel prompt**.
+> Dipende da: Fase 16B (KG, entity extraction) e Fase 17A (entity extraction auto).
+>
+> **Scoperta chiave (sessione esplorativa 2026-02-22):** l'infrastruttura memoria è completa
+> ma decorativa — entità estratte e mai consultate, history cross-canale mai unificata nel contesto.
+> Dettagli analisi: `memoria/fase18-memoria-viva.md` nella cartella progetto Claude.
+>
+> **Riorganizzazione (2026-02-22):** snellita da 4 blocchi pesanti a 4 blocchi agili.
+> Il vecchio Blocco C (Self-Evolve 2.0) è stato diviso: la potatura entità è ora C (quick win),
+> mentre il weekly summary narrativo è spostato in Fase 19. Blocchi D+B fattibili in sessione unica.
+
+**Blocco A — Knowledge-Augmented Context** ✅ (2026-02-22):
+- [x] `_build_memory_block()`: query top entities per frequenza → blocco "## Memoria persistente"
+- [x] Iniettato nel system prompt dentro `build_context()`, ~200 token fissi
+- [x] Cross-channel: il KG è già unificato (dashboard + telegram), il blocco riflette tutto
+- [x] Modalità memoria a richiesta sulla dashboard:
+  - Default: memoria NON attiva (privacy ospiti, conversazione pulita)
+  - Attivabile a richiesta dall'utente (toggle/comando)
+  - Telegram: sempre attiva (canale personale)
+
+**Blocco D — Widget KG + Feedback Loop** ✅ (2026-02-22, deployed):
+- [x] `db_delete_entity()` in database.py + cascade su relations
+- [x] Handler WS `delete_entity` in routes.py + invalidazione cache memory block
+- [x] Tab "Grafo" nel widget Memoria: lista entità raggruppate per tipo (tech/person/place)
+- [x] Per ogni entità: nome, frequenza, first_seen/last_seen
+- [x] Bottone "Elimina" per curare falsi positivi (feedback loop)
+
+**Blocco B — Topic Recall (RAG leggero su SQLite)** ✅ (2026-02-22, deployed):
+- [x] `_inject_topic_recall()`: estrae entità dal messaggio, cerca chat cross-channel
+- [x] Soglia freq >= 5, max 2 snippet (~300 token), max 3 keyword
+- [x] Iniettato nel system prompt in `_stream_chat` e `_chat_response` (solo con memoria attiva)
+- [x] Skip su Ollama Pi (budget 3K troppo stretto)
+- [x] Guardrails: `TOPIC_RECALL_FREQ_THRESHOLD`, `TOPIC_RECALL_MAX_SNIPPETS`, `TOPIC_RECALL_MAX_TOKENS`
+
+**Blocco C — Potatura entità (quick win)** ✅ (2026-02-22):
+- [x] In `self_evolve.py`: `prune_stale_entities(60)` — elimina entità con freq=1 e last_seen >60gg
+- [x] `cleanup_orphan_relations()` — elimina relazioni orfane (entity cancellata)
+- [x] `compute_entity_stats()` — profilo statistico zero-API: top 10, distribuzione tipo, trend mensili
+
+**Ordine esecuzione:** A ✅ → D+B ✅ → C ✅ — **Fase 18 completata**
+
+**Vincoli architetturali:**
+- NO vector DB/embedding (SQLite LIKE + frequency basta per il nostro scale su Pi)
+- NO toccare WebSocket protocol (tutto nel layer services + database)
+- Budget token rigidi per ogni blocco memoria (non erode il budget conversazione)
 
 ---
 
-## Visione futura (no timeline)
+## Fase 19 — Quality of Life
 
+> Feature che migliorano l'esperienza quotidiana. Raggruppate per affinità tecnica.
+> Gruppo A (Ollama) → Gruppo B (Google+Telegram) → Infra.
+
+**Gruppo A — Ollama Summarization:**
+- [x] **Weekly Summary narrativo** ✅ (2026-02-22, deployed): `weekly_summary.py` standalone, cron dom 05:00
+  - Raccoglie dati 7gg (chat, usage, entities), chiama Gemma3 4B sync, salva in `weekly_summaries`
+  - Fallback statistico se Ollama offline
+  - `_build_weekly_summary_block()` inietta nel system prompt (cache 1h, solo con memoria attiva)
+- [x] **Archiviazione intelligente** ✅ (2026-02-22, deployed): `summarize_before_archive()` in self_evolve.py
+  - Prima di archiviare chat >90gg, chiama Gemma3 per summary, salva in `weekly_summaries`
+  - Fallback statistico se Ollama offline, riusa `_call_ollama()` condiviso
+
+**Gruppo B — Google + Telegram Automation:**
+- [x] **Reminder Google Tasks + Calendar** ✅ (2026-02-22, deployed): `task_reminder.py`, cron `*/15 7-22`
+  - Calendar: notifica 20 min prima di eventi imminenti via Telegram
+  - Tasks: digest mattutino dei task pending (scaduti + senza data)
+  - Dedup via `reminders_sent.json`, subprocess → google_helper.py (venv Google)
+- [x] **Routine "buonanotte"** ✅ (2026-02-22, deployed): `goodnight.py`, cron `0 22 * * *`
+  - Calendario domani + task pending → messaggio Telegram serale
+  - Riusa subprocess → google_helper.py, stessa infra di task_reminder
+
+**Standalone:**
+- [ ] **HTTPS locale**: self-signed cert per dashboard sicura su LAN
+
+---
+
+## Visione futura (no timeline, complessità crescente)
+
+**Medio termine:**
 - Nanobot aggiornamento versione (attuale 0.1.4 — monitorare release)
+- Whisper STT: messaggi vocali Discord/Telegram → testo
+- ElevenLabs TTS: Vessel risponde con voce realistica
+- Smart Home integration (Tuya/Smart Life): sensori fumo, automazioni domotiche via Pi
+
+**Lungo termine:**
 - Sistema plugin/widget esterni da `~/.nanobot/widgets/`
 - Dashboard multi-host (monitoraggio altri device LAN)
-- HTTPS locale con self-signed cert
-- ElevenLabs TTS: Vessel risponde con voce realistica
 - iOS & Android companion app nativa
+
+**Sperimentale:**
 - Agent Swarms: più agenti specializzati che collaborano
 - ESP32/MicroPi: heartbeat hardware fisico
 

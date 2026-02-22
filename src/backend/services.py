@@ -516,6 +516,113 @@ def _bg_extract_and_store(user_msg: str, assistant_msg: str):
         print(f"[KG] Entity extraction error: {e}")
 
 
+# ─── Memory Block (Fase 18 — KG → system prompt) ─────────────────────────────
+
+_memory_block_cache: dict = {"text": "", "ts": 0}
+MEMORY_BLOCK_TTL = 60  # refresh ogni 60s (non ad ogni messaggio)
+
+def _build_memory_block() -> str:
+    """Costruisce blocco memoria dal Knowledge Graph. Zero API, pura query SQLite."""
+    now = time.time()
+    if now - _memory_block_cache["ts"] < MEMORY_BLOCK_TTL and _memory_block_cache["text"]:
+        return _memory_block_cache["text"]
+    try:
+        entities = db_get_entities(limit=30)
+    except Exception:
+        return _memory_block_cache.get("text", "")
+    if not entities:
+        return ""
+    tech = [e["name"] for e in entities if e["type"] == "tech"][:8]
+    people = [e["name"] for e in entities if e["type"] == "person"][:5]
+    places = [e["name"] for e in entities if e["type"] == "place"][:5]
+    if not tech and not people and not places:
+        return ""
+    lines = ["## Memoria persistente (dal Knowledge Graph)"]
+    if tech:
+        lines.append(f"- Interessi tech dell'utente: {', '.join(tech)}")
+    if people:
+        lines.append(f"- Persone menzionate: {', '.join(people)}")
+    if places:
+        lines.append(f"- Luoghi citati: {', '.join(places)}")
+    block = "\n".join(lines)
+    _memory_block_cache["text"] = block
+    _memory_block_cache["ts"] = now
+    return block
+
+
+# ─── Weekly Summary Block (Fase 19A — Ollama summary → system prompt) ────────
+
+_weekly_summary_cache: dict = {"text": "", "ts": 0}
+WEEKLY_SUMMARY_TTL = 3600  # refresh ogni ora (cambia solo 1x/settimana)
+
+def _build_weekly_summary_block() -> str:
+    """Inietta l'ultimo riassunto settimanale nel system prompt. Cache 1h."""
+    now = time.time()
+    if now - _weekly_summary_cache["ts"] < WEEKLY_SUMMARY_TTL and _weekly_summary_cache["text"]:
+        return _weekly_summary_cache["text"]
+    try:
+        ws = db_get_latest_weekly_summary()
+    except Exception:
+        return _weekly_summary_cache.get("text", "")
+    if not ws or not ws["summary"]:
+        return ""
+    block = f"## Riassunto settimanale ({ws['week_start'][:10]} — {ws['week_end'][:10]})\n{ws['summary']}"
+    _weekly_summary_cache["text"] = block
+    _weekly_summary_cache["ts"] = now
+    return block
+
+
+# ─── Topic Recall (Fase 18B — RAG leggero su SQLite) ────────────────────────
+TOPIC_RECALL_FREQ_THRESHOLD = 5     # solo entità menzionate >= 5 volte
+TOPIC_RECALL_MAX_SNIPPETS = 2       # max 2 snippet per turno
+TOPIC_RECALL_MAX_TOKENS = 300       # budget token massimo per recall
+TOPIC_RECALL_SKIP_PROVIDERS = {"ollama"}  # provider con budget troppo stretto
+
+def _inject_topic_recall(user_message: str, provider_id: str) -> str:
+    """RAG leggero: estrae entità dal messaggio, cerca chat passate, ritorna contesto episodico.
+    Zero API — tutto regex + SQLite LIKE. Skip su Ollama Pi (budget 3K troppo stretto)."""
+    if provider_id in TOPIC_RECALL_SKIP_PROVIDERS:
+        return ""
+    # Estrai entità dal messaggio corrente (solo user, no assistant)
+    entities = extract_entities(user_message, "")
+    if not entities:
+        return ""
+    # Filtra per frequenza minima nel KG
+    all_kg = db_get_entities(limit=200)
+    kg_map = {e["name"].lower(): e for e in all_kg}
+    relevant = []
+    for ent in entities:
+        kg_entry = kg_map.get(ent["name"].lower())
+        if kg_entry and kg_entry["frequency"] >= TOPIC_RECALL_FREQ_THRESHOLD:
+            relevant.append(ent["name"])
+    if not relevant:
+        return ""
+    # Cerca snippet cross-channel per le entità più rilevanti
+    snippets = []
+    token_used = 0
+    for keyword in relevant[:3]:  # max 3 keyword da cercare
+        results = db_search_chat(keyword=keyword, limit=5)
+        for r in results:
+            if r["role"] != "assistant":
+                continue
+            text = r["content"][:200].strip()
+            if not text or len(text) < 20:
+                continue
+            cost = estimate_tokens(text)
+            if token_used + cost > TOPIC_RECALL_MAX_TOKENS:
+                break
+            snippets.append(f"[{r['ts'][:10]}] {text}")
+            token_used += cost
+            if len(snippets) >= TOPIC_RECALL_MAX_SNIPPETS:
+                break
+        if len(snippets) >= TOPIC_RECALL_MAX_SNIPPETS:
+            break
+    if not snippets:
+        return ""
+    block = "## Contesto da conversazioni passate\n" + "\n".join(f"- {s}" for s in snippets)
+    return block
+
+
 # ─── Context Pruning (Fase 16B) ───────────────────────────────────────────────
 CONTEXT_BUDGETS = {
     "anthropic":        6000,
@@ -628,7 +735,8 @@ def _provider_worker(provider, queue):
 
 async def _stream_chat(
     websocket: WebSocket, message: str, chat_history: list,
-    provider_id: str, system_prompt: str, model: str
+    provider_id: str, system_prompt: str, model: str,
+    memory_enabled: bool = False
 ):
     """Chat streaming unificata con failover automatico."""
     start_time = time.time()
@@ -637,6 +745,16 @@ async def _stream_chat(
     system_with_friends = system_prompt
     if friends_ctx:
         system_with_friends = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
+    if memory_enabled:
+        memory_block = _build_memory_block()
+        if memory_block:
+            system_with_friends = system_with_friends + "\n\n" + memory_block
+        weekly_block = _build_weekly_summary_block()
+        if weekly_block:
+            system_with_friends = system_with_friends + "\n\n" + weekly_block
+        topic_recall = _inject_topic_recall(message, provider_id)
+        if topic_recall:
+            system_with_friends = system_with_friends + "\n\n" + topic_recall
 
     chat_history.append({"role": "user", "content": message})
     db_save_chat_message(provider_id, "dashboard", "user", message)
@@ -740,6 +858,7 @@ async def _chat_response(
     message: str, chat_history: list,
     provider_id: str, system_prompt: str, model: str,
     channel: str = "telegram",
+    memory_enabled: bool = True,
 ) -> str:
     """Variante non-streaming con failover automatico. Usata da Telegram."""
     start_time = time.time()
@@ -748,6 +867,16 @@ async def _chat_response(
     system_with_friends = system_prompt
     if friends_ctx:
         system_with_friends = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
+    if memory_enabled:
+        memory_block = _build_memory_block()
+        if memory_block:
+            system_with_friends = system_with_friends + "\n\n" + memory_block
+        weekly_block = _build_weekly_summary_block()
+        if weekly_block:
+            system_with_friends = system_with_friends + "\n\n" + weekly_block
+        topic_recall = _inject_topic_recall(message, provider_id)
+        if topic_recall:
+            system_with_friends = system_with_friends + "\n\n" + topic_recall
 
     chat_history.append({"role": "user", "content": message})
     db_save_chat_message(provider_id, channel, "user", message)

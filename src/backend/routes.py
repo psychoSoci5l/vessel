@@ -128,17 +128,18 @@ async def handle_chat(websocket, msg, ctx):
         await websocket.send_json({"type": "chat_reply", "text": "⚠️ Troppi messaggi. Attendi un momento."})
         return
     await websocket.send_json({"type": "chat_thinking"})
+    mem = ctx.get("_memory_enabled", False)
     if provider == "local":
-        await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL)
+        await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, memory_enabled=mem)
     elif provider == "pc_coder":
-        await _stream_chat(websocket, text, ctx["pc_coder"], "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL)
+        await _stream_chat(websocket, text, ctx["pc_coder"], "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL, memory_enabled=mem)
     elif provider == "pc_deep":
-        await _stream_chat(websocket, text, ctx["pc_deep"], "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL)
+        await _stream_chat(websocket, text, ctx["pc_deep"], "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL, memory_enabled=mem)
     elif provider == "deepseek":
-        await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL)
+        await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, memory_enabled=mem)
     else:
         raw_model = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
-        await _stream_chat(websocket, text, ctx["cloud"], "anthropic", _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM), _resolve_model(raw_model))
+        await _stream_chat(websocket, text, ctx["cloud"], "anthropic", _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM), _resolve_model(raw_model), memory_enabled=mem)
 
 async def handle_clear_chat(websocket, msg, ctx):
     for history in ctx.values():
@@ -304,6 +305,25 @@ async def handle_get_entities(websocket, msg, ctx):
     relations = await bg(db_get_relations)
     await websocket.send_json({"type": "knowledge_graph", "entities": entities, "relations": relations})
 
+async def handle_toggle_memory(websocket, msg, ctx):
+    ctx["_memory_enabled"] = not ctx.get("_memory_enabled", False)
+    enabled = ctx["_memory_enabled"]
+    await websocket.send_json({"type": "memory_toggle", "enabled": enabled})
+    state = "attiva" if enabled else "disattiva"
+    await websocket.send_json({"type": "toast", "text": f"Memoria {state}"})
+
+async def handle_delete_entity(websocket, msg, ctx):
+    entity_id = msg.get("id")
+    if not entity_id or not isinstance(entity_id, int):
+        await websocket.send_json({"type": "toast", "text": "ID entità non valido"})
+        return
+    success = await bg(db_delete_entity, entity_id)
+    await websocket.send_json({"type": "entity_deleted", "id": entity_id, "success": success})
+    if success:
+        await websocket.send_json({"type": "toast", "text": "Entità eliminata"})
+        # Invalida cache memory block
+        _memory_block_cache["ts"] = 0
+
 WS_DISPATCHER = {
     "chat": handle_chat,
     "clear_chat": handle_clear_chat,
@@ -330,6 +350,8 @@ WS_DISPATCHER = {
     "get_claude_tasks": handle_get_claude_tasks,
     "search_memory": handle_search_memory,
     "get_entities": handle_get_entities,
+    "toggle_memory": handle_toggle_memory,
+    "delete_entity": handle_delete_entity,
 }
 
 @app.websocket("/ws")

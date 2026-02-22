@@ -1,5 +1,6 @@
 let ws = null;
   let reconnectTimer = null;
+  let memoryEnabled = false;
 
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -55,6 +56,13 @@ let ws = null;
     else if (msg.type === 'history')  { document.getElementById('history-content').textContent = msg.text; }
     else if (msg.type === 'quickref') { document.getElementById('quickref-content').textContent = msg.text; }
     else if (msg.type === 'memory_search') { renderMemorySearch(msg.results); }
+    else if (msg.type === 'knowledge_graph') { renderKnowledgeGraph(msg.entities, msg.relations); }
+    else if (msg.type === 'entity_deleted') { if (msg.success) loadEntities(); }
+    else if (msg.type === 'memory_toggle') {
+      memoryEnabled = msg.enabled;
+      const btn = document.getElementById('memory-toggle');
+      if (btn) btn.style.opacity = msg.enabled ? '1' : '0.4';
+    }
     else if (msg.type === 'logs')    { renderLogs(msg.data); }
     else if (msg.type === 'cron')    { renderCron(msg.jobs); }
     else if (msg.type === 'tokens')  { renderTokens(msg.data); }
@@ -284,6 +292,11 @@ let ws = null;
 
     // Ridisegna il canvas (potrebbe aver perso dimensioni)
     requestAnimationFrame(() => drawChart());
+  }
+
+  // ── Memory toggle ──
+  function toggleMemory() {
+    send({ action: 'toggle_memory' });
   }
 
   // ── Provider dropdown ──
@@ -838,6 +851,56 @@ let ws = null;
       }).join('');
   }
 
+  // ── Knowledge Graph (Fase 18D) ──
+  function loadEntities(btn) {
+    if (btn) btn.textContent = '...';
+    send({ action: 'get_entities' });
+  }
+
+  function deleteEntity(id) {
+    send({ action: 'delete_entity', id: id });
+  }
+
+  function renderKnowledgeGraph(entities, relations) {
+    const el = document.getElementById('grafo-body');
+    if (!entities || entities.length === 0) {
+      el.innerHTML = '<div class="no-items">// nessuna entit\u00e0 nel Knowledge Graph</div>' +
+        '<div style="margin-top:8px;"><button class="btn-ghost" onclick="loadEntities()">&#x21BB; Aggiorna</button></div>';
+      return;
+    }
+    const groups = { tech: [], person: [], place: [] };
+    entities.forEach(e => {
+      if (groups[e.type]) groups[e.type].push(e);
+      else {
+        if (!groups.other) groups.other = [];
+        groups.other.push(e);
+      }
+    });
+    const labels = { tech: 'Tech', person: 'Persone', place: 'Luoghi', other: 'Altro' };
+    const colors = { tech: 'var(--cyan, #0ff)', person: 'var(--green)', place: 'var(--amber)', other: 'var(--text2)' };
+    let html = '<div style="font-size:10px;color:var(--muted);margin-bottom:8px;">' + entities.length + ' entit\u00e0 totali</div>';
+    for (const [type, items] of Object.entries(groups)) {
+      if (!items.length) continue;
+      html += '<div style="margin-bottom:12px;">';
+      html += '<div style="font-size:10px;color:' + colors[type] + ';text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;font-weight:700;">' + labels[type] + ' (' + items.length + ')</div>';
+      items.forEach(e => {
+        const since = e.first_seen ? e.first_seen.split('T')[0] : '';
+        const last = e.last_seen ? e.last_seen.split('T')[0] : '';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:6px 10px;margin-bottom:3px;">';
+        html += '<div style="flex:1;min-width:0;">';
+        html += '<span style="color:var(--text2);font-size:12px;font-weight:600;">' + esc(e.name) + '</span>';
+        html += ' <span style="color:var(--muted);font-size:10px;">freq:' + e.frequency + '</span>';
+        html += '<div style="font-size:9px;color:var(--muted);">' + since + ' \u2192 ' + last + '</div>';
+        html += '</div>';
+        html += '<button class="btn-red" style="padding:2px 6px;font-size:9px;min-height:22px;margin-left:6px;flex-shrink:0;" onclick="deleteEntity(' + e.id + ')">&#x2715;</button>';
+        html += '</div>';
+      });
+      html += '</div>';
+    }
+    html += '<div style="display:flex;gap:6px;"><button class="btn-ghost" onclick="loadEntities()">&#x21BB; Aggiorna</button></div>';
+    el.innerHTML = html;
+  }
+
   // ── Tabs ──
   function switchTab(name, btn) {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -846,6 +909,7 @@ let ws = null;
     document.getElementById('tab-' + name).classList.add('active');
     if (name === 'history') send({ action: 'get_history' });
     if (name === 'quickref') send({ action: 'get_quickref' });
+    if (name === 'grafo') loadEntities();
   }
 
   // ── Misc ──

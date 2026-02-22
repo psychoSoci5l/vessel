@@ -178,6 +178,8 @@
           <span class="chat-compact-spacer"></span>
           <span id="chat-clock" class="home-clock">--:--:--</span>
           <div id="chat-conn-dot" class="conn-dot-mini" title="WebSocket"></div>
+          <button class="btn-ghost memory-toggle" id="memory-toggle" onclick="toggleMemory()" title="Memoria persistente"
+            style="padding:3px 6px;min-height:28px;margin-left:4px;opacity:0.4;">&#x1F9E0;</button>
           <button class="btn-ghost" onclick="clearChat()"
             style="padding:3px 6px;min-height:28px;margin-left:4px;">&#x1F5D1;</button>
         </div>
@@ -241,6 +243,7 @@
                 <button class="tab" onclick="switchTab('history', this)">HISTORY.md</button>
                 <button class="tab" onclick="switchTab('quickref', this)">Quick Ref</button>
                 <button class="tab" onclick="switchTab('search', this)">Cerca</button>
+                <button class="tab" onclick="switchTab('grafo', this)">Grafo</button>
               </div>
               <div class="mem-content">
                 <div id="tab-memory" class="tab-content active">
@@ -272,6 +275,11 @@
                     <button class="btn-green" onclick="searchMemory()" style="min-height:32px;">Cerca</button>
                   </div>
                   <div class="mono-block" id="search-results" style="max-height:300px;">Inserisci una keyword per cercare nella chat history</div>
+                </div>
+                <div id="tab-grafo" class="tab-content">
+                  <div id="grafo-body">
+                    <div class="widget-placeholder"><span class="ph-icon">&#x25CE;</span><span>Premi Carica per vedere il Knowledge Graph</span></div>
+                  </div>
                 </div>
               </div>
             </div>
