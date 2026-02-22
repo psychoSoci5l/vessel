@@ -143,7 +143,7 @@
 - [x] Terzo provider: DeepSeek V3 via OpenRouter (ModelRun, 43 tok/s, ~$0.0002/msg)
 - [x] PIN semplificato: 4 cifre, auto-submit, pulsante SBLOCCA
 
-## Fase 10 — Robustezza e polish (da doppia autoanalisi 2026-02-21)
+## Fase 10 — Robustezza e polish ✅ COMPLETATA (2026-02-21)
 > Punti convergenti tra autoanalisi Claude Code (Fase 9) e DeepSeek V3 via Ralph.
 > Due LLM indipendenti hanno analizzato il codebase e concordano su queste priorità.
 
@@ -151,6 +151,13 @@
 - [x] `stats_broadcaster()`: wrappare `get_pi_stats()` e `get_tmux_sessions()` in `await bg()`
 - [x] Spostare `TASK_TIMEOUT = 300` prima del suo primo uso
 - [x] Import `datetime` al top-level
+
+### Stabilità e Build (2026-02-22) ✅ COMPLETATA
+- [x] Fix UnicodeEncodeError (FastAPI 500 Error): corretto il builder `build.py` utilizzando `json.dumps(..., ensure_ascii=False)` così che le emoji mantengano la formattazione UTF-8 cruda invece di surrogati UTF-16.
+- [x] Fix JS Injection: racchiuso correttamente il blocco JS iniettato dentro i tag `<script>`, prevenendo Syntax Errors e rotture del grid CSS dovuti al codice raw renderizzato nel browser come DOM nodes.
+- [x] Refactor `build.py`: rimosso l'uso di f-string a favore di JSON, prevenendo gli errori di parsing originati dalle graffe `{ }` mischiate nel CSS/JS.
+- [x] Recovery source: recupero file frontend troncati dai processi in memoria (porta 8091)
+- [x] Fix `.bashrc` Pi: rimosso errore di sintassi "unexpected token '('" dovuto a export PATH corrotto
 
 ### UX Fruibilità ✅ COMPLETATA (2026-02-21)
 - [x] Infrastruttura copia: `copyToClipboard()` con fallback, CSS `.copy-btn`/`.copy-wrap`
@@ -176,40 +183,59 @@
 - [x] Login PIN ingrandita: box 380px, bottoni 24px/58px, anti-resize iOS
 
 ### P1 — Sicurezza e robustezza
-- [ ] Cap chat history per connessione (es. max 100 messaggi, trim a 60) — previene memory leak su sessioni PWA lunghe
-- [ ] Limite connessioni WebSocket in `Manager.connect()` (es. max 10) — protezione DoS base
-- [ ] Audit `run()` shell=True: verificare che nessuna variabile utente entri nei comandi
-- [ ] Cookie di sessione: aggiungere flag `secure=True` condizionale (se HTTPS)
+- [x] Cap chat history per connessione (es. max 100 messaggi, trim a 60) — previene memory leak su sessioni PWA lunghe
+- [x] Limite connessioni WebSocket in `Manager.connect()` (es. max 10) — protezione DoS base
+- [x] Audit `run()` shell=True: verificare che nessuna variabile utente entri nei comandi
+- [x] Cookie di sessione: aggiungere flag `secure=True` condizionale (se HTTPS)
 
 ### P2 — Performance e UX
-- [ ] Persistenza sessioni su file (`~/.nanobot/sessions.json`) — no ri-login dopo deploy
-- [ ] Parallelizzare `get_pi_stats()`: 5 subprocess via `asyncio.gather` + `bg()` invece di sequenziali
-- [ ] `/api/health` endpoint: status aggregato di tutti i servizi (Ollama, bridge, Pi)
-- [ ] Auto-refresh widget on-demand configurabile (crypto ogni 5min, token ogni 10min)
+- [x] Persistenza sessioni su file (`~/.nanobot/sessions.json`) — no ri-login dopo deploy
+- [x] Parallelizzare `get_pi_stats()`: 5 subprocess via `asyncio.gather` + `bg()` invece di sequenziali
+- [x] `/api/health` endpoint: status aggregato di tutti i servizi (Ollama, bridge, Pi)
+- [x] Auto-refresh widget on-demand configurabile (crypto ogni 5min, token ogni 10min)
 
 ### P3 — Refactoring (convergenti tra i due report)
-- [ ] Fattorizzare le 3 funzioni di chat streaming in `_stream_chat()` generica (~300 righe → ~120)
-- [ ] Dispatch dict per WebSocket handler (sostituire if/elif 20+ branch)
-- [ ] Unificare `_get_nanobot_config()` e `_get_bridge_config()` in `_get_config()` cached
-- [ ] Unificare `_rate_limit()` e `_check_auth_rate()` in un unico pattern
-- [ ] Separare cleanup dal broadcaster in funzione dedicata `_cleanup_expired()`
+- [x] Fattorizzare le 3 funzioni di chat streaming in `_stream_chat()` generica (~300 righe → ~120)
+- [x] Dispatch dict per WebSocket handler (sostituire if/elif 20+ branch)
+- [x] Unificare `_get_nanobot_config()` e `_get_bridge_config()` in `_get_config()` cached
+- [x] Unificare `_rate_limit()` e `_check_auth_rate()` in un unico pattern
+- [x] Separare cleanup dal broadcaster in funzione dedicata `_cleanup_expired()`
 
 ### P4 — Nuove feature
-- [ ] Notifiche push (Web Push API) per briefing, alert temperatura, task completato
-- [ ] Export dati: endpoint ZIP scaricabile (MEMORY, HISTORY, cron, token stats, claude tasks)
-- [ ] Temi alternativi (amber-on-black, blue-on-dark) con switch + localStorage
+- [x] Notifiche push (Web Push API) per briefing, alert temperatura, task completato
+- [x] Export dati: endpoint ZIP scaricabile (MEMORY, HISTORY, cron, token stats, claude tasks)
+- [x] Temi alternativi (amber-on-black, blue-on-dark) con switch + localStorage
 
 ### Visione futura
 - [ ] Sistema plugin/widget esterni da `~/.nanobot/widgets/`
 - [ ] Dashboard multi-host (monitoraggio altri device LAN)
-- [ ] Provider chat astratto (`ChatProvider` con strategy pattern per provider)
+- [x] Provider chat astratto (`ChatProvider` con strategy pattern per provider)
 - [ ] HTTPS locale con self-signed cert (opzionale)
+
+## Fase 11 — Rifondazione Architettonica (Progetto 0) ✅ COMPLETATA (2026-02-21)
+> Abbandono dello sviluppo "monolitico" per un approccio a componenti isolati, generando alla fine sempre un singolo file `nanobot_dashboard_v2.py`.
+
+### Scomposizione e Build
+- [x] Inizializzazione Ambiente e Script di Build (`build.py`) dedicato
+- [x] Scomposizione Frontend: estrazione in `src/frontend/` (css, js, html separati)
+- [x] Smembramento Backend: astrazione WebSocket e route FastAPI in `src/backend/`
+- [x] Eliminazione completa di hardcodings, commenti residui e "pezze" storiche
+- [x] Implementazione ChatProvider Strategy Pattern (Anthropic, OpenRouter, Ollama, OllamaPC)
+
+## Fase 12 — UI Dashboard Mobile e Desktop ✅ COMPLETATA (2026-02-22)
+> Ottimizzazione estrema del layout per ogni dispositivo.
+- [x] Ristrutturazione Home View: 4 stats cards prominenti (CPU/RAM/Temp/Uptime)
+- [x] Ottimizzazione Mobile: CSS Grid 2x2 per le stats cards, zero overflow orizzontale
+- [x] Rifinitura Desktop: media query `>=1024px` con sidebar sinistra fissa + dashboard a griglia
+- [x] Touch improvements: hitbox pulsanti Tmux e controlli migliorate per iOS
 
 ---
 
 ## Note tecniche
-- Tutto resta **single-file Python** — la dashboard non diventa un progetto npm
-- Ogni feature nuova viene prima testata su 8091, poi deployata su 8090
+- Lo sviluppo ora avviene nei frammenti in `src/`.
+- Il comando `python build.py` genera il target **single-file Python** (`nanobot_dashboard_v2.py`)
+- **Safety**: `build.py` non usa f-strings per i template per evitare errori di collisione con le parentesi graffe di JS/CSS.
+- Ogni feature nuova viene compilata, testata su 8096, poi deployata su 8090
 - Widget pesanti (crypto, briefing, token) sono sempre **on-demand** con placeholder
 - Il Pi ha 8GB RAM e disco da 91GB — risorse abbondanti per tutto questo
 - Google Workspace integrato via script helper (`~/scripts/google_helper.py`) — NO MCP server

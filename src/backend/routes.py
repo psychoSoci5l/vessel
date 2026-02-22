@@ -1,0 +1,390 @@
+# ─── Background broadcaster ───────────────────────────────────────────────────
+async def stats_broadcaster():
+    cycle = 0
+    while True:
+        await asyncio.sleep(5)
+        cycle += 1
+        # Pulizia rate limits e sessioni ogni ~5 min
+        if cycle % 60 == 0:
+            _cleanup_expired()
+        if manager.connections:
+            pi = await get_pi_stats()
+            tmux = await bg(get_tmux_sessions)
+            await manager.broadcast({
+                "type": "stats",
+                "data": {
+                    "pi": pi,
+                    "tmux": tmux,
+                    "time": time.strftime("%H:%M:%S"),
+                }
+            })
+
+# ─── WebSocket ────────────────────────────────────────────────────────────────
+# ─── WebSocket Dispatcher ───────────────────────────────────────────────────
+async def handle_chat(websocket, msg, ctx):
+    text = msg.get("text", "").strip()[:4000]
+    provider = msg.get("provider", "cloud")
+    if not text: return
+    ip = websocket.client.host
+    if not _rate_limit(ip, "chat", 20, 60):
+        await websocket.send_json({"type": "chat_reply", "text": "⚠️ Troppi messaggi. Attendi un momento."})
+        return
+    await websocket.send_json({"type": "chat_thinking"})
+    if provider == "local":
+        await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL)
+    elif provider == "pc_coder":
+        await _stream_chat(websocket, text, ctx["pc_coder"], "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL)
+    elif provider == "pc_deep":
+        await _stream_chat(websocket, text, ctx["pc_deep"], "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL)
+    elif provider == "deepseek":
+        await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL)
+    else:
+        raw_model = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
+        await _stream_chat(websocket, text, ctx["cloud"], "anthropic", _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM), _resolve_model(raw_model))
+
+async def handle_clear_chat(websocket, msg, ctx):
+    for history in ctx.values():
+        history.clear()
+
+async def handle_check_ollama(websocket, msg, ctx):
+    alive = await bg(check_ollama_health)
+    await websocket.send_json({"type": "ollama_status", "alive": alive})
+
+async def handle_get_memory(websocket, msg, ctx):
+    await websocket.send_json({"type": "memory", "text": get_memory_preview()})
+
+async def handle_get_history(websocket, msg, ctx):
+    await websocket.send_json({"type": "history", "text": get_history_preview()})
+
+async def handle_get_quickref(websocket, msg, ctx):
+    await websocket.send_json({"type": "quickref", "text": get_quickref_preview()})
+
+async def handle_get_stats(websocket, msg, ctx):
+    await websocket.send_json({
+        "type": "stats",
+        "data": {"pi": await get_pi_stats(), "tmux": await bg(get_tmux_sessions), "time": time.strftime("%H:%M:%S")}
+    })
+
+async def handle_get_logs(websocket, msg, ctx):
+    search = msg.get("search", "")
+    date_f = msg.get("date", "")
+    logs = await bg(get_nanobot_logs, 80, search, date_f)
+    await websocket.send_json({"type": "logs", "data": logs})
+
+async def handle_get_cron(websocket, msg, ctx):
+    jobs = await bg(get_cron_jobs)
+    await websocket.send_json({"type": "cron", "jobs": jobs})
+
+async def handle_add_cron(websocket, msg, ctx):
+    ip = websocket.client.host
+    if not _rate_limit(ip, "cron", 10, 60):
+        await websocket.send_json({"type": "toast", "text": "⚠️ Troppi tentativi"})
+        return
+    sched = msg.get("schedule", "")
+    cmd = msg.get("command", "")
+    result = await bg(add_cron_job, sched, cmd)
+    if result == "ok":
+        await websocket.send_json({"type": "toast", "text": "✅ Cron job aggiunto"})
+        jobs = await bg(get_cron_jobs)
+        await websocket.send_json({"type": "cron", "jobs": jobs})
+    else:
+        await websocket.send_json({"type": "toast", "text": f"⚠️ {result}"})
+
+async def handle_delete_cron(websocket, msg, ctx):
+    idx = msg.get("index", -1)
+    result = await bg(delete_cron_job, idx)
+    if result == "ok":
+        await websocket.send_json({"type": "toast", "text": "✅ Cron job rimosso"})
+        jobs = await bg(get_cron_jobs)
+        await websocket.send_json({"type": "cron", "jobs": jobs})
+    else:
+        await websocket.send_json({"type": "toast", "text": f"⚠️ {result}"})
+
+async def handle_get_tokens(websocket, msg, ctx):
+    ts = await bg(get_token_stats)
+    await websocket.send_json({"type": "tokens", "data": ts})
+
+async def handle_get_crypto(websocket, msg, ctx):
+    cp = await bg(get_crypto_prices)
+    await websocket.send_json({"type": "crypto", "data": cp})
+
+async def handle_get_briefing(websocket, msg, ctx):
+    bd = await bg(get_briefing_data)
+    await websocket.send_json({"type": "briefing", "data": bd})
+
+async def handle_run_briefing(websocket, msg, ctx):
+    await websocket.send_json({"type": "toast", "text": "⏳ Generazione briefing…"})
+    bd = await bg(run_briefing)
+    await websocket.send_json({"type": "briefing", "data": bd})
+    await websocket.send_json({"type": "toast", "text": "✅ Briefing generato con successo", "notify": True})
+
+async def handle_tmux_kill(websocket, msg, ctx):
+    session = msg.get("session", "")
+    active = {s["name"] for s in get_tmux_sessions()}
+    if session not in active:
+        await websocket.send_json({"type": "toast", "text": "⚠️ Sessione non trovata tra quelle attive"})
+    elif not session.startswith("nanobot"):
+        await websocket.send_json({"type": "toast", "text": f"⚠️ Solo sessioni nanobot-* possono essere terminate"})
+    else:
+        r = subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True, text=True, timeout=10)
+        result = (r.stdout + r.stderr).strip()
+        await websocket.send_json({"type": "toast", "text": f"✅ Sessione {session} terminata" if not result else f"⚠️ {result}"})
+
+async def handle_gateway_restart(websocket, msg, ctx):
+    subprocess.run(["tmux", "kill-session", "-t", "nanobot-gateway"], capture_output=True, text=True, timeout=10)
+    await asyncio.sleep(1)
+    subprocess.run(["tmux", "new-session", "-d", "-s", "nanobot-gateway", "nanobot", "gateway"], capture_output=True, text=True, timeout=10)
+    await websocket.send_json({"type": "toast", "text": "✅ Gateway riavviato"})
+
+async def handle_reboot(websocket, msg, ctx):
+    ip = websocket.client.host
+    if not _rate_limit(ip, "reboot", 1, 300):
+        await websocket.send_json({"type": "toast", "text": "⚠️ Reboot già richiesto di recente"})
+        return
+    await manager.broadcast({"type": "reboot_ack"})
+    await asyncio.sleep(0.5)
+    subprocess.run(["sudo", "reboot"])
+
+async def handle_shutdown(websocket, msg, ctx):
+    ip = websocket.client.host
+    if not _rate_limit(ip, "shutdown", 1, 300):
+        await websocket.send_json({"type": "toast", "text": "⚠️ Shutdown già richiesto di recente"})
+        return
+    await manager.broadcast({"type": "shutdown_ack"})
+    await asyncio.sleep(0.5)
+    subprocess.run(["sudo", "shutdown", "-h", "now"])
+
+async def handle_claude_task(websocket, msg, ctx):
+    prompt = msg.get("prompt", "").strip()[:10000]
+    if not prompt:
+        await websocket.send_json({"type": "toast", "text": "⚠️ Prompt vuoto"})
+        return
+    if not CLAUDE_BRIDGE_TOKEN:
+        await websocket.send_json({"type": "toast", "text": "⚠️ Bridge non configurato"})
+        return
+    ip = websocket.client.host
+    if not _rate_limit(ip, "claude_task", 5, 3600):
+        await websocket.send_json({"type": "toast", "text": "⚠️ Limite task raggiunto (max 5/ora)"})
+        return
+    await websocket.send_json({"type": "claude_thinking"})
+    await run_claude_task_stream(websocket, prompt)
+
+async def handle_claude_cancel(websocket, msg, ctx):
+    try:
+        payload = json.dumps({"token": CLAUDE_BRIDGE_TOKEN}).encode()
+        req = urllib.request.Request(f"{CLAUDE_BRIDGE_URL}/cancel", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5): pass
+        await websocket.send_json({"type": "toast", "text": "✅ Task cancellato"})
+    except Exception as e:
+        await websocket.send_json({"type": "toast", "text": f"⚠️ Errore cancel: {e}"})
+
+async def handle_check_bridge(websocket, msg, ctx):
+    health = await bg(check_bridge_health)
+    await websocket.send_json({"type": "bridge_status", "data": health})
+
+async def handle_get_claude_tasks(websocket, msg, ctx):
+    tasks = get_claude_tasks(10)
+    await websocket.send_json({"type": "claude_tasks", "tasks": tasks})
+
+WS_DISPATCHER = {
+    "chat": handle_chat,
+    "clear_chat": handle_clear_chat,
+    "check_ollama": handle_check_ollama,
+    "get_memory": handle_get_memory,
+    "get_history": handle_get_history,
+    "get_quickref": handle_get_quickref,
+    "get_stats": handle_get_stats,
+    "get_logs": handle_get_logs,
+    "get_cron": handle_get_cron,
+    "add_cron": handle_add_cron,
+    "delete_cron": handle_delete_cron,
+    "get_tokens": handle_get_tokens,
+    "get_crypto": handle_get_crypto,
+    "get_briefing": handle_get_briefing,
+    "run_briefing": handle_run_briefing,
+    "tmux_kill": handle_tmux_kill,
+    "gateway_restart": handle_gateway_restart,
+    "reboot": handle_reboot,
+    "shutdown": handle_shutdown,
+    "claude_task": handle_claude_task,
+    "claude_cancel": handle_claude_cancel,
+    "check_bridge": handle_check_bridge,
+    "get_claude_tasks": handle_get_claude_tasks,
+}
+
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    # Auth check via cookie prima di accettare
+    token = websocket.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        await websocket.close(code=4001, reason="Non autenticato")
+        return
+    await manager.connect(websocket)
+    ctx = {
+        "ollama": [],
+        "cloud": [],
+        "deepseek": [],
+        "pc_coder": [],
+        "pc_deep": []
+    }
+    await websocket.send_json({
+        "type": "init",
+        "data": {
+            "pi": await get_pi_stats(),
+            "tmux": await bg(get_tmux_sessions),
+            "version": get_nanobot_version(),
+            "memory": get_memory_preview(),
+            "time": time.strftime("%H:%M:%S"),
+        }
+    })
+    try:
+        while True:
+            msg = await websocket.receive_json()
+            action = msg.get("action")
+            handler = WS_DISPATCHER.get(action)
+            if handler:
+                await handler(websocket, msg, ctx)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+# ─── HTML ─────────────────────────────────────────────────────────────────────
+VESSEL_ICON = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxAAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k="
+
+VESSEL_ICON_192 = "data:image/jpeg;base64,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"
+
+
+
+
+
+
+
+# ─── Auth routes ─────────────────────────────────────────────────────────────
+@app.post("/auth/login")
+async def auth_login(request: Request):
+    ip = request.client.host
+    if not _rate_limit(ip, "auth", MAX_AUTH_ATTEMPTS, AUTH_LOCKOUT_SECONDS):
+        return JSONResponse({"error": "Troppi tentativi. Riprova tra 5 minuti."}, status_code=429)
+    body = await request.json()
+    pin = body.get("pin", "")
+    # Setup iniziale
+    if not PIN_FILE.exists():
+        if len(pin) != 4 or not pin.isdigit():
+            return JSONResponse({"error": "Il PIN deve essere 4 cifre"}, status_code=400)
+        _set_pin(pin)
+        token = _create_session()
+        resp = JSONResponse({"ok": True, "setup": True})
+        is_secure = request.url.scheme == "https"
+        resp.set_cookie("vessel_session", token, max_age=SESSION_TIMEOUT,
+                        httponly=True, samesite="lax", secure=is_secure)
+        return resp
+    if not _verify_pin(pin):
+        return JSONResponse({"error": "PIN errato"}, status_code=401)
+    RATE_LIMITS.pop(f"{ip}:auth", None)
+    token = _create_session()
+    resp = JSONResponse({"ok": True})
+    is_secure = request.url.scheme == "https"
+    resp.set_cookie("vessel_session", token, max_age=SESSION_TIMEOUT,
+                    httponly=True, samesite="lax", secure=is_secure)
+    return resp
+
+@app.get("/api/health")
+async def api_health():
+    pi = await get_pi_stats()
+    ollama = await bg(check_ollama_health)
+    bridge = await bg(check_bridge_health)
+    return {
+        "status": "ok",
+        "timestamp": time.time(),
+        "services": {
+            "pi": pi["health"],
+            "ollama": "online" if ollama else "offline",
+            "bridge": bridge.get("status", "offline")
+        },
+        "details": {
+            "pi_temp": pi.get("temp_val"),
+            "pi_cpu": pi.get("cpu_val"),
+            "pi_mem": pi.get("mem_pct")
+        }
+    }
+
+@app.get("/auth/check")
+async def auth_check(request: Request):
+    token = request.cookies.get("vessel_session", "")
+    return {"authenticated": _is_authenticated(token), "setup": not PIN_FILE.exists()}
+
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
+    token = request.cookies.get("vessel_session", "")
+    if _is_authenticated(token):
+        return HTML
+    return LOGIN_HTML
+
+@app.get("/manifest.json")
+async def manifest():
+    return {
+        "name": "Vessel Dashboard",
+        "short_name": "Vessel",
+        "start_url": "/",
+        "display": "standalone",
+        "background_color": "#060a06",
+        "theme_color": "#060a06",
+        "icons": [
+            {"src": VESSEL_ICON, "sizes": "64x64", "type": "image/jpeg"},
+            {"src": VESSEL_ICON_192, "sizes": "192x192", "type": "image/jpeg"}
+        ]
+    }
+
+@app.get("/sw.js")
+async def service_worker():
+    sw_code = """
+const CACHE = 'vessel-v3';
+const OFFLINE_URL = '/';
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.add(OFFLINE_URL)));
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys =>
+    Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k)))
+  ));
+  self.clients.claim();
+});
+
+self.addEventListener('fetch', e => {
+  if (e.request.mode === 'navigate') {
+    e.respondWith(
+      fetch(e.request).catch(() => caches.match(OFFLINE_URL))
+    );
+  }
+});
+"""
+    return Response(content=sw_code, media_type="application/javascript",
+                    headers={"Service-Worker-Allowed": "/"})
+
+ALLOWED_FILE_BASES = [MEMORY_FILE, HISTORY_FILE, QUICKREF_FILE, BRIEFING_LOG, USAGE_LOG]
+
+def _is_allowed_path(path_str: str) -> bool:
+    """Verifica che il path risolto corrisponda a uno dei file consentiti (ricalcolato a ogni richiesta)."""
+    try:
+        real = Path(path_str).resolve()
+    except Exception:
+        return False
+    return any(real == base.resolve() for base in ALLOWED_FILE_BASES)
+
+@app.get("/api/file")
+async def api_file(request: Request, path: str = ""):
+    token = request.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        return JSONResponse({"error": "Non autenticato"}, status_code=401)
+    ip = request.client.host
+    if not _rate_limit(ip, "file", 30, 60):
+        return JSONResponse({"error": "Troppe richieste"}, status_code=429)
+    if not _is_allowed_path(path):
+        return {"content": "Accesso negato"}
+    try:
+        return {"content": Path(path).resolve().read_text(encoding="utf-8")}
+    except Exception:
+        return {"content": "File non trovato"}
+

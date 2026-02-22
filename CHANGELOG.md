@@ -5,6 +5,64 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-22] UI Overhaul & Stability Fixes
+
+### Dashboard Redesign (Home & Desktop)
+- **Home Stats Cards**: Introduzione di una visualizzazione a 4 card prominenti (CPU, RAM, Temp, Uptime) con barre di progressione e soglie di colore dinamiche.
+- **Mobile Grid 2x2**: Le card delle statistiche su mobile sono ora arrange in una griglia 2x2 compatta, eliminando ogni necessità di scroll verticale eccessivo o orizzontale.
+- **Desktop Bento Layout**: Implementato layout a due colonne per schermi >=1024px con sidebar sinistra fissa e area centrale a griglia per i widget.
+- **Touch Targets**: Migliorato il padding e la hitbox dei pulsanti (Tmux, controlli) per una migliore esperienza su iPhone/iPad.
+
+### Stabilità & Robustezza (The "Double Brace" Incident & Encoding Crash)
+- **Fix SyntaxError JS**: Aggiunti i tag `<script>` attorno al placehoder `<!-- {INJECT_JS} -->` in index.html, evitando che il browser interpretasse i 44KB di JavaScript iniettati come testo raw o rompendo il DOM (e ignorando il CSS).
+- **Refactoring `build.py`**: Rimosso l'uso di Python f-strings e .replace() deboli per la generazione del codice sorgente. Il sistema ora usa `re.sub` controllato e `json.dumps(ensure_ascii=False)`.
+- **Indirizzato Crash FastAPI 500**: Identificato e risolto un bug critico di `UnicodeEncodeError` in cui `json.dumps` convertiva le emoji (es. gatto 🐈) in coppie surrogate UTF-16 (`\ud83d\udc08`), mandando in crash la codifica UTF-8 del server web Starlette all'avvio. Risolto impostando `ensure_ascii=False` nel builder.
+- **Emergency Data Recovery**: Recuperati tutti i file sorgente del frontend (`index.html`, `main.css`, `main.js`) estraendoli dalla memoria di un processo `nanobot_dashboard_v2.py` in esecuzione, a seguito di una corruzione accidentale dei file sorgente durante il troubleshooting.
+
+### Manutenzione Sistema
+- **.bashrc Pi Fix**: Corretto un errore di sintassi nel file `.bashrc` sul Raspberry Pi ("unexpected token '('") che corrompeva l'export del PATH.
+- **Remote Sync**: Deploy diretto della dashboard compilata via `scp` integrato nel workflow.
+
+
+## [2026-02-21] Refactoring Architetturale (Progetto 0)
+
+### Da Monolite a Modulare
+- **Abbandono F-Strings chilometriche**: il sorgente HTML/CSS/JS è stato estratto in file nativi all'interno di `src/frontend/`
+- **Spezzamento Backend**: logica FastAPI, endpoint REST separati da quelli WebSocket, divisi in `src/backend/`
+- **Introduzione `build.py`**: script custom che legge `src/`, risolve le direttive speciali come `<!-- {INJECT_CSS} -->`, compila e genera in un millisecondo il **single-file Python target** `nanobot_dashboard_v2.py`
+- L'architettura consente da oggi linting perfetto per HTML/CSS/JS e Python separatamente, abbattendo il debito tecnico e rischi di TemplateSyntaxError.
+
+### ChatProviders via Strategy Pattern
+- Risanato `_stream_chat` (ex 120 righe intasate di condizionali) implementando una classe base astratta `BaseChatProvider` e i concreti `AnthropicProvider`, `OpenRouterProvider`, `OllamaProvider`, `OllamaPCProvider`.
+
+---
+
+## [2026-02-21] Fix tastiera mobile iOS
+
+### Input visibile sopra tastiera (stile Claude iOS)
+- **visualViewport listener**: resize + scroll → adatta `.app-layout` height/transform in tempo reale
+- **`position: fixed`** su `html, body` — impedisce body scroll quando tastiera aperta
+- **`overflow: hidden`** su `.app-layout` — contiene il layout flex
+- **Auto-scroll**: messaggi chat scrollano in fondo quando tastiera appare
+- `requestAnimationFrame` throttling per performance
+
+### Input chat → contenteditable
+- **`<input>` → `<div contenteditable>`** — tentativo di rimuovere toolbar navigazione form iOS
+- Placeholder via CSS `:empty::before` con `aria-placeholder`
+- `max-height: 120px` con overflow scroll per messaggi lunghi
+- JS: `.value` → `.textContent` in `sendChat()`
+
+### Pulizia form iOS
+- **`tabindex="-1"`** su tutti gli input widget (log, cron, code, PIN) — nasconde campi dal tab order iOS
+- **Cache bump** `vessel-v2` → `vessel-v3` — forza refresh PWA
+
+### Nota: toolbar iOS non risolta
+- La barra di navigazione form iOS (frecce + checkmark) persiste nonostante contenteditable + tabindex fix
+- Potrebbe richiedere approccio nativo (WKWebView inputAccessoryView) o workaround più aggressivo
+- Non bloccante per l'uso — da investigare in futuro
+
+---
+
 ## [2026-02-21] Ollama PC + Nanobot Discord Upgrade
 
 ### Ollama PC — GPU Windows via LAN

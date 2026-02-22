@@ -1,3 +1,5 @@
+
+# --- src/backend/imports.py ---
 #!/usr/bin/env python3
 """
 🐈 Nanobot Dashboard v2 — Single-file web UI
@@ -7,30 +9,47 @@ Accesso: http://picoclaw.local:8090
 """
 
 import asyncio
+import functools
 import hashlib
 import http.client
+import io
 import json
 import os
+import zipfile
 import re
 import secrets
 import subprocess
 import time
 import urllib.request
+import shlex
 from datetime import datetime as _dt
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import HTMLResponse, Response, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 
+
+
+# --- src/backend/config.py ---
 # ─── Config ───────────────────────────────────────────────────────────────────
 PORT = int(os.environ.get("PORT", 8090))
 NANOBOT_WORKSPACE = Path.home() / ".nanobot" / "workspace"
 MEMORY_FILE  = NANOBOT_WORKSPACE / "memory" / "MEMORY.md"
 HISTORY_FILE = NANOBOT_WORKSPACE / "memory" / "HISTORY.md"
 QUICKREF_FILE = NANOBOT_WORKSPACE / "memory" / "QUICKREF.md"
+
+@functools.lru_cache(maxsize=10)
+def _get_config(filename: str) -> dict:
+    cfg_file = Path.home() / ".nanobot" / filename
+    if cfg_file.exists():
+        try:
+            return json.loads(cfg_file.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {}
 
 # ─── Ollama (LLM locale) ─────────────────────────────────────────────────────
 OLLAMA_BASE = "http://127.0.0.1:11434"
@@ -65,17 +84,8 @@ def _load_friends() -> str:
     return ""
 
 # ─── Ollama PC (LLM su GPU Windows via LAN) ─────────────────────────────────
-def _get_ollama_pc_config() -> dict:
-    pc_file = Path.home() / ".nanobot" / "ollama_pc.json"
-    if pc_file.exists():
-        try:
-            return json.loads(pc_file.read_text())
-        except Exception:
-            pass
-    return {}
-
-_pc_cfg = _get_ollama_pc_config()
-OLLAMA_PC_HOST = _pc_cfg.get("host", "192.168.178.34")
+_pc_cfg = _get_config("ollama_pc.json")
+OLLAMA_PC_HOST = _pc_cfg.get("host", "localhost")
 OLLAMA_PC_PORT = _pc_cfg.get("port", 11434)
 OLLAMA_PC_BASE = f"http://{OLLAMA_PC_HOST}:{OLLAMA_PC_PORT}"
 OLLAMA_PC_KEEP_ALIVE = "60m"
@@ -112,39 +122,17 @@ OLLAMA_PC_DEEP_SYSTEM = (
 # ─── Claude Bridge (Remote Code) ────────────────────────────────────────────
 # Config letta da ~/.nanobot/bridge.json (url, token)
 # oppure override via env var CLAUDE_BRIDGE_URL / CLAUDE_BRIDGE_TOKEN
-def _get_bridge_config() -> dict:
-    # Prima prova file dedicato, poi fallback su config.json per retrocompatibilità
-    bridge_file = Path.home() / ".nanobot" / "bridge.json"
-    if bridge_file.exists():
-        try:
-            return json.loads(bridge_file.read_text())
-        except Exception:
-            pass
-    cfg_file = Path.home() / ".nanobot" / "config.json"
-    if cfg_file.exists():
-        try:
-            return json.loads(cfg_file.read_text()).get("bridge", {})
-        except Exception:
-            pass
-    return {}
+_bridge_cfg = _get_config("bridge.json")
+if not _bridge_cfg:
+    _bridge_cfg = _get_config("config.json").get("bridge", {})
 
-_bridge_cfg = _get_bridge_config()
-CLAUDE_BRIDGE_URL = os.environ.get("CLAUDE_BRIDGE_URL", _bridge_cfg.get("url", "http://192.168.178.34:8095"))
+CLAUDE_BRIDGE_URL = os.environ.get("CLAUDE_BRIDGE_URL", _bridge_cfg.get("url", "http://localhost:8095"))
 CLAUDE_BRIDGE_TOKEN = os.environ.get("CLAUDE_BRIDGE_TOKEN", _bridge_cfg.get("token", ""))
 CLAUDE_TASKS_LOG = Path.home() / ".nanobot" / "claude_tasks.jsonl"
 TASK_TIMEOUT = 300  # 5 min max per task Claude Bridge
 
 # ─── OpenRouter (DeepSeek V3) ────────────────────────────────────────────────
-def _get_openrouter_config() -> dict:
-    or_file = Path.home() / ".nanobot" / "openrouter.json"
-    if or_file.exists():
-        try:
-            return json.loads(or_file.read_text())
-        except Exception:
-            pass
-    return {}
-
-_or_cfg = _get_openrouter_config()
+_or_cfg = _get_config("openrouter.json")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", _or_cfg.get("apiKey", ""))
 OPENROUTER_MODEL = _or_cfg.get("model", "deepseek/deepseek-chat-v3-0324")
 OPENROUTER_PROVIDER_ORDER = _or_cfg.get("providerOrder", ["ModelRun", "DeepInfra"])
@@ -152,9 +140,24 @@ OPENROUTER_LABEL = _or_cfg.get("label", "DeepSeek V3")
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 PIN_FILE = Path.home() / ".nanobot" / "dashboard_pin.hash"
-SESSIONS: dict[str, float] = {}
+SESSION_FILE = Path.home() / ".nanobot" / "sessions.json"
+
+def _load_sessions() -> dict[str, float]:
+    if SESSION_FILE.exists():
+        try:
+            return json.loads(SESSION_FILE.read_text())
+        except Exception:
+            pass
+    return {}
+
+def _save_sessions():
+    try:
+        SESSION_FILE.write_text(json.dumps(SESSIONS))
+    except Exception:
+        pass
+
+SESSIONS: dict[str, float] = _load_sessions()
 SESSION_TIMEOUT = 86400 * 7  # 7 giorni (per PWA iPhone)
-AUTH_ATTEMPTS: dict[str, list[float]] = {}
 MAX_AUTH_ATTEMPTS = 5
 AUTH_LOCKOUT_SECONDS = 300  # 5 minuti
 
@@ -187,24 +190,17 @@ def _is_authenticated(token: str) -> bool:
     if token in SESSIONS:
         if time.time() - SESSIONS[token] < SESSION_TIMEOUT:
             SESSIONS[token] = time.time()
+            _save_sessions()
             return True
         del SESSIONS[token]
+        _save_sessions()
     return False
 
 def _create_session() -> str:
     token = secrets.token_urlsafe(32)
     SESSIONS[token] = time.time()
+    _save_sessions()
     return token
-
-def _check_auth_rate(ip: str) -> bool:
-    now = time.time()
-    attempts = AUTH_ATTEMPTS.get(ip, [])
-    attempts = [t for t in attempts if now - t < AUTH_LOCKOUT_SECONDS]
-    AUTH_ATTEMPTS[ip] = attempts
-    return len(attempts) < MAX_AUTH_ATTEMPTS
-
-def _record_auth_attempt(ip: str):
-    AUTH_ATTEMPTS.setdefault(ip, []).append(time.time())
 
 # ─── Rate Limiting ────────────────────────────────────────────────────────────
 RATE_LIMITS: dict[str, list[float]] = {}
@@ -258,6 +254,9 @@ class Manager:
         self.connections: list[WebSocket] = []
 
     async def connect(self, ws: WebSocket):
+        if len(self.connections) >= 10:
+            await ws.close(code=1013, reason="Too many connections")
+            return
         await ws.accept()
         self.connections.append(ws)
 
@@ -277,6 +276,113 @@ class Manager:
 
 manager = Manager()
 
+
+
+# ─── FRONTEND (Auto-Generato) ───────────────────────────────────────────────
+HTML = "<!DOCTYPE html>\n<html lang=\"it\">\n\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\"\n    content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover\">\n  <meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n  <meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">\n  <meta name=\"theme-color\" content=\"#060a06\">\n  <link rel=\"icon\" type=\"image/jpeg\"\n    href=\"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k=\">\n  <link rel=\"apple-touch-icon\" sizes=\"192x192\"\n    href=\"data:image/jpeg;base64,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\">\n  <link rel=\"manifest\" href=\"/manifest.json\">\n  <title>Vessel Dashboard</title>\n  <style>\n    \n/* --- main.css --- */\n@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');\n\n:root {\n  --bg: #060a06;\n  --bg2: #0b110b;\n  --card: #0e160e;\n  --card2: #121a12;\n  --border: #1a2e1a;\n  --border2: #254025;\n  --green: #00ff41;\n  --green2: #00cc33;\n  --green3: #009922;\n  --green-dim: #003311;\n  --amber: #ffb000;\n  --red: #ff3333;\n  --red-dim: #3a0808;\n  --cyan: #00ffcc;\n  --text: #c8ffc8;\n  --text2: #7ab87a;\n  --muted: #3d6b3d;\n  --font: 'JetBrains Mono', 'Fira Code', monospace;\n  --safe-top: env(safe-area-inset-top, 0px);\n  --safe-bot: env(safe-area-inset-bottom, 0px);\n  --safe-l: env(safe-area-inset-left, 0px);\n  --safe-r: env(safe-area-inset-right, 0px);\n}\n\n* {\n  box-sizing: border-box;\n  margin: 0;\n  padding: 0;\n  -webkit-tap-highlight-color: transparent;\n}\n\nhtml,\nbody {\n  height: 100%;\n  overscroll-behavior: none;\n  -webkit-overflow-scrolling: touch;\n  overflow: hidden;\n  position: fixed;\n  width: 100%;\n}\n\nbody {\n  background: var(--bg);\n  color: var(--text);\n  font-family: var(--font);\n  font-size: 13px;\n  background-image: repeating-linear-gradient(0deg, transparent, transparent 2px,\n      rgba(0, 255, 65, 0.012) 2px, rgba(0, 255, 65, 0.012) 4px);\n}\n\n/* ── App Layout (3-zone mobile-first) ── */\n.app-layout {\n  display: flex;\n  flex-direction: column;\n  height: 100%;\n  height: 100dvh;\n  overflow: hidden;\n}\n\n/* (status-bar rimossa — sostituita da home-view) */\n\n.logo-icon {\n  width: 24px;\n  height: 24px;\n  border-radius: 50%;\n  object-fit: cover;\n  border: 1px solid var(--green3);\n  filter: drop-shadow(0 0 6px rgba(0, 255, 65, 0.4));\n}\n\n/* #clock e #conn-dot rimossi — sostituiti da .home-clock e .conn-dot-mini */\n.version-badge {\n  font-size: 10px;\n  background: var(--green-dim);\n  border: 1px solid var(--green3);\n  border-radius: 3px;\n  padding: 2px 7px;\n  color: var(--green2);\n}\n\n.health-dot {\n  width: 10px;\n  height: 10px;\n  border-radius: 50%;\n  background: var(--muted);\n  transition: all .5s;\n}\n\n.health-dot.green {\n  background: var(--green);\n  box-shadow: 0 0 8px var(--green);\n}\n\n.health-dot.yellow {\n  background: var(--amber);\n  box-shadow: 0 0 8px var(--amber);\n}\n\n.health-dot.red {\n  background: var(--red);\n  box-shadow: 0 0 8px var(--red);\n  animation: pulse 1s infinite;\n}\n\n/* ── Layout ── */\n.app-content {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  overflow: hidden;\n}\n\n/* (chat-area e chat-header rimossi — sostituiti da home-view e chat-view) */\n\n@media (max-width: 767px) {\n  .card-body {\n    padding: 10px;\n  }\n\n  .stats-grid {\n    gap: 5px;\n  }\n\n  .stat-item {\n    padding: 7px 9px;\n  }\n\n  .widget-placeholder {\n    padding: 16px 10px;\n    min-height: 60px;\n  }\n\n  .mono-block {\n    max-height: 150px;\n  }\n\n  .token-grid {\n    grid-template-columns: repeat(3, 1fr);\n    gap: 5px;\n  }\n\n  button {\n    min-height: 44px;\n  }\n}\n\n/* ── Tab Bar (bottom) ── */\n.tab-bar {\n  flex-shrink: 0;\n  height: calc(56px + env(safe-area-inset-bottom, 0px));\n  padding-bottom: env(safe-area-inset-bottom, 0px);\n  background: var(--card);\n  border-top: 1px solid var(--border2);\n  display: flex;\n  justify-content: space-around;\n  align-items: center;\n  z-index: 100;\n}\n\n.tab-bar-btn {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  color: var(--muted);\n  background: none;\n  border: none;\n  padding: 4px 6px;\n  cursor: pointer;\n  gap: 2px;\n  font-family: var(--font);\n  min-height: 0;\n  transition: color .15s;\n  position: relative;\n}\n\n.tab-bar-btn span:first-child {\n  font-size: 16px;\n  line-height: 1;\n  font-family: var(--font);\n}\n\n.tab-bar-btn span:last-child {\n  font-size: 9px;\n  letter-spacing: 0.5px;\n}\n\n.tab-bar-btn.active {\n  color: var(--green);\n}\n\n.tab-bar-btn.active::after {\n  content: '';\n  display: block;\n  width: 4px;\n  height: 4px;\n  border-radius: 50%;\n  background: var(--green);\n  position: absolute;\n  bottom: 0;\n}\n\n.tab-bar-btn:hover {\n  color: var(--green2);\n}\n\n/* ── Drawer (slide up) ── */\n.drawer-overlay {\n  position: fixed;\n  inset: 0;\n  z-index: 150;\n  background: rgba(0, 0, 0, 0.5);\n  opacity: 0;\n  pointer-events: none;\n  transition: opacity .2s;\n}\n\n.drawer-overlay.show {\n  opacity: 1;\n  pointer-events: auto;\n}\n\n.drawer {\n  position: fixed;\n  bottom: 0;\n  left: 0;\n  right: 0;\n  max-height: 75vh;\n  background: var(--card);\n  border-top: 2px solid var(--green3);\n  border-radius: 12px 12px 0 0;\n  transform: translateY(100%);\n  transition: transform .3s ease;\n  display: flex;\n  flex-direction: column;\n  z-index: 160;\n}\n\n.drawer-overlay.show .drawer {\n  transform: translateY(0);\n}\n\n.drawer-handle {\n  width: 36px;\n  height: 4px;\n  background: var(--muted);\n  border-radius: 2px;\n  margin: 8px auto 0;\n  flex-shrink: 0;\n}\n\n.drawer-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  padding: 8px 16px;\n  border-bottom: 1px solid var(--border);\n  flex-shrink: 0;\n}\n\n.drawer-body {\n  overflow-y: auto;\n  flex: 1;\n  min-height: 0;\n  -webkit-overflow-scrolling: touch;\n}\n\n.drawer-widget {\n  display: none;\n  padding: 12px;\n}\n\n.drawer-widget.active {\n  display: block;\n}\n\n#dw-memoria {\n  padding: 0;\n}\n\n#dw-memoria .tab-row {\n  margin: 0;\n}\n\n#dw-memoria .mem-content {\n  padding: 12px;\n}\n\n/* drawer max-width su mobile landscape / tablet */\n@media (min-width: 601px) and (max-width: 767px) {\n  .drawer {\n    max-width: 600px;\n    margin: 0 auto;\n    left: 0;\n    right: 0;\n  }\n}\n\n/* ── Cards ── */\n.card {\n  background: var(--card);\n  border: 1px solid var(--border);\n  border-radius: 6px;\n  overflow: hidden;\n  position: relative;\n}\n\n.card::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  height: 1px;\n  background: linear-gradient(90deg, transparent, var(--green-dim), transparent);\n}\n\n.card-header {\n  padding: 9px 13px;\n  border-bottom: 1px solid var(--border);\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  background: var(--card2);\n}\n\n.card-title {\n  font-weight: 600;\n  font-size: 11px;\n  display: flex;\n  align-items: center;\n  gap: 7px;\n  color: var(--green2);\n  letter-spacing: 0.8px;\n  text-transform: uppercase;\n}\n\n.card-body {\n  padding: 12px;\n}\n\n/* ── Chat (area principale) ── */\n#chat-messages {\n  flex: 1;\n  overflow-y: auto;\n  padding: 10px 12px;\n  display: flex;\n  flex-direction: column;\n  gap: 8px;\n  scroll-behavior: smooth;\n  -webkit-overflow-scrolling: touch;\n  min-height: 0;\n}\n\n/* (chat-fs-overlay rimosso — chat mode è ora il chat-view) */\n.msg {\n  max-width: 85%;\n  padding: 8px 12px;\n  border-radius: 4px;\n  line-height: 1.5;\n  font-size: 12px;\n}\n\n.msg-user {\n  align-self: flex-end;\n  background: var(--green-dim);\n  color: var(--green);\n  border: 1px solid var(--green3);\n}\n\n.msg-bot {\n  align-self: flex-start;\n  background: var(--card2);\n  border: 1px solid var(--border);\n  color: var(--text2);\n  white-space: pre-wrap;\n}\n\n/* ── Copy button ── */\n.copy-btn {\n  position: absolute;\n  top: 4px;\n  right: 4px;\n  background: var(--card2);\n  border: 1px solid var(--border);\n  border-radius: 3px;\n  color: var(--muted);\n  font-size: 12px;\n  cursor: pointer;\n  padding: 2px 6px;\n  opacity: 0;\n  transition: opacity .15s;\n  z-index: 2;\n  line-height: 1;\n  min-height: 0;\n  font-family: var(--font);\n}\n\n.copy-btn:hover {\n  color: var(--green2);\n  border-color: var(--green3);\n}\n\n.copy-wrap {\n  position: relative;\n}\n\n.copy-wrap:hover .copy-btn {\n  opacity: 1;\n}\n\n@media (hover: none) {\n  .copy-btn {\n    opacity: 0.5;\n  }\n}\n\n.msg-thinking {\n  align-self: flex-start;\n  color: var(--muted);\n  font-style: italic;\n  font-size: 11px;\n  display: flex;\n  align-items: center;\n  gap: 6px;\n}\n\n.dots span {\n  animation: blink 1.2s infinite;\n  display: inline-block;\n  color: var(--green);\n}\n\n.dots span:nth-child(2) {\n  animation-delay: .2s;\n}\n\n.dots span:nth-child(3) {\n  animation-delay: .4s;\n}\n\n@keyframes blink {\n\n  0%,\n  80%,\n  100% {\n    opacity: .2\n  }\n\n  40% {\n    opacity: 1\n  }\n}\n\n@keyframes pulse {\n\n  0%,\n  100% {\n    opacity: 1\n  }\n\n  50% {\n    opacity: .4\n  }\n}\n\n/* (chat-input-row rimosso — sostituito da home-input-row e chat-input-row-v2) */\n#chat-input {\n  flex: 1;\n  background: var(--bg2);\n  border: 1px solid var(--border2);\n  border-radius: 4px;\n  color: var(--green);\n  padding: 9px 12px;\n  min-height: 38px;\n  max-height: 120px;\n  font-family: var(--font);\n  font-size: 16px;\n  outline: none;\n  caret-color: var(--green);\n  -webkit-appearance: none;\n  appearance: none;\n  overflow-y: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n  -webkit-user-select: text;\n  user-select: text;\n}\n\n#chat-input:empty::before {\n  content: attr(aria-placeholder);\n  color: var(--muted);\n  font-size: 13px;\n  pointer-events: none;\n}\n\n#chat-input:focus {\n  border-color: var(--green3);\n}\n\n/* (model-switch/indicator rimossi — sostituiti da provider-dropdown) */\n.dot-cloud {\n  background: #ffb300;\n  box-shadow: 0 0 4px #ffb300;\n}\n\n.dot-local {\n  background: #00ffcc;\n  box-shadow: 0 0 4px #00ffcc;\n}\n\n.dot-deepseek {\n  background: #6c5ce7;\n  box-shadow: 0 0 4px #6c5ce7;\n}\n\n.dot-pc-coder {\n  background: #ff006e;\n  box-shadow: 0 0 4px #ff006e;\n}\n\n.dot-pc-deep {\n  background: #e74c3c;\n  box-shadow: 0 0 4px #e74c3c;\n}\n\n/* ── Stats ── */\n.stats-grid {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  gap: 7px;\n}\n\n.stat-item {\n  background: var(--card2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n  padding: 9px 11px;\n}\n\n.stat-item.full {\n  grid-column: 1/-1;\n}\n\n.stat-label {\n  font-size: 9px;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 1px;\n  margin-bottom: 4px;\n}\n\n.stat-value {\n  font-size: 12px;\n  color: var(--green);\n  font-weight: 600;\n  text-shadow: 0 0 6px rgba(0, 255, 65, 0.25);\n}\n\n/* ── Sessions ── */\n.session-list {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n}\n\n.session-item {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  background: var(--card2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n  padding: 8px 11px;\n}\n\n.session-name {\n  font-size: 12px;\n  display: flex;\n  align-items: center;\n  gap: 7px;\n  color: var(--text);\n}\n\n.session-dot {\n  width: 7px;\n  height: 7px;\n  border-radius: 50%;\n  background: var(--green);\n  box-shadow: 0 0 6px var(--green);\n  animation: pulse 2s infinite;\n}\n\n/* ── Buttons ── */\nbutton {\n  border: none;\n  border-radius: 4px;\n  cursor: pointer;\n  font-family: var(--font);\n  font-size: 11px;\n  font-weight: 600;\n  padding: 6px 13px;\n  letter-spacing: 0.5px;\n  transition: all .15s;\n  touch-action: manipulation;\n  min-height: 36px;\n}\n\n.btn-green {\n  background: var(--green-dim);\n  color: var(--green2);\n  border: 1px solid var(--green3);\n}\n\n.btn-green:hover {\n  background: #004422;\n  color: var(--green);\n}\n\n.btn-red {\n  background: var(--red-dim);\n  color: var(--red);\n  border: 1px solid #5a1a1a;\n}\n\n.btn-red:hover {\n  background: #5a1a1a;\n}\n\n.btn-ghost {\n  background: transparent;\n  color: var(--muted);\n  border: 1px solid var(--border);\n}\n\n.btn-ghost:hover {\n  color: var(--green2);\n  border-color: var(--green3);\n}\n\n/* ── Mono block ── */\n.mono-block {\n  background: var(--bg2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n  padding: 9px 11px;\n  font-family: var(--font);\n  font-size: 11px;\n  line-height: 1.7;\n  color: var(--text2);\n  max-height: 180px;\n  overflow-y: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n  -webkit-overflow-scrolling: touch;\n}\n\n/* ── Placeholder widget (on-demand) ── */\n.widget-placeholder {\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  gap: 10px;\n  padding: 24px 12px;\n  color: var(--muted);\n  font-size: 11px;\n  text-align: center;\n  min-height: 80px;\n}\n\n.widget-placeholder .ph-icon {\n  font-size: 24px;\n  opacity: 0.5;\n}\n\n/* ── Collapsible widgets ── */\n.card.collapsible>.card-header {\n  cursor: pointer;\n  user-select: none;\n  -webkit-user-select: none;\n}\n\n.card.collapsible>.card-header .collapse-arrow {\n  display: inline-block;\n  transition: transform .2s;\n  font-size: 10px;\n  color: var(--muted);\n  margin-right: 4px;\n}\n\n.card.collapsible.collapsed>.card-header .collapse-arrow {\n  transform: rotate(-90deg);\n}\n\n.card.collapsible>.card-body,\n.card.collapsible>.tab-row,\n.card.collapsible>.tab-row+.card-body {\n  transition: max-height .25s ease, opacity .2s ease, padding .2s ease;\n  overflow: hidden;\n}\n\n.card.collapsible.collapsed>.card-body,\n.card.collapsible.collapsed>.tab-row,\n.card.collapsible.collapsed>.tab-row+.card-body {\n  max-height: 0 !important;\n  opacity: 0;\n  padding-top: 0;\n  padding-bottom: 0;\n  border-top: none;\n}\n\n/* ── Token grid ── */\n.token-grid {\n  display: grid;\n  grid-template-columns: repeat(3, 1fr);\n  gap: 7px;\n  margin-bottom: 10px;\n}\n\n.token-item {\n  background: var(--bg2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n  padding: 9px;\n  text-align: center;\n}\n\n.token-label {\n  font-size: 9px;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 1px;\n  margin-bottom: 3px;\n}\n\n.token-value {\n  font-size: 15px;\n  font-weight: 700;\n  color: var(--amber);\n  text-shadow: 0 0 6px rgba(255, 176, 0, 0.3);\n}\n\n/* ── Cron ── */\n.cron-list {\n  display: flex;\n  flex-direction: column;\n  gap: 6px;\n}\n\n.cron-item {\n  background: var(--bg2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n  padding: 8px 11px;\n  display: flex;\n  align-items: flex-start;\n  gap: 9px;\n}\n\n.cron-schedule {\n  font-size: 10px;\n  color: var(--cyan);\n  white-space: nowrap;\n  min-width: 90px;\n  padding-top: 1px;\n}\n\n.cron-cmd {\n  font-size: 11px;\n  color: var(--text2);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}\n\n.cron-desc {\n  font-size: 10px;\n  color: var(--muted);\n  margin-top: 2px;\n}\n\n.no-items {\n  color: var(--muted);\n  font-size: 11px;\n  text-align: center;\n  padding: 16px;\n}\n\n/* ── Remote Code ── */\n.claude-output {\n  background: var(--bg2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n  padding: 9px 11px;\n  font-family: var(--font);\n  font-size: 11px;\n  line-height: 1.6;\n  color: var(--text2);\n  max-height: 500px;\n  overflow-y: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n  -webkit-overflow-scrolling: touch;\n}\n\n.claude-output-header {\n  display: flex;\n  align-items: center;\n  justify-content: space-between;\n  margin-bottom: 4px;\n}\n\n.claude-output-header span {\n  font-size: 10px;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 1px;\n}\n\n.output-fs-content {\n  background: var(--bg2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n  padding: 12px;\n  font-family: var(--font);\n  font-size: 12px;\n  line-height: 1.6;\n  color: var(--text2);\n  max-height: calc(90vh - 90px);\n  overflow-y: auto;\n  white-space: pre-wrap;\n  word-break: break-word;\n  -webkit-overflow-scrolling: touch;\n}\n\n.claude-task-item {\n  background: var(--bg2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n  padding: 8px 11px;\n  margin-bottom: 6px;\n}\n\n.claude-task-prompt {\n  font-size: 11px;\n  color: var(--text);\n  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n  margin-bottom: 3px;\n}\n\n.claude-task-meta {\n  font-size: 10px;\n  color: var(--muted);\n  display: flex;\n  gap: 10px;\n}\n\n.claude-task-status {\n  font-weight: 600;\n}\n\n.claude-task-status.done {\n  color: var(--green);\n}\n\n.claude-task-status.error {\n  color: var(--red);\n}\n\n.claude-task-status.cancelled {\n  color: var(--muted);\n}\n\n.ralph-marker {\n  color: var(--green);\n  font-weight: 700;\n  padding: 6px 0 2px;\n  font-size: 11px;\n  border-top: 1px solid var(--border);\n  margin-top: 4px;\n}\n\n.ralph-supervisor {\n  color: #f0c040;\n  font-size: 11px;\n  padding: 2px 0;\n  font-style: italic;\n}\n\n.ralph-info {\n  color: var(--muted);\n  font-size: 10px;\n  padding: 2px 0;\n}\n\n/* ── Tabs ── */\n.tab-row {\n  display: flex;\n  gap: 4px;\n  padding: 7px 13px;\n  border-bottom: 1px solid var(--border);\n  background: var(--card2);\n}\n\n.tab {\n  padding: 5px 12px;\n  border-radius: 3px;\n  font-size: 11px;\n  cursor: pointer;\n  background: transparent;\n  color: var(--muted);\n  border: 1px solid transparent;\n  touch-action: manipulation;\n  min-height: 32px;\n}\n\n.tab.active {\n  background: var(--green-dim);\n  color: var(--green2);\n  border-color: var(--green3);\n}\n\n.tab-content {\n  display: none;\n}\n\n.tab-content.active {\n  display: block;\n}\n\n/* ── Toast ── */\n#toast {\n  position: fixed;\n  bottom: calc(70px + var(--safe-bot));\n  right: 16px;\n  background: var(--card);\n  border: 1px solid var(--green3);\n  border-radius: 4px;\n  padding: 10px 16px;\n  font-size: 12px;\n  color: var(--green2);\n  box-shadow: 0 0 20px rgba(0, 255, 65, 0.15);\n  opacity: 0;\n  transform: translateY(8px);\n  transition: all .25s;\n  pointer-events: none;\n  z-index: 999;\n}\n\n#toast.show {\n  opacity: 1;\n  transform: translateY(0);\n}\n\n/* ── Chart ── */\n.chart-container {\n  margin-top: 8px;\n  padding: 8px;\n  background: var(--bg2);\n  border: 1px solid var(--border);\n  border-radius: 4px;\n}\n\n.chart-header {\n  display: flex;\n  justify-content: space-between;\n  align-items: center;\n  margin-bottom: 6px;\n}\n\n.chart-label {\n  font-size: 9px;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 1px;\n}\n\n.chart-legend {\n  display: flex;\n  gap: 12px;\n}\n\n.chart-legend span {\n  font-size: 9px;\n  display: flex;\n  align-items: center;\n  gap: 4px;\n}\n\n.chart-legend .dot-cpu {\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: var(--green);\n}\n\n.chart-legend .dot-temp {\n  width: 6px;\n  height: 6px;\n  border-radius: 50%;\n  background: var(--amber);\n}\n\n#pi-chart {\n  width: 100%;\n  height: 80px;\n  display: block;\n}\n\n/* ── Modal ── */\n.modal-overlay {\n  position: fixed;\n  inset: 0;\n  background: rgba(0, 0, 0, 0.75);\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  z-index: 200;\n  opacity: 0;\n  pointer-events: none;\n  transition: opacity .2s;\n}\n\n.modal-overlay.show {\n  opacity: 1;\n  pointer-events: auto;\n}\n\n.modal-box {\n  background: var(--card);\n  border: 1px solid var(--border2);\n  border-radius: 8px;\n  padding: 24px;\n  max-width: 340px;\n  width: 90%;\n  text-align: center;\n  box-shadow: 0 0 40px rgba(0, 255, 65, 0.1);\n}\n\n.modal-title {\n  font-size: 14px;\n  font-weight: 700;\n  color: var(--green);\n  margin-bottom: 8px;\n}\n\n.modal-text {\n  font-size: 12px;\n  color: var(--text2);\n  margin-bottom: 20px;\n  line-height: 1.6;\n}\n\n.modal-btns {\n  display: flex;\n  gap: 10px;\n  justify-content: center;\n}\n\n/* ── Reboot overlay ── */\n.reboot-overlay {\n  position: fixed;\n  inset: 0;\n  background: var(--bg);\n  display: flex;\n  flex-direction: column;\n  align-items: center;\n  justify-content: center;\n  z-index: 300;\n  opacity: 0;\n  pointer-events: none;\n  transition: opacity .3s;\n  gap: 16px;\n}\n\n.reboot-overlay.show {\n  opacity: 1;\n  pointer-events: auto;\n}\n\n.reboot-spinner {\n  width: 40px;\n  height: 40px;\n  border: 3px solid var(--border2);\n  border-top-color: var(--green);\n  border-radius: 50%;\n  animation: spin 1s linear infinite;\n}\n\n@keyframes spin {\n  to {\n    transform: rotate(360deg);\n  }\n}\n\n.reboot-text {\n  font-size: 13px;\n  color: var(--green2);\n}\n\n.reboot-status {\n  font-size: 11px;\n  color: var(--muted);\n}\n\n::-webkit-scrollbar {\n  width: 3px;\n  height: 3px;\n}\n\n::-webkit-scrollbar-track {\n  background: var(--bg2);\n}\n\n::-webkit-scrollbar-thumb {\n  background: var(--border2);\n  border-radius: 2px;\n}\n\n/* ══════ HOME VIEW ══════ */\n.home-view {\n  flex: 1;\n  display: flex;\n  flex-direction: column;\n  min-height: 0;\n  overflow-y: auto;\n  overflow-x: hidden;\n  padding: 0 12px;\n  padding-top: calc(8px + var(--safe-top));\n  -webkit-overflow-scrolling: touch;\n}\n\n.home-header {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 10px 0 8px;\n  flex-shrink: 0;\n}\n\n.home-title {\n  font-weight: 700;\n  color: var(--green);\n  letter-spacing: 1.5px;\n  font-size: 14px;\n}\n\n.home-spacer {\n  flex: 1;\n}\n\n.home-clock {\n  font-size: 12px;\n  color: var(--amber);\n  text-shadow: 0 0 6px rgba(255, 176, 0, 0.4);\n  letter-spacing: 1px;\n  white-space: nowrap;\n}\n\n.conn-dot-mini {\n  width: 8px;\n  height: 8px;\n  border-radius: 50%;\n  background: var(--red);\n  transition: all .3s;\n  flex-shrink: 0;\n}\n\n.conn-dot-mini.on {\n  background: var(--green);\n  box-shadow: 0 0 10px var(--green);\n}\n\n/* ── Home Stats Cards ── */\n.home-stats {\n  display: grid;\n  grid-template-columns: 1fr 1fr;\n  gap: 10px;\n  margin: 8px 0;\n  flex-shrink: 0;\n}\n\n.home-card {\n  background: var(--card);\n  border: 1px solid var(--border2);\n  border-radius: 8px;\n  padding: 14px 16px;\n  position: relative;\n  overflow: hidden;\n}\n\n.home-card::before {\n  content: '';\n  position: absolute;\n  top: 0;\n  left: 0;\n  right: 0;\n  height: 2px;\n  background: linear-gradient(90deg, transparent, var(--green3), transparent);\n}\n\n.hc-label {\n  font-size: 10px;\n  color: var(--muted);\n  text-transform: uppercase;\n  letter-spacing: 1.5px;\n  margin-bottom: 6px;\n}\n\n.hc-value {\n  font-size: 22px;\n  font-weight: 700;\n  color: var(--green);\n  text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);\n  line-height: 1.2;\n}\n\n.hc-sub {\n  font-size: 9px;\n  color: var(--text2);\n  margin-top: 2px;\n}\n\n.hc-bar {\n  margin-top: 8px;\n  height: 4px;\n  background: var(--bg2);\n  border-radius: 2px;\n  overflow: hidden;\n}\n\n.hc-bar-fill {\n  height: 100%;\n  background: var(--green);\n  border-radius: 2px;\n  transition: width .5s ease;\n  width: 0%;\n}\n\n.hc-bar-fill.hc-bar-cyan {\n  background: var(--cyan);\n}\n\n.hc-bar-fill.hc-bar-amber {\n  background: var(--amber);\n}\n\n/* ── Home Chart ── */\n.home-chart {\n  margin: 4px 0 8px;\n  padding: 10px;\n  background: var(--card);\n  border: 1px solid var(--border);\n  border-radius: 8px;\n  flex-shrink: 0;\n}\n\n.home-chart #pi-chart {\n  width: 100%;\n  height: 80px;\n  display: block;\n}\n\n/* ── Home Services (collapsible) ── */\n.home-services {\n  max-height: 0;\n  overflow: hidden;\n  transition: max-height .35s ease;\n  flex-shrink: 0;\n}\n\n.home-services.open {\n  max-height: 400px;\n}\n\n.home-services-inner {\n  padding: 0 0 8px;\n}\n\n.home-services-toggle {\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  gap: 6px;\n  width: 100%;\n  padding: 6px 0;\n  background: none;\n  border: none;\n  color: var(--muted);\n  font-family: var(--font);\n  font-size: 10px;\n  cursor: pointer;\n  text-transform: uppercase;\n  letter-spacing: 1px;\n  transition: color .15s;\n  flex-shrink: 0;\n}\n\n.home-services-toggle:hover {\n  color: var(--text2);\n}\n\n.home-services-toggle .svc-arrow {\n  font-size: 10px;\n  transition: transform .2s;\n  display: inline-block;\n}\n\n.home-services-toggle.open .svc-arrow {\n  transform: rotate(180deg);\n}\n\n/* ── Home Input Area ── */\n.home-input-area {\n  margin-top: auto;\n  padding: 12px 0;\n  padding-bottom: calc(8px + var(--safe-bot));\n  flex-shrink: 0;\n}\n\n.home-input-row {\n  display: flex;\n  gap: 8px;\n  align-items: stretch;\n}\n\n/* ── Provider Dropdown ── */\n.provider-dropdown {\n  position: relative;\n  flex-shrink: 0;\n}\n\n.provider-btn {\n  display: flex;\n  align-items: center;\n  gap: 5px;\n  padding: 8px 10px;\n  min-height: 36px;\n  background: var(--card2);\n  border: 1px solid var(--border2);\n  border-radius: 4px;\n  color: var(--text2);\n  font-family: var(--font);\n  font-size: 11px;\n  font-weight: 600;\n  cursor: pointer;\n  white-space: nowrap;\n  transition: border-color .15s;\n}\n\n.provider-btn:hover {\n  border-color: var(--green3);\n}\n\n.provider-dot {\n  width: 7px;\n  height: 7px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n\n.provider-arrow {\n  font-size: 10px;\n  color: var(--muted);\n  transition: transform .15s;\n}\n\n.provider-dropdown.open .provider-arrow {\n  transform: rotate(180deg);\n}\n\n.provider-menu {\n  position: absolute;\n  bottom: 100%;\n  left: 0;\n  right: auto;\n  margin-bottom: 4px;\n  min-width: 200px;\n  background: var(--card);\n  border: 1px solid var(--border2);\n  border-radius: 6px;\n  overflow: hidden;\n  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);\n  display: none;\n  z-index: 50;\n}\n\n.provider-dropdown.open .provider-menu {\n  display: block;\n}\n\n.provider-menu button {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  width: 100%;\n  padding: 10px 14px;\n  min-height: 40px;\n  background: none;\n  border: none;\n  border-bottom: 1px solid var(--border);\n  color: var(--text2);\n  font-family: var(--font);\n  font-size: 12px;\n  cursor: pointer;\n  text-align: left;\n}\n\n.provider-menu button:last-child {\n  border-bottom: none;\n}\n\n.provider-menu button:hover {\n  background: var(--green-dim);\n  color: var(--green);\n}\n\n.provider-menu .dot {\n  width: 7px;\n  height: 7px;\n  border-radius: 50%;\n  flex-shrink: 0;\n}\n\n/* ══════ CHAT VIEW ══════ */\n.chat-view {\n  flex: 1;\n  display: none;\n  flex-direction: column;\n  min-height: 0;\n  overflow: hidden;\n}\n\n.chat-view.active {\n  display: flex;\n}\n\n.chat-compact-header {\n  display: flex;\n  align-items: center;\n  gap: 8px;\n  padding: 8px 12px;\n  padding-top: calc(8px + var(--safe-top));\n  background: var(--card);\n  border-bottom: 1px solid var(--border);\n  flex-shrink: 0;\n}\n\n.back-home-btn {\n  background: none;\n  border: 1px solid var(--border2);\n  border-radius: 4px;\n  color: var(--green2);\n  font-family: var(--font);\n  font-size: 11px;\n  font-weight: 600;\n  padding: 4px 10px;\n  cursor: pointer;\n  min-height: 28px;\n  letter-spacing: 0.3px;\n  transition: all .15s;\n}\n\n.back-home-btn:hover {\n  border-color: var(--green3);\n  color: var(--green);\n}\n\n.chat-compact-title {\n  font-weight: 700;\n  color: var(--green);\n  font-size: 12px;\n  letter-spacing: 1px;\n}\n\n.chat-compact-temp {\n  font-size: 11px;\n  color: var(--text2);\n}\n\n.chat-compact-spacer {\n  flex: 1;\n}\n\n.chat-input-area {\n  padding: 9px 12px;\n  padding-bottom: calc(9px + var(--safe-bot));\n  border-top: 1px solid var(--border);\n  background: var(--card2);\n  flex-shrink: 0;\n}\n\n.chat-input-row-v2 {\n  display: flex;\n  gap: 8px;\n  align-items: stretch;\n}\n\n/* ── Transizioni vista ── */\n.chat-view.entering {\n  animation: slideUp .25s ease forwards;\n}\n\n@keyframes slideUp {\n  from {\n    opacity: 0;\n    transform: translateY(20px);\n  }\n\n  to {\n    opacity: 1;\n    transform: translateY(0);\n  }\n}\n/* ── Desktop: two-column layout ── */\n@media (min-width: 768px) {\n  .app-layout {\n    flex-direction: row;\n  }\n\n  .tab-bar {\n    height: 100%;\n    flex-direction: column;\n    justify-content: flex-start;\n    align-items: center;\n    padding: 16px 0;\n    gap: 12px;\n    width: 70px;\n    border-top: none;\n    border-right: 1px solid var(--border2);\n    order: -1;\n  }\n\n  .tab-bar-btn {\n    flex-direction: column;\n    width: 100%;\n    padding: 10px 0;\n    min-height: 50px;\n  }\n\n  .tab-bar-btn span:first-child {\n    font-size: 20px;\n  }\n\n  .tab-bar-btn span:last-child {\n    font-size: 9px;\n    margin-top: 4px;\n  }\n\n  .tab-bar-btn.active::after {\n    display: none;\n  }\n\n  .tab-bar-btn.active {\n    border-right: 2px solid var(--green);\n    border-radius: 0;\n    background: var(--card2);\n  }\n\n  .app-content {\n    flex: 1;\n    /* In drawer view, it will show chat left and drawer right because of the current structure */\n  }\n\n  .app-content.has-drawer {\n    flex-direction: row;\n  }\n\n  .app-content.has-drawer .home-view {\n    flex: 1;\n    max-width: none;\n    grid-template-columns: 1fr;\n    /* squishes it down */\n  }\n\n  .app-content.has-drawer .home-services {\n    display: none !important;\n  }\n\n  /* hide pi stats when drawer opens to save space */\n  .app-content.has-drawer .chat-view {\n    flex: 1;\n  }\n\n  .home-view {\n    padding: 24px;\n    max-width: 1200px;\n    margin: 0 auto;\n    display: grid;\n    grid-template-columns: 1fr 380px;\n    grid-template-rows: auto 1fr auto;\n    gap: 20px;\n    align-content: stretch;\n    width: 100%;\n  }\n\n  .home-header {\n    grid-column: 1 / -1;\n  }\n\n  .home-vitals {\n    display: flex;\n    flex-direction: column;\n    gap: 20px;\n  }\n\n  .home-stats {\n    grid-template-columns: repeat(2, 1fr);\n    margin: 0;\n  }\n\n  .hc-value {\n    font-size: 28px;\n  }\n\n  .home-chart {\n    margin: 0;\n    flex: 1;\n    display: flex;\n    flex-direction: column;\n  }\n\n  .home-chart #pi-chart {\n    flex: 1;\n    min-height: 120px;\n  }\n\n  .home-services-toggle {\n    display: none;\n  }\n\n  .home-services {\n    display: block !important;\n    max-height: none !important;\n    background: var(--card);\n    border: 1px solid var(--border2);\n    border-radius: 8px;\n    padding: 16px;\n    margin: 0;\n    grid-column: 2;\n    grid-row: 2 / 4;\n    overflow-y: auto;\n  }\n\n  .home-services-inner {\n    padding: 0;\n  }\n\n  .home-input-area {\n    grid-column: 1;\n    padding: 0;\n    margin: 0;\n  }\n\n  .chat-view {\n    flex: 1;\n  }\n\n  .chat-view.active+.drawer-overlay {\n    border-left: 1px solid var(--border2);\n  }\n\n  .drawer-overlay {\n    position: static !important;\n    inset: auto !important;\n    background: none !important;\n    opacity: 1 !important;\n    pointer-events: auto !important;\n    z-index: auto !important;\n    display: none;\n    flex: 0 0 380px;\n    transition: none !important;\n    border-left: 1px solid var(--border2);\n  }\n\n  .drawer-overlay.show {\n    display: flex;\n  }\n\n  .drawer {\n    position: static !important;\n    transform: none !important;\n    max-height: none !important;\n    border-radius: 0 !important;\n    border-top: none !important;\n    height: 100%;\n    flex: 1;\n  }\n\n  .drawer-handle {\n    display: none;\n  }\n\n  .desktop-hide {\n    display: none !important;\n  }\n\n  .desktop-full {\n    grid-column: 1 / -1;\n  }\n}\n\n  </style>\n</head>\n\n<body>\n  <div class=\"app-layout\">\n\n    <!-- ─── App Content ─── -->\n    <div class=\"app-content\">\n\n      <!-- ═══ HOME VIEW (default) ═══ -->\n      <div id=\"home-view\" class=\"home-view\">\n        <div class=\"home-header\">\n          <img class=\"logo-icon\"\n            src=\"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k=\"\n            alt=\"V\">\n          <span class=\"home-title\">VESSEL</span>\n          <div id=\"home-health-dot\" class=\"health-dot\" title=\"Salute Pi\"></div>\n          <span class=\"home-spacer\"></span>\n          <span id=\"home-clock\" class=\"home-clock\">--:--:--</span>\n          <div id=\"home-conn-dot\" class=\"conn-dot-mini\" title=\"WebSocket\"></div>\n        </div>\n\n        <div class=\"home-vitals\">\n          <div class=\"home-stats\">\n            <div class=\"home-card\">\n              <div class=\"hc-label\">CPU</div>\n              <div class=\"hc-value\" id=\"hc-cpu-val\">--</div>\n              <div class=\"hc-bar\">\n                <div class=\"hc-bar-fill\" id=\"hc-cpu-bar\"></div>\n              </div>\n            </div>\n            <div class=\"home-card\">\n              <div class=\"hc-label\">RAM</div>\n              <div class=\"hc-value\" id=\"hc-ram-val\">--</div>\n              <div class=\"hc-sub\" id=\"hc-ram-sub\"></div>\n              <div class=\"hc-bar\">\n                <div class=\"hc-bar-fill hc-bar-cyan\" id=\"hc-ram-bar\"></div>\n              </div>\n            </div>\n            <div class=\"home-card\">\n              <div class=\"hc-label\">Temp</div>\n              <div class=\"hc-value\" id=\"hc-temp-val\">--</div>\n              <div class=\"hc-bar\">\n                <div class=\"hc-bar-fill hc-bar-amber\" id=\"hc-temp-bar\"></div>\n              </div>\n            </div>\n            <div class=\"home-card\">\n              <div class=\"hc-label\">Uptime</div>\n              <div class=\"hc-value\" id=\"hc-uptime-val\" style=\"font-size:16px;\">--</div>\n            </div>\n          </div>\n\n          <div class=\"home-chart\">\n            <div class=\"chart-header\">\n              <span class=\"chart-label\">Ultimi 15 min</span>\n              <div class=\"chart-legend\">\n                <span>\n                  <div class=\"dot-cpu\"></div> <span style=\"color:var(--text2)\">CPU%</span>\n                </span>\n                <span>\n                  <div class=\"dot-temp\"></div> <span style=\"color:var(--text2)\">Temp</span>\n                </span>\n              </div>\n            </div>\n            <canvas id=\"pi-chart\"></canvas>\n          </div>\n        </div>\n\n        <button class=\"home-services-toggle\" id=\"home-svc-toggle\" onclick=\"toggleHomeServices()\">\n          <span>Pi Stats</span>\n          <span class=\"svc-arrow\">&#x25BE;</span>\n        </button>\n        <div class=\"home-services\" id=\"home-services\">\n          <div class=\"home-services-inner\">\n            <div class=\"stats-grid\">\n              <div class=\"stat-item desktop-hide\">\n                <div class=\"stat-label\">CPU</div>\n                <div class=\"stat-value\" id=\"stat-cpu\">—</div>\n              </div>\n              <div class=\"stat-item desktop-hide\">\n                <div class=\"stat-label\">Temp</div>\n                <div class=\"stat-value\" id=\"stat-temp\">—</div>\n              </div>\n              <div class=\"stat-item desktop-hide\">\n                <div class=\"stat-label\">RAM</div>\n                <div class=\"stat-value\" id=\"stat-mem\">—</div>\n              </div>\n              <div class=\"stat-item desktop-full\">\n                <div class=\"stat-label\">Disco</div>\n                <div class=\"stat-value\" id=\"stat-disk\">—</div>\n              </div>\n              <div class=\"stat-item full desktop-hide\">\n                <div class=\"stat-label\">Uptime</div>\n                <div class=\"stat-value\" id=\"stat-uptime\">—</div>\n              </div>\n            </div>\n            <div style=\"margin-top:10px;\">\n              <div style=\"display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;\">\n                <span style=\"font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;\">Sessioni\n                  tmux</span>\n                <button class=\"btn-green\" onclick=\"gatewayRestart()\"\n                  style=\"min-height:28px;padding:3px 10px;font-size:10px;\">&#x21BA; Gateway</button>\n              </div>\n              <div class=\"session-list\" id=\"session-list\">\n                <div class=\"no-items\">Caricamento…</div>\n              </div>\n            </div>\n            <div style=\"display:flex;gap:6px;margin-top:10px;justify-content:space-between;align-items:center;\">\n              <div style=\"display:flex;gap:6px;align-items:center;\">\n                <button class=\"btn-ghost\" onclick=\"requestStats()\"\n                  style=\"min-height:28px;padding:3px 10px;font-size:10px;\">&#x21BB; Refresh</button>\n                <span id=\"version-badge\" class=\"version-badge\">—</span>\n              </div>\n              <div style=\"display:flex;gap:6px;\">\n                <button class=\"btn-red\" onclick=\"showRebootModal()\"\n                  style=\"min-height:28px;padding:3px 10px;font-size:10px;\">&#x21BA; Reboot</button>\n                <button class=\"btn-red\" onclick=\"showShutdownModal()\"\n                  style=\"min-height:28px;padding:3px 10px;font-size:10px;\">&#x23FB; Off</button>\n              </div>\n            </div>\n          </div>\n        </div>\n\n        <div class=\"home-input-area\">\n          <div class=\"home-input-row\" id=\"home-input-row\">\n            <div id=\"chat-input\" contenteditable=\"true\" role=\"textbox\" aria-placeholder=\"scrivi qui…\" autocorrect=\"off\"\n              autocapitalize=\"off\" spellcheck=\"false\"></div>\n            <div class=\"provider-dropdown\" id=\"provider-dropdown\">\n              <button class=\"provider-btn\" id=\"provider-trigger\" onclick=\"toggleProviderMenu()\" type=\"button\">\n                <span class=\"provider-dot dot-local\" id=\"provider-dot\"></span>\n                <span id=\"provider-short\">Local</span>\n                <span class=\"provider-arrow\">&#x25BE;</span>\n              </button>\n              <div class=\"provider-menu\" id=\"provider-menu\">\n                <button type=\"button\" onclick=\"switchProvider('cloud')\"><span class=\"dot dot-cloud\"></span>\n                  Haiku</button>\n                <button type=\"button\" onclick=\"switchProvider('local')\"><span class=\"dot dot-local\"></span> Local\n                  (Gemma)</button>\n                <button type=\"button\" onclick=\"switchProvider('pc_coder')\"><span class=\"dot dot-pc-coder\"></span> PC\n                  Coder</button>\n                <button type=\"button\" onclick=\"switchProvider('pc_deep')\"><span class=\"dot dot-pc-deep\"></span> PC\n                  Deep</button>\n                <button type=\"button\" onclick=\"switchProvider('deepseek')\"><span class=\"dot dot-deepseek\"></span> Deep\n                  (DeepSeek)</button>\n              </div>\n            </div>\n            <button class=\"btn-green\" id=\"chat-send\" onclick=\"sendChat()\">Invia &#x21B5;</button>\n          </div>\n        </div>\n      </div>\n\n      <!-- ═══ CHAT VIEW (nascosto, attivato su invio messaggio) ═══ -->\n      <div id=\"chat-view\" class=\"chat-view\">\n        <div class=\"chat-compact-header\">\n          <button class=\"back-home-btn\" onclick=\"goHome()\" type=\"button\">&#x2190; Home</button>\n          <span class=\"chat-compact-title\">VESSEL</span>\n          <div id=\"chat-health-dot\" class=\"health-dot\" title=\"Salute Pi\"></div>\n          <span class=\"chat-compact-temp\" id=\"chat-temp\">--</span>\n          <span class=\"chat-compact-spacer\"></span>\n          <span id=\"chat-clock\" class=\"home-clock\">--:--:--</span>\n          <div id=\"chat-conn-dot\" class=\"conn-dot-mini\" title=\"WebSocket\"></div>\n          <button class=\"btn-ghost\" onclick=\"clearChat()\"\n            style=\"padding:3px 6px;min-height:28px;margin-left:4px;\">&#x1F5D1;</button>\n        </div>\n        <div id=\"chat-messages\">\n          <div class=\"msg msg-bot\">Eyyy, sono Vessel &#x1F408; — dimmi cosa vuoi, psychoSocial.</div>\n        </div>\n        <div class=\"chat-input-area\">\n          <div class=\"chat-input-row-v2\" id=\"chat-input-row-v2\">\n          </div>\n        </div>\n      </div>\n\n      <!-- ─── Drawer (side panel on desktop, bottom sheet on mobile) ─── -->\n      <div class=\"drawer-overlay\" id=\"drawer-overlay\" onclick=\"closeDrawer()\">\n        <div class=\"drawer\" onclick=\"event.stopPropagation()\">\n          <div class=\"drawer-handle\"></div>\n          <div class=\"drawer-header\">\n            <span class=\"card-title\" id=\"drawer-title\"></span>\n            <div style=\"display:flex;gap:6px;align-items:center;\" id=\"drawer-actions\"></div>\n          </div>\n          <div class=\"drawer-body\">\n            <div class=\"drawer-widget\" id=\"dw-briefing\">\n              <div id=\"briefing-body\">\n                <div class=\"widget-placeholder\"><span class=\"ph-icon\">&#x25A4;</span><span>Premi Carica per vedere\n                    l'ultimo briefing</span></div>\n              </div>\n            </div>\n            <div class=\"drawer-widget\" id=\"dw-crypto\">\n              <div id=\"crypto-body\">\n                <div class=\"widget-placeholder\"><span class=\"ph-icon\">&#x20BF;</span><span>Premi Carica per vedere\n                    BTC/ETH</span></div>\n              </div>\n            </div>\n            <div class=\"drawer-widget\" id=\"dw-tokens\">\n              <div id=\"tokens-body\">\n                <div class=\"widget-placeholder\"><span class=\"ph-icon\">&#x00A4;</span><span>Premi Carica per vedere i\n                    dati token di oggi</span></div>\n              </div>\n            </div>\n            <div class=\"drawer-widget\" id=\"dw-logs\">\n              <div id=\"logs-body\">\n                <div class=\"widget-placeholder\"><span class=\"ph-icon\">&#x2261;</span><span>Premi Carica per vedere i log\n                    recenti</span></div>\n              </div>\n            </div>\n            <div class=\"drawer-widget\" id=\"dw-cron\">\n              <div id=\"cron-body\">\n                <div class=\"widget-placeholder\"><span class=\"ph-icon\">&#x25C7;</span><span>Premi Carica per vedere i\n                    cron job</span></div>\n              </div>\n            </div>\n            <div class=\"drawer-widget\" id=\"dw-claude\">\n              <div id=\"claude-body\">\n                <div class=\"widget-placeholder\"><span class=\"ph-icon\">&gt;_</span><span>Premi Carica per verificare lo\n                    stato del bridge</span></div>\n              </div>\n            </div>\n            <div class=\"drawer-widget\" id=\"dw-memoria\">\n              <div class=\"tab-row\">\n                <button class=\"tab active\" onclick=\"switchTab('memory', this)\">MEMORY.md</button>\n                <button class=\"tab\" onclick=\"switchTab('history', this)\">HISTORY.md</button>\n                <button class=\"tab\" onclick=\"switchTab('quickref', this)\">Quick Ref</button>\n              </div>\n              <div class=\"mem-content\">\n                <div id=\"tab-memory\" class=\"tab-content active\">\n                  <div class=\"mono-block\" id=\"memory-content\">Caricamento…</div>\n                  <div style=\"margin-top:8px;display:flex;gap:6px;\"><button class=\"btn-ghost\"\n                      onclick=\"refreshMemory()\">&#x21BB; Aggiorna</button><button class=\"btn-ghost\"\n                      onclick=\"copyToClipboard(document.getElementById('memory-content').textContent)\">&#x25A4;\n                      Copia</button></div>\n                </div>\n                <div id=\"tab-history\" class=\"tab-content\">\n                  <div class=\"mono-block\" id=\"history-content\">Premi Carica…</div>\n                  <div style=\"margin-top:8px;display:flex;gap:6px;\"><button class=\"btn-ghost\"\n                      onclick=\"refreshHistory()\">&#x21BB; Carica</button><button class=\"btn-ghost\"\n                      onclick=\"copyToClipboard(document.getElementById('history-content').textContent)\">&#x25A4;\n                      Copia</button></div>\n                </div>\n                <div id=\"tab-quickref\" class=\"tab-content\">\n                  <div class=\"mono-block\" id=\"quickref-content\">Caricamento…</div>\n                  <div style=\"margin-top:8px;display:flex;gap:6px;\"><button class=\"btn-ghost\"\n                      onclick=\"copyToClipboard(document.getElementById('quickref-content').textContent)\">&#x25A4;\n                      Copia</button></div>\n                </div>\n              </div>\n            </div>\n          </div>\n        </div>\n      </div>\n    </div><!-- /app-content -->\n\n    <!-- ─── Tab Bar ─── -->\n    <nav class=\"tab-bar\">\n      <button class=\"tab-bar-btn\" data-widget=\"briefing\"\n        onclick=\"openDrawer('briefing')\"><span>&#x25A4;</span><span>Brief</span></button>\n      <button class=\"tab-bar-btn\" data-widget=\"crypto\"\n        onclick=\"openDrawer('crypto')\"><span>&#x20BF;</span><span>Crypto</span></button>\n      <button class=\"tab-bar-btn\" data-widget=\"tokens\"\n        onclick=\"openDrawer('tokens')\"><span>&#x00A4;</span><span>Token</span></button>\n      <button class=\"tab-bar-btn\" data-widget=\"logs\"\n        onclick=\"openDrawer('logs')\"><span>&#x2261;</span><span>Log</span></button>\n      <button class=\"tab-bar-btn\" data-widget=\"cron\"\n        onclick=\"openDrawer('cron')\"><span>&#x25C7;</span><span>Cron</span></button>\n      <button class=\"tab-bar-btn\" data-widget=\"claude\"\n        onclick=\"openDrawer('claude')\"><span>&gt;_</span><span>Code</span></button>\n      <button class=\"tab-bar-btn\" data-widget=\"memoria\"\n        onclick=\"openDrawer('memoria')\"><span>&#x25CE;</span><span>Mem</span></button>\n    </nav>\n\n  </div><!-- /app-layout -->\n\n  <!-- Modale conferma reboot -->\n  <div class=\"modal-overlay\" id=\"reboot-modal\">\n    <div class=\"modal-box\">\n      <div class=\"modal-title\">⏻ Reboot Raspberry Pi</div>\n      <div class=\"modal-text\">Sei sicuro? Il Pi si riavvierà e la dashboard sarà offline per circa 30-60 secondi.</div>\n      <div class=\"modal-btns\">\n        <button class=\"btn-ghost\" onclick=\"hideRebootModal()\">Annulla</button>\n        <button class=\"btn-red\" onclick=\"confirmReboot()\">Conferma Reboot</button>\n      </div>\n    </div>\n  </div>\n\n  <!-- Modale conferma shutdown -->\n  <div class=\"modal-overlay\" id=\"shutdown-modal\">\n    <div class=\"modal-box\">\n      <div class=\"modal-title\">&#x23FB; Spegnimento Raspberry Pi</div>\n      <div class=\"modal-text\">Sei sicuro? Il Pi si spegnerà completamente. Per riaccenderlo dovrai staccare e\n        riattaccare l'alimentazione.</div>\n      <div class=\"modal-btns\">\n        <button class=\"btn-ghost\" onclick=\"hideShutdownModal()\">Annulla</button>\n        <button class=\"btn-red\" onclick=\"confirmShutdown()\">Conferma Spegnimento</button>\n      </div>\n    </div>\n  </div>\n\n  <!-- Overlay durante reboot -->\n  <div class=\"reboot-overlay\" id=\"reboot-overlay\">\n    <div class=\"reboot-spinner\"></div>\n    <div class=\"reboot-text\">Riavvio in corso…</div>\n    <div class=\"reboot-status\" id=\"reboot-status\">In attesa che il Pi torni online</div>\n  </div>\n\n  <!-- (chat-fs-overlay rimosso — chat-view è la nuova modalità fullscreen) -->\n\n  <!-- Overlay output fullscreen -->\n  <div class=\"modal-overlay\" id=\"output-fullscreen\" onclick=\"closeOutputFullscreen()\">\n    <div class=\"modal-box\" onclick=\"event.stopPropagation()\"\n      style=\"max-width:90%;width:900px;max-height:90vh;text-align:left;padding:16px;\">\n      <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;\">\n        <span style=\"font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;\">Output Remote\n          Code</span>\n        <div style=\"display:flex;gap:6px;\">\n          <button class=\"btn-ghost\" style=\"min-height:28px;\"\n            onclick=\"copyToClipboard(document.getElementById('output-fs-content').textContent)\">📋 Copia tutto</button>\n          <button class=\"btn-ghost\" style=\"min-height:28px;\" onclick=\"closeOutputFullscreen()\">✕ Chiudi</button>\n        </div>\n      </div>\n      <div id=\"output-fs-content\" class=\"output-fs-content\"></div>\n    </div>\n  </div>\n\n  <div id=\"toast\"></div>\n\n  <script>\n    \n// --- main.js --- \nlet ws = null;\n  let reconnectTimer = null;\n\n  function connect() {\n    const proto = location.protocol === 'https:' ? 'wss' : 'ws';\n    ws = new WebSocket(`${proto}://${location.host}/ws`);\n    ws.onopen = () => {\n      ['home-conn-dot', 'chat-conn-dot'].forEach(id => {\n        const el = document.getElementById(id);\n        if (el) el.classList.add('on');\n      });\n      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }\n    };\n    ws.onclose = (e) => {\n      ['home-conn-dot', 'chat-conn-dot'].forEach(id => {\n        const el = document.getElementById(id);\n        if (el) el.classList.remove('on');\n      });\n      if (e.code === 4001) { window.location.href = '/'; return; }\n      reconnectTimer = setTimeout(connect, 3000);\n    };\n    ws.onerror = () => ws.close();\n    ws.onmessage = (e) => handleMessage(JSON.parse(e.data));\n  }\n\n  function send(data) {\n    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));\n  }\n\n  function esc(s) {\n    if (typeof s !== 'string') return s == null ? '' : String(s);\n    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;');\n  }\n\n  function handleMessage(msg) {\n    if (msg.type === 'init') {\n      updateStats(msg.data.pi);\n      updateSessions(msg.data.tmux);\n      document.getElementById('version-badge').textContent = msg.data.version;\n      document.getElementById('memory-content').textContent = msg.data.memory;\n    }\n    else if (msg.type === 'stats') {\n      updateStats(msg.data.pi); updateSessions(msg.data.tmux);\n      ['home-clock', 'chat-clock'].forEach(id => {\n        const el = document.getElementById(id);\n        if (el) el.textContent = msg.data.time;\n      });\n    }\n    else if (msg.type === 'chat_thinking') { appendThinking(); }\n    else if (msg.type === 'chat_chunk') { removeThinking(); appendChunk(msg.text); }\n    else if (msg.type === 'chat_done') { finalizeStream(); document.getElementById('chat-send').disabled = false; }\n    else if (msg.type === 'chat_reply') { removeThinking(); appendMessage(msg.text, 'bot'); document.getElementById('chat-send').disabled = false; }\n    else if (msg.type === 'ollama_status') { /* ollama status ricevuto — info disponibile via provider dropdown */ }\n    else if (msg.type === 'memory')   { document.getElementById('memory-content').textContent = msg.text; }\n    else if (msg.type === 'history')  { document.getElementById('history-content').textContent = msg.text; }\n    else if (msg.type === 'quickref') { document.getElementById('quickref-content').textContent = msg.text; }\n    else if (msg.type === 'logs')    { renderLogs(msg.data); }\n    else if (msg.type === 'cron')    { renderCron(msg.jobs); }\n    else if (msg.type === 'tokens')  { renderTokens(msg.data); }\n    else if (msg.type === 'briefing') { renderBriefing(msg.data); }\n    else if (msg.type === 'crypto')   { renderCrypto(msg.data); }\n    else if (msg.type === 'toast')   { showToast(msg.text); }\n    else if (msg.type === 'reboot_ack') { startRebootWait(); }\n    else if (msg.type === 'shutdown_ack') { document.getElementById('reboot-overlay').classList.add('show'); document.getElementById('reboot-status').textContent = 'Il Pi si sta spegnendo…'; document.querySelector('.reboot-text').textContent = 'Spegnimento in corso…'; }\n    else if (msg.type === 'claude_thinking') {\n      const wrap = document.getElementById('claude-output-wrap');\n      if (wrap) wrap.style.display = 'block';\n      const out = document.getElementById('claude-output');\n      if (out) { out.innerHTML = ''; out.appendChild(document.createTextNode('Connessione al bridge...\\n')); }\n    }\n    else if (msg.type === 'claude_chunk') {\n      const out = document.getElementById('claude-output');\n      if (out) { out.appendChild(document.createTextNode(msg.text)); out.scrollTop = out.scrollHeight; }\n    }\n    else if (msg.type === 'claude_iteration') {\n      const out = document.getElementById('claude-output');\n      if (out) {\n        const m = document.createElement('div');\n        m.className = 'ralph-marker';\n        m.textContent = '═══ ITERAZIONE ' + msg.iteration + '/' + msg.max + ' ═══';\n        out.appendChild(m);\n        out.scrollTop = out.scrollHeight;\n      }\n    }\n    else if (msg.type === 'claude_supervisor') {\n      const out = document.getElementById('claude-output');\n      if (out) {\n        const m = document.createElement('div');\n        m.className = 'ralph-supervisor';\n        m.textContent = '▸ ' + msg.text;\n        out.appendChild(m);\n        out.scrollTop = out.scrollHeight;\n      }\n    }\n    else if (msg.type === 'claude_info') {\n      const out = document.getElementById('claude-output');\n      if (out) {\n        const m = document.createElement('div');\n        m.className = 'ralph-info';\n        m.textContent = msg.text;\n        out.appendChild(m);\n        out.scrollTop = out.scrollHeight;\n      }\n    }\n    else if (msg.type === 'claude_done') { finalizeClaudeTask(msg); }\n    else if (msg.type === 'claude_cancelled') {\n      claudeRunning = false;\n      const rb = document.getElementById('claude-run-btn');\n      const cb = document.getElementById('claude-cancel-btn');\n      if (rb) rb.disabled = false;\n      if (cb) cb.style.display = 'none';\n      showToast('Task cancellato');\n    }\n    else if (msg.type === 'bridge_status') { renderBridgeStatus(msg.data); }\n    else if (msg.type === 'claude_tasks') { renderClaudeTasks(msg.tasks); }\n  }\n\n  // ── Storico campioni per grafico ──\n  const MAX_SAMPLES = 180; // 180 campioni x 5s = 15 minuti di storia\n  const cpuHistory = [];\n  const tempHistory = [];\n\n  function updateStats(pi) {\n    const cpuPct = pi.cpu_val || 0;\n    const tempC = pi.temp_val || 0;\n    const memPct = pi.mem_pct || 0;\n\n    // ── Home cards ──\n    const hcCpu = document.getElementById('hc-cpu-val');\n    if (hcCpu) hcCpu.textContent = pi.cpu ? cpuPct.toFixed(1) + '%' : '--';\n    const hcRam = document.getElementById('hc-ram-val');\n    if (hcRam) hcRam.textContent = memPct + '%';\n    const hcRamSub = document.getElementById('hc-ram-sub');\n    if (hcRamSub) hcRamSub.textContent = pi.mem || '';\n    const hcTemp = document.getElementById('hc-temp-val');\n    if (hcTemp) hcTemp.textContent = pi.temp || '--';\n    const hcUptime = document.getElementById('hc-uptime-val');\n    if (hcUptime) hcUptime.textContent = pi.uptime || '--';\n\n    // Barre progresso\n    const cpuBar = document.getElementById('hc-cpu-bar');\n    if (cpuBar) {\n      cpuBar.style.width = cpuPct + '%';\n      cpuBar.style.background = cpuPct > 80 ? 'var(--red)' : cpuPct > 60 ? 'var(--amber)' : 'var(--green)';\n    }\n    const ramBar = document.getElementById('hc-ram-bar');\n    if (ramBar) {\n      ramBar.style.width = memPct + '%';\n      ramBar.style.background = memPct > 85 ? 'var(--red)' : memPct > 70 ? 'var(--amber)' : 'var(--cyan)';\n    }\n    const tempBar = document.getElementById('hc-temp-bar');\n    if (tempBar) {\n      const tPct = Math.min(100, (tempC / 85) * 100);\n      tempBar.style.width = tPct + '%';\n      tempBar.style.background = tempC > 70 ? 'var(--red)' : tempC > 55 ? 'var(--amber)' : 'var(--amber)';\n    }\n\n    // ── Stats detail (sezione servizi) ──\n    const sc = document.getElementById('stat-cpu');    if (sc) sc.textContent = pi.cpu || '—';\n    const st = document.getElementById('stat-temp');   if (st) st.textContent = pi.temp || '—';\n    const sm = document.getElementById('stat-mem');    if (sm) sm.textContent = pi.mem || '—';\n    const sd = document.getElementById('stat-disk');   if (sd) sd.textContent = pi.disk || '—';\n    const su = document.getElementById('stat-uptime'); if (su) su.textContent = pi.uptime || '—';\n\n    // ── Health dots (tutti) ──\n    ['home-health-dot', 'chat-health-dot'].forEach(id => {\n      const el = document.getElementById(id);\n      if (el) {\n        el.className = 'health-dot ' + (pi.health || '');\n        el.title = pi.health === 'red' ? 'ATTENZIONE' : pi.health === 'yellow' ? 'Sotto controllo' : 'Tutto OK';\n      }\n    });\n\n    // ── Chat compact temp ──\n    const chatTemp = document.getElementById('chat-temp');\n    if (chatTemp) chatTemp.textContent = pi.temp || '--';\n\n    // ── Storico per grafico ──\n    cpuHistory.push(cpuPct);\n    tempHistory.push(tempC);\n    if (cpuHistory.length > MAX_SAMPLES) cpuHistory.shift();\n    if (tempHistory.length > MAX_SAMPLES) tempHistory.shift();\n    drawChart();\n  }\n\n  function drawChart() {\n    const canvas = document.getElementById('pi-chart');\n    if (!canvas || canvas.offsetParent === null) return;\n    const ctx = canvas.getContext('2d');\n    const dpr = window.devicePixelRatio || 1;\n    const rect = canvas.getBoundingClientRect();\n    canvas.width = rect.width * dpr;\n    canvas.height = rect.height * dpr;\n    ctx.scale(dpr, dpr);\n    const w = rect.width, h = rect.height;\n    ctx.clearRect(0, 0, w, h);\n    // Griglia\n    ctx.strokeStyle = 'rgba(0,255,65,0.08)';\n    ctx.lineWidth = 1;\n    for (let y = 0; y <= h; y += h / 4) {\n      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();\n    }\n    if (cpuHistory.length < 2) return;\n    // Disegna linea\n    function drawLine(data, maxVal, color) {\n      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';\n      ctx.beginPath();\n      const step = w / (MAX_SAMPLES - 1);\n      const offset = MAX_SAMPLES - data.length;\n      for (let i = 0; i < data.length; i++) {\n        const x = (offset + i) * step;\n        const y = h - (data[i] / maxVal) * (h - 4) - 2;\n        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);\n      }\n      ctx.stroke();\n    }\n    drawLine(cpuHistory, 100, '#00ff41');\n    drawLine(tempHistory, 85, '#ffb000');\n  }\n\n  function updateSessions(sessions) {\n    const el = document.getElementById('session-list');\n    if (!sessions || !sessions.length) {\n      el.innerHTML = '<div class=\"no-items\">// nessuna sessione attiva</div>'; return;\n    }\n    el.innerHTML = sessions.map(s => `\n      <div class=\"session-item\">\n        <div class=\"session-name\"><div class=\"session-dot\"></div><code>${esc(s.name)}</code></div>\n        <button class=\"btn-red\" onclick=\"killSession('${esc(s.name)}')\">✕ Kill</button>\n      </div>`).join('');\n  }\n\n  // ── Vista corrente + Chat ──\n  let currentView = 'home';\n  let chatProvider = 'local';\n  let streamDiv = null;\n\n  // ── Transizione Home → Chat ──\n  function switchToChat() {\n    if (currentView === 'chat') return;\n    currentView = 'chat';\n\n    const homeView = document.getElementById('home-view');\n    const chatView = document.getElementById('chat-view');\n\n    // Sposta input + provider + send nel chat view\n    const chatInputRow = document.getElementById('chat-input-row-v2');\n    chatInputRow.appendChild(document.getElementById('chat-input'));\n    chatInputRow.appendChild(document.getElementById('provider-dropdown'));\n    chatInputRow.appendChild(document.getElementById('chat-send'));\n\n    // Switch viste\n    homeView.style.display = 'none';\n    chatView.style.display = 'flex';\n    chatView.classList.add('active');\n    chatView.classList.add('entering');\n    setTimeout(() => chatView.classList.remove('entering'), 250);\n\n    const msgs = document.getElementById('chat-messages');\n    msgs.scrollTop = msgs.scrollHeight;\n    document.getElementById('chat-input').focus();\n  }\n\n  // ── Transizione Chat → Home ──\n  function goHome() {\n    if (currentView === 'home') return;\n    currentView = 'home';\n\n    const homeView = document.getElementById('home-view');\n    const chatView = document.getElementById('chat-view');\n\n    // Sposta input + provider + send nella home\n    const homeInputRow = document.getElementById('home-input-row');\n    homeInputRow.appendChild(document.getElementById('chat-input'));\n    homeInputRow.appendChild(document.getElementById('provider-dropdown'));\n    homeInputRow.appendChild(document.getElementById('chat-send'));\n\n    // Switch viste\n    chatView.style.display = 'none';\n    chatView.classList.remove('active');\n    homeView.style.display = 'flex';\n\n    // Ridisegna il canvas (potrebbe aver perso dimensioni)\n    requestAnimationFrame(() => drawChart());\n  }\n\n  // ── Provider dropdown ──\n  function toggleProviderMenu() {\n    document.getElementById('provider-dropdown').classList.toggle('open');\n  }\n  function switchProvider(provider) {\n    chatProvider = provider;\n    const dot = document.getElementById('provider-dot');\n    const label = document.getElementById('provider-short');\n    const names = { cloud: 'Haiku', local: 'Local', pc_coder: 'PC Coder', pc_deep: 'PC Deep', deepseek: 'Deep' };\n    const dotClass = { cloud: 'dot-cloud', local: 'dot-local', pc_coder: 'dot-pc-coder', pc_deep: 'dot-pc-deep', deepseek: 'dot-deepseek' };\n    dot.className = 'provider-dot ' + (dotClass[provider] || 'dot-local');\n    label.textContent = names[provider] || 'Local';\n    document.getElementById('provider-dropdown').classList.remove('open');\n  }\n  // Chiudi dropdown quando click fuori\n  document.addEventListener('click', (e) => {\n    const dd = document.getElementById('provider-dropdown');\n    if (dd && !dd.contains(e.target)) dd.classList.remove('open');\n  });\n\n  // ── Home services toggle ──\n  function toggleHomeServices() {\n    const svc = document.getElementById('home-services');\n    const btn = document.getElementById('home-svc-toggle');\n    svc.classList.toggle('open');\n    btn.classList.toggle('open');\n  }\n\n  // ── Focus input → chat mode (solo mobile) ──\n  document.addEventListener('DOMContentLoaded', () => {\n    document.getElementById('chat-input').addEventListener('focus', () => {\n      if (window.innerWidth < 768) switchToChat();\n    });\n  });\n\n  // ── Tastiera virtuale: mantieni input visibile (stile Claude iOS) ──\n  if (window.visualViewport) {\n    const appLayout = document.querySelector('.app-layout');\n    let pendingVV = null;\n    const handleVV = () => {\n      if (pendingVV) return;\n      pendingVV = requestAnimationFrame(() => {\n        pendingVV = null;\n        const vvh = window.visualViewport.height;\n        const vvTop = window.visualViewport.offsetTop;\n        appLayout.style.height = vvh + 'px';\n        appLayout.style.transform = 'translateY(' + vvTop + 'px)';\n        // Scrolla chat ai messaggi più recenti\n        const msgs = document.getElementById('chat-messages');\n        if (msgs) msgs.scrollTop = msgs.scrollHeight;\n      });\n    };\n    window.visualViewport.addEventListener('resize', handleVV);\n    window.visualViewport.addEventListener('scroll', handleVV);\n  }\n\n  function appendChunk(text) {\n    const box = document.getElementById('chat-messages');\n    if (!streamDiv) {\n      streamDiv = document.createElement('div');\n      streamDiv.className = 'msg msg-bot';\n      streamDiv.textContent = '';\n      box.appendChild(streamDiv);\n    }\n    streamDiv.textContent += text;\n    box.scrollTop = box.scrollHeight;\n  }\n\n  function finalizeStream() {\n    if (streamDiv) {\n      const box = streamDiv.parentNode;\n      const wrap = document.createElement('div');\n      wrap.className = 'copy-wrap';\n      wrap.style.cssText = 'align-self:flex-start;max-width:85%;';\n      streamDiv.style.maxWidth = '100%';\n      box.insertBefore(wrap, streamDiv);\n      wrap.appendChild(streamDiv);\n      const btn = document.createElement('button');\n      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';\n      btn.onclick = () => copyToClipboard(streamDiv.textContent);\n      wrap.appendChild(btn);\n    }\n    streamDiv = null;\n  }\n\n  function sendChat() {\n    const input = document.getElementById('chat-input');\n    const text = (input.textContent || '').trim();\n    if (!text) return;\n    switchToChat();\n    appendMessage(text, 'user');\n    send({ action: 'chat', text, provider: chatProvider });\n    input.textContent = '';\n    document.getElementById('chat-send').disabled = true;\n  }\n  document.addEventListener('DOMContentLoaded', () => {\n    document.getElementById('chat-input').addEventListener('keydown', e => {\n      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }\n    });\n  });\n  function appendMessage(text, role) {\n    const box = document.getElementById('chat-messages');\n    if (role === 'bot') {\n      const wrap = document.createElement('div');\n      wrap.className = 'copy-wrap';\n      wrap.style.cssText = 'align-self:flex-start;max-width:85%;';\n      const div = document.createElement('div');\n      div.className = 'msg msg-bot';\n      div.style.maxWidth = '100%';\n      div.textContent = text;\n      const btn = document.createElement('button');\n      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';\n      btn.onclick = () => copyToClipboard(div.textContent);\n      wrap.appendChild(div); wrap.appendChild(btn);\n      box.appendChild(wrap);\n    } else {\n      const div = document.createElement('div');\n      div.className = `msg msg-${role}`;\n      div.textContent = text;\n      box.appendChild(div);\n    }\n    box.scrollTop = box.scrollHeight;\n  }\n  function appendThinking() {\n    const box = document.getElementById('chat-messages');\n    const div = document.createElement('div');\n    div.id = 'thinking'; div.className = 'msg-thinking';\n    div.innerHTML = 'elaborazione <span class=\"dots\"><span>.</span><span>.</span><span>.</span></span>';\n    box.appendChild(div); box.scrollTop = box.scrollHeight;\n  }\n  function removeThinking() { const el = document.getElementById('thinking'); if (el) el.remove(); }\n  function clearChat() {\n    document.getElementById('chat-messages').innerHTML =\n      '<div class=\"msg msg-bot\">Chat pulita 🧹</div>';\n    send({ action: 'clear_chat' });\n  }\n\n  /* toggleStatusDetail e updateStatusBar rimossi — home cards aggiornate da updateStats */\n\n  // ── Drawer (bottom sheet) ──\n  let activeDrawer = null;\n  const DRAWER_CFG = {\n    briefing: { title: '▤ Morning Briefing', actions: '<button class=\"btn-ghost\" onclick=\"loadBriefing(this)\">Carica</button><button class=\"btn-green\" onclick=\"runBriefing(this)\">▶ Genera</button>' },\n    crypto:   { title: '₿ Crypto', actions: '<button class=\"btn-ghost\" onclick=\"loadCrypto(this)\">Carica</button>' },\n    tokens:   { title: '¤ Token & API', actions: '<button class=\"btn-ghost\" onclick=\"loadTokens(this)\">Carica</button>' },\n    logs:     { title: '≡ Log Nanobot', actions: '<button class=\"btn-ghost\" onclick=\"loadLogs(this)\">Carica</button>' },\n    cron:     { title: '◇ Task schedulati', actions: '<button class=\"btn-ghost\" onclick=\"loadCron(this)\">Carica</button>' },\n    claude:   { title: '>_ Remote Code', actions: '<span id=\"bridge-dot\" class=\"health-dot\" title=\"Bridge\" style=\"width:8px;height:8px;\"></span><button class=\"btn-ghost\" onclick=\"loadBridge(this)\">Carica</button>' },\n    memoria:  { title: '◎ Memoria', actions: '' }\n  };\n  function openDrawer(widgetId) {\n    // Toggle: se clicchi lo stesso tab, chiudi\n    if (activeDrawer === widgetId) { closeDrawer(); return; }\n    // Hide all, show target\n    document.querySelectorAll('.drawer-widget').forEach(w => w.classList.remove('active'));\n    const dw = document.getElementById('dw-' + widgetId);\n    if (dw) dw.classList.add('active');\n    // Header\n    const cfg = DRAWER_CFG[widgetId];\n    document.getElementById('drawer-title').textContent = cfg ? cfg.title : widgetId;\n    document.getElementById('drawer-actions').innerHTML =\n      (cfg ? cfg.actions : '') +\n      '<button class=\"btn-ghost\" onclick=\"closeDrawer()\" style=\"min-height:28px;padding:3px 8px;\">✕</button>';\n    // Show overlay + enable two-column on desktop\n    document.getElementById('drawer-overlay').classList.add('show');\n    document.querySelector('.app-content').classList.add('has-drawer');\n    // Tab bar highlight\n    document.querySelectorAll('.tab-bar-btn').forEach(b =>\n      b.classList.toggle('active', b.dataset.widget === widgetId));\n    activeDrawer = widgetId;\n  }\n  function closeDrawer() {\n    document.getElementById('drawer-overlay').classList.remove('show');\n    document.querySelector('.app-content').classList.remove('has-drawer');\n    document.querySelectorAll('.tab-bar-btn').forEach(b => b.classList.remove('active'));\n    activeDrawer = null;\n  }\n\n  // ── Drawer swipe-down to close (mobile) ──\n  (function() {\n    const drawer = document.querySelector('.drawer');\n    if (!drawer) return;\n    let touchStartY = 0;\n    drawer.addEventListener('touchstart', function(e) {\n      touchStartY = e.touches[0].clientY;\n    }, { passive: true });\n    drawer.addEventListener('touchmove', function(e) {\n      const dy = e.touches[0].clientY - touchStartY;\n      if (dy > 80) { closeDrawer(); touchStartY = 9999; }\n    }, { passive: true });\n  })();\n\n  // Escape chiude chat view / drawer / overlay\n  document.addEventListener('keydown', (e) => {\n    if (e.key === 'Escape') {\n      if (currentView === 'chat') goHome();\n      else if (activeDrawer) closeDrawer();\n      const outFs = document.getElementById('output-fullscreen');\n      if (outFs && outFs.classList.contains('show')) closeOutputFullscreen();\n    }\n  });\n\n  // ── On-demand widget loaders ──\n  function loadTokens(btn) {\n    if (btn) btn.textContent = '…';\n    send({ action: 'get_tokens' });\n  }\n  function loadLogs(btn) {\n    if (btn) btn.textContent = '…';\n    const dateEl = document.getElementById('log-date-filter');\n    const searchEl = document.getElementById('log-search-filter');\n    const dateVal = dateEl ? dateEl.value : '';\n    const searchVal = searchEl ? searchEl.value.trim() : '';\n    send({ action: 'get_logs', date: dateVal, search: searchVal });\n  }\n  function loadCron(btn) {\n    if (btn) btn.textContent = '…';\n    send({ action: 'get_cron' });\n  }\n  function loadBriefing(btn) {\n    if (btn) btn.textContent = '…';\n    send({ action: 'get_briefing' });\n  }\n  function runBriefing(btn) {\n    if (btn) btn.textContent = '…';\n    send({ action: 'run_briefing' });\n  }\n\n  function loadCrypto(btn) {\n    if (btn) btn.textContent = '…';\n    send({ action: 'get_crypto' });\n  }\n\n  function renderCrypto(data) {\n    const el = document.getElementById('crypto-body');\n    if (data.error && !data.btc) {\n      el.innerHTML = `<div class=\"no-items\">// errore: ${esc(data.error)}</div>\n        <div style=\"margin-top:8px;text-align:center;\"><button class=\"btn-ghost\" onclick=\"loadCrypto()\">↻ Riprova</button></div>`;\n      return;\n    }\n    function coinRow(symbol, label, d) {\n      if (!d) return '';\n      const arrow = d.change_24h >= 0 ? '▲' : '▼';\n      const color = d.change_24h >= 0 ? 'var(--green)' : 'var(--red)';\n      return `\n        <div style=\"display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:6px;\">\n          <div>\n            <div style=\"font-size:13px;font-weight:700;color:var(--amber);\">${symbol} ${label}</div>\n            <div style=\"font-size:10px;color:var(--muted);margin-top:2px;\">€${d.eur.toLocaleString()}</div>\n          </div>\n          <div style=\"text-align:right;\">\n            <div style=\"font-size:15px;font-weight:700;color:var(--green);\">$${d.usd.toLocaleString()}</div>\n            <div style=\"font-size:11px;color:${color};margin-top:2px;\">${arrow} ${Math.abs(d.change_24h)}%</div>\n          </div>\n        </div>`;\n    }\n    el.innerHTML = coinRow('₿', 'Bitcoin', data.btc) + coinRow('Ξ', 'Ethereum', data.eth) +\n      '<div style=\"margin-top:4px;\"><button class=\"btn-ghost\" onclick=\"loadCrypto()\">↻ Aggiorna</button></div>';\n  }\n\n  function renderBriefing(data) {\n    const el = document.getElementById('briefing-body');\n    if (!data.last) {\n      el.innerHTML = '<div class=\"no-items\">// nessun briefing generato ancora</div>' +\n        '<div style=\"margin-top:8px;text-align:center;\"><button class=\"btn-green\" onclick=\"runBriefing()\">▶ Genera ora</button></div>';\n      return;\n    }\n    const b = data.last;\n    const ts = b.ts ? b.ts.replace('T', ' ') : '—';\n    const weather = b.weather || '—';\n    const calToday = b.calendar_today || [];\n    const calTomorrow = b.calendar_tomorrow || [];\n    const calTodayHtml = calToday.length > 0\n      ? calToday.map(e => {\n          const loc = e.location ? ` <span style=\"color:var(--muted)\">@ ${esc(e.location)}</span>` : '';\n          return `<div style=\"margin:3px 0;font-size:11px;\"><span style=\"color:var(--cyan);font-weight:600\">${esc(e.time)}</span> <span style=\"color:var(--text2)\">${esc(e.summary)}</span>${loc}</div>`;\n        }).join('')\n      : '<div style=\"font-size:11px;color:var(--muted);font-style:italic\">Nessun evento oggi</div>';\n    const calTomorrowHtml = calTomorrow.length > 0\n      ? `<div style=\"font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px\">📅 DOMANI (${calTomorrow.length} eventi)</div>` +\n        calTomorrow.map(e =>\n          `<div style=\"margin:2px 0;font-size:10px;color:var(--text2)\"><span style=\"color:var(--cyan)\">${esc(e.time)}</span> ${esc(e.summary)}</div>`\n        ).join('')\n      : '';\n    const stories = (b.stories || []).map((s, i) =>\n      `<div style=\"margin:4px 0;font-size:11px;color:var(--text2);\">${i+1}. ${esc(s.title)}</div>`\n    ).join('');\n    el.innerHTML = `\n      <div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;\">\n        <div style=\"font-size:10px;color:var(--muted);\">ULTIMO: <span style=\"color:var(--amber)\">${ts}</span></div>\n        <div style=\"font-size:10px;color:var(--muted);\">PROSSIMO: <span style=\"color:var(--cyan)\">${data.next_run || '07:30'}</span></div>\n      </div>\n      <div style=\"background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:8px;\">\n        <div style=\"font-size:11px;color:var(--amber);margin-bottom:8px;\">🌤 ${esc(weather)}</div>\n        <div style=\"font-size:10px;color:var(--muted);margin-bottom:4px;\">📅 CALENDARIO OGGI</div>\n        ${calTodayHtml}\n        ${calTomorrowHtml}\n        <div style=\"font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px;\">📰 TOP HACKERNEWS</div>\n        ${stories}\n      </div>\n      <div style=\"display:flex;gap:6px;\">\n        <button class=\"btn-ghost\" onclick=\"loadBriefing()\">↻ Aggiorna</button>\n        <button class=\"btn-green\" onclick=\"runBriefing()\">▶ Genera nuovo</button>\n        <button class=\"btn-ghost\" onclick=\"copyToClipboard(document.getElementById('briefing-body').textContent)\">📋 Copia</button>\n      </div>`;\n  }\n\n  function renderTokens(data) {\n    const src = data.source === 'api' ? '🌐 Anthropic API' : '📁 Log locale';\n    document.getElementById('tokens-body').innerHTML = `\n      <div class=\"token-grid\">\n        <div class=\"token-item\"><div class=\"token-label\">Input oggi</div><div class=\"token-value\">${(data.today_input||0).toLocaleString()}</div></div>\n        <div class=\"token-item\"><div class=\"token-label\">Output oggi</div><div class=\"token-value\">${(data.today_output||0).toLocaleString()}</div></div>\n        <div class=\"token-item\"><div class=\"token-label\">Chiamate</div><div class=\"token-value\">${data.total_calls||0}</div></div>\n      </div>\n      <div style=\"margin-bottom:6px;font-size:10px;color:var(--muted);\">\n        MODELLO: <span style=\"color:var(--cyan)\">${esc(data.last_model||'N/A')}</span>\n        &nbsp;·&nbsp; FONTE: <span style=\"color:var(--text2)\">${src}</span>\n      </div>\n      <div class=\"mono-block\" style=\"max-height:100px;\">${(data.log_lines||[]).map(l=>esc(l)).join('\\n')||'// nessun log disponibile'}</div>\n      <div style=\"margin-top:8px;display:flex;gap:6px;\"><button class=\"btn-ghost\" onclick=\"loadTokens()\">↻ Aggiorna</button><button class=\"btn-ghost\" onclick=\"copyToClipboard(document.getElementById('tokens-body').textContent)\">📋 Copia</button></div>`;\n  }\n\n  function renderLogs(data) {\n    const el = document.getElementById('logs-body');\n    // data può essere stringa (vecchio formato) o oggetto {lines, total, filtered}\n    if (typeof data === 'string') {\n      el.innerHTML = `<div class=\"mono-block\" style=\"max-height:200px;\">${esc(data)||'(nessun log)'}</div>\n        <div style=\"margin-top:8px;display:flex;gap:6px;\"><button class=\"btn-ghost\" onclick=\"loadLogs()\">↻ Aggiorna</button><button class=\"btn-ghost\" onclick=\"copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')\">📋 Copia</button></div>`;\n      return;\n    }\n    const dateVal = document.getElementById('log-date-filter')?.value || '';\n    const searchVal = document.getElementById('log-search-filter')?.value || '';\n    const lines = data.lines || [];\n    const total = data.total || 0;\n    const filtered = data.filtered || 0;\n    const countInfo = (dateVal || searchVal)\n      ? `<span style=\"color:var(--amber)\">${filtered}</span> / ${total} righe`\n      : `${total} righe totali`;\n    // Evidenzia testo cercato nelle righe\n    let content = lines.length ? lines.map(l => {\n      if (searchVal) {\n        const re = new RegExp('(' + searchVal.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&') + ')', 'gi');\n        return l.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(re, '<span style=\"background:var(--green-dim);color:var(--green);font-weight:700;\">$1</span>');\n      }\n      return l.replace(/</g, '&lt;').replace(/>/g, '&gt;');\n    }).join('\\n') : '(nessun log corrispondente)';\n    el.innerHTML = `\n      <div style=\"display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;\">\n        <input type=\"date\" id=\"log-date-filter\" value=\"${dateVal}\" tabindex=\"-1\"\n          style=\"background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--amber);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;\">\n        <input type=\"text\" id=\"log-search-filter\" placeholder=\"🔍 cerca…\" value=\"${searchVal}\" tabindex=\"-1\"\n          style=\"flex:1;min-width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;\">\n        <button class=\"btn-green\" onclick=\"loadLogs()\" style=\"min-height:32px;\">🔍 Filtra</button>\n        <button class=\"btn-ghost\" onclick=\"clearLogFilters()\" style=\"min-height:32px;\">✕ Reset</button>\n      </div>\n      <div style=\"font-size:10px;color:var(--muted);margin-bottom:6px;\">${countInfo}</div>\n      <div class=\"mono-block\" style=\"max-height:240px;\">${content}</div>\n      <div style=\"margin-top:8px;display:flex;gap:6px;\"><button class=\"btn-ghost\" onclick=\"loadLogs()\">↻ Aggiorna</button><button class=\"btn-ghost\" onclick=\"copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')\">📋 Copia</button></div>`;\n    // Enter su campo ricerca = filtra\n    document.getElementById('log-search-filter')?.addEventListener('keydown', e => {\n      if (e.key === 'Enter') loadLogs();\n    });\n  }\n  function clearLogFilters() {\n    const d = document.getElementById('log-date-filter');\n    const s = document.getElementById('log-search-filter');\n    if (d) d.value = '';\n    if (s) s.value = '';\n    loadLogs();\n  }\n\n  function renderCron(jobs) {\n    const el = document.getElementById('cron-body');\n    const jobList = (jobs && jobs.length) ? '<div class=\"cron-list\">' + jobs.map((j, i) => `\n      <div class=\"cron-item\" style=\"align-items:center;\">\n        <div class=\"cron-schedule\">${j.schedule}</div>\n        <div style=\"flex:1;\"><div class=\"cron-cmd\">${j.command}</div>${j.desc?`<div class=\"cron-desc\">// ${j.desc}</div>`:''}</div>\n        <button class=\"btn-red\" style=\"padding:3px 8px;font-size:10px;min-height:28px;\" onclick=\"deleteCron(${i})\">✕</button>\n      </div>`).join('') + '</div>'\n      : '<div class=\"no-items\">// nessun cron job configurato</div>';\n    el.innerHTML = jobList + `\n      <div style=\"margin-top:10px;border-top:1px solid var(--border);padding-top:10px;\">\n        <div style=\"font-size:10px;color:var(--muted);margin-bottom:6px;\">AGGIUNGI TASK</div>\n        <div style=\"display:flex;gap:6px;margin-bottom:6px;\">\n          <input id=\"cron-schedule\" placeholder=\"30 7 * * *\" tabindex=\"-1\" style=\"width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;\">\n          <input id=\"cron-command\" placeholder=\"python3.13 /path/to/script.py\" tabindex=\"-1\" style=\"flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;\">\n        </div>\n        <div style=\"display:flex;gap:6px;\">\n          <button class=\"btn-green\" onclick=\"addCron()\">+ Aggiungi</button>\n          <button class=\"btn-ghost\" onclick=\"loadCron()\">↻ Aggiorna</button>\n        </div>\n      </div>`;\n  }\n  function addCron() {\n    const sched = document.getElementById('cron-schedule').value.trim();\n    const cmd = document.getElementById('cron-command').value.trim();\n    if (!sched || !cmd) { showToast('⚠️ Compila schedule e comando'); return; }\n    send({ action: 'add_cron', schedule: sched, command: cmd });\n  }\n  function deleteCron(index) {\n    send({ action: 'delete_cron', index: index });\n  }\n\n  // ── Remote Code ──\n  let claudeRunning = false;\n\n  function loadBridge(btn) {\n    if (btn) btn.textContent = '...';\n    send({ action: 'check_bridge' });\n    send({ action: 'get_claude_tasks' });\n  }\n\n  function runClaudeTask() {\n    const input = document.getElementById('claude-prompt');\n    const prompt = input.value.trim();\n    if (!prompt) { showToast('Scrivi un prompt'); return; }\n    if (claudeRunning) { showToast('Task già in esecuzione'); return; }\n    claudeRunning = true;\n    document.getElementById('claude-run-btn').disabled = true;\n    document.getElementById('claude-cancel-btn').style.display = 'inline-block';\n    const wrap = document.getElementById('claude-output-wrap');\n    if (wrap) wrap.style.display = 'block';\n    const out = document.getElementById('claude-output');\n    if (out) out.innerHTML = '';\n    send({ action: 'claude_task', prompt: prompt });\n  }\n\n  function cancelClaudeTask() {\n    send({ action: 'claude_cancel' });\n  }\n\n  function finalizeClaudeTask(data) {\n    claudeRunning = false;\n    const rb = document.getElementById('claude-run-btn');\n    const cb = document.getElementById('claude-cancel-btn');\n    if (rb) rb.disabled = false;\n    if (cb) cb.style.display = 'none';\n    const status = data.completed ? '✅ completato' : (data.exit_code === 0 ? '⚠️ incompleto' : '⚠️ errore');\n    const dur = (data.duration_ms / 1000).toFixed(1);\n    const iter = data.iterations > 1 ? ` (${data.iterations} iter)` : '';\n    showToast(`Task ${status} in ${dur}s${iter}`);\n    send({ action: 'get_claude_tasks' });\n  }\n\n  function renderBridgeStatus(data) {\n    const dot = document.getElementById('bridge-dot');\n    if (!dot) return;\n    if (data.status === 'ok') {\n      dot.className = 'health-dot green';\n      dot.title = 'Bridge online';\n    } else {\n      dot.className = 'health-dot red';\n      dot.title = 'Bridge offline';\n    }\n    // Se il body è ancora il placeholder, renderizza il form\n    const body = document.getElementById('claude-body');\n    if (body && body.querySelector('.widget-placeholder')) {\n      renderClaudeUI(data.status === 'ok');\n    }\n  }\n\n  function renderClaudeUI(isOnline) {\n    const body = document.getElementById('claude-body');\n    if (!body) return;\n    body.innerHTML = `\n      <div style=\"margin-bottom:10px;\">\n        <textarea id=\"claude-prompt\" rows=\"3\" placeholder=\"Descrivi il task per Claude Code...\" tabindex=\"-1\"\n          style=\"width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;\n          color:var(--green);padding:9px 12px;font-family:var(--font);font-size:13px;\n          outline:none;resize:vertical;caret-color:var(--green);min-height:60px;box-sizing:border-box;\"></textarea>\n        <div style=\"display:flex;gap:6px;margin-top:6px;\">\n          <button class=\"btn-green\" id=\"claude-run-btn\" onclick=\"runClaudeTask()\"\n            ${!isOnline ? 'disabled title=\"Bridge offline\"' : ''}>▶ Esegui</button>\n          <button class=\"btn-red\" id=\"claude-cancel-btn\" onclick=\"cancelClaudeTask()\"\n            style=\"display:none;\">■ Stop</button>\n          <button class=\"btn-ghost\" onclick=\"loadBridge()\">↻ Stato</button>\n        </div>\n      </div>\n      <div id=\"claude-output-wrap\" style=\"display:none;margin-bottom:10px;\">\n        <div class=\"claude-output-header\">\n          <span>OUTPUT</span>\n          <div style=\"display:flex;gap:4px;\">\n            <button class=\"btn-ghost\" style=\"padding:2px 8px;font-size:10px;min-height:24px;\" onclick=\"copyClaudeOutput()\">📋 Copia</button>\n            <button class=\"btn-ghost\" style=\"padding:2px 8px;font-size:10px;min-height:24px;\" onclick=\"openOutputFullscreen()\">⛶ Espandi</button>\n          </div>\n        </div>\n        <div id=\"claude-output\" class=\"claude-output\"></div>\n      </div>\n      <div id=\"claude-tasks-list\"></div>`;\n  }\n\n  function renderClaudeTasks(tasks) {\n    // Se il body è ancora placeholder, renderizza prima il form\n    const body = document.getElementById('claude-body');\n    if (body && body.querySelector('.widget-placeholder')) {\n      renderClaudeUI(document.getElementById('bridge-dot')?.classList.contains('green'));\n    }\n    const el = document.getElementById('claude-tasks-list');\n    if (!el) return;\n    if (!tasks || !tasks.length) {\n      el.innerHTML = '<div class=\"no-items\">// nessun task eseguito</div>';\n      return;\n    }\n    const list = tasks.slice().reverse();\n    el.innerHTML = '<div style=\"font-size:10px;color:var(--muted);margin-bottom:6px;\">ULTIMI TASK</div>' +\n      list.map(t => {\n        const dur = t.duration_ms ? (t.duration_ms/1000).toFixed(1)+'s' : '';\n        const ts = (t.ts || '').replace('T', ' ');\n        return `<div class=\"claude-task-item\">\n          <div class=\"claude-task-prompt\" title=\"${esc(t.prompt)}\">${esc(t.prompt)}</div>\n          <div class=\"claude-task-meta\">\n            <span class=\"claude-task-status ${esc(t.status)}\">${esc(t.status)}</span>\n            <span>${esc(ts)}</span>\n            <span>${dur}</span>\n          </div>\n        </div>`;\n      }).join('');\n  }\n\n  // ── Tabs ──\n  function switchTab(name, btn) {\n    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));\n    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));\n    btn.classList.add('active');\n    document.getElementById('tab-' + name).classList.add('active');\n    if (name === 'history') send({ action: 'get_history' });\n    if (name === 'quickref') send({ action: 'get_quickref' });\n  }\n\n  // ── Misc ──\n  // ── Collapsible cards ──\n  function toggleCard(id) {\n    const card = document.getElementById(id);\n    if (card) card.classList.toggle('collapsed');\n  }\n  function expandCard(id) {\n    const card = document.getElementById(id);\n    if (card) card.classList.remove('collapsed');\n  }\n\n  function requestStats() { send({ action: 'get_stats' }); }\n  function refreshMemory() { send({ action: 'get_memory' }); }\n  function refreshHistory() { send({ action: 'get_history' }); }\n  function killSession(name) { send({ action: 'tmux_kill', session: name }); }\n  function gatewayRestart() { showToast('⏳ Riavvio gateway…'); send({ action: 'gateway_restart' }); }\n\n  // ── Reboot / Shutdown ──\n  function showRebootModal() {\n    document.getElementById('reboot-modal').classList.add('show');\n  }\n  function hideRebootModal() {\n    document.getElementById('reboot-modal').classList.remove('show');\n  }\n  function confirmReboot() {\n    hideRebootModal();\n    send({ action: 'reboot' });\n  }\n  function showShutdownModal() {\n    document.getElementById('shutdown-modal').classList.add('show');\n  }\n  function hideShutdownModal() {\n    document.getElementById('shutdown-modal').classList.remove('show');\n  }\n  function confirmShutdown() {\n    hideShutdownModal();\n    send({ action: 'shutdown' });\n  }\n  function startRebootWait() {\n    document.getElementById('reboot-overlay').classList.add('show');\n    const statusEl = document.getElementById('reboot-status');\n    let seconds = 0;\n    const timer = setInterval(() => {\n      seconds++;\n      statusEl.textContent = `Attesa: ${seconds}s — tentativo riconnessione…`;\n    }, 1000);\n    // Tenta di riconnettersi ogni 3 secondi\n    const tryReconnect = setInterval(() => {\n      fetch('/', { method: 'HEAD', cache: 'no-store' })\n        .then(r => {\n          if (r.ok) {\n            clearInterval(timer);\n            clearInterval(tryReconnect);\n            document.getElementById('reboot-overlay').classList.remove('show');\n            showToast('✅ Pi riavviato con successo');\n            // Riconnetti WebSocket\n            if (ws) { try { ws.close(); } catch(e) {} }\n            connect();\n          }\n        })\n        .catch(() => {});\n    }, 3000);\n    // Timeout massimo: 2 minuti\n    setTimeout(() => {\n      clearInterval(timer);\n      clearInterval(tryReconnect);\n      statusEl.textContent = 'Timeout — il Pi potrebbe non essere raggiungibile. Ricarica la pagina manualmente.';\n    }, 120000);\n  }\n\n  function showToast(text) {\n    const el = document.getElementById('toast');\n    el.textContent = text; el.classList.add('show');\n    const ms = Math.max(2500, Math.min(text.length * 60, 6000));\n    setTimeout(() => el.classList.remove('show'), ms);\n  }\n\n  function copyToClipboard(text) {\n    if (navigator.clipboard && navigator.clipboard.writeText) {\n      navigator.clipboard.writeText(text).then(() => showToast('📋 Copiato'))\n        .catch(() => _fallbackCopy(text));\n    } else { _fallbackCopy(text); }\n  }\n  function _fallbackCopy(text) {\n    const ta = document.createElement('textarea');\n    ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';\n    document.body.appendChild(ta); ta.select();\n    try { document.execCommand('copy'); showToast('📋 Copiato'); }\n    catch(e) { showToast('Copia non riuscita'); }\n    document.body.removeChild(ta);\n  }\n\n  // ── Remote Code output helpers ──\n  function copyClaudeOutput() {\n    const out = document.getElementById('claude-output');\n    if (out) copyToClipboard(out.textContent);\n  }\n  function openOutputFullscreen() {\n    const out = document.getElementById('claude-output');\n    if (!out) return;\n    document.getElementById('output-fs-content').textContent = out.textContent;\n    document.getElementById('output-fullscreen').classList.add('show');\n  }\n  function closeOutputFullscreen() {\n    document.getElementById('output-fullscreen').classList.remove('show');\n  }\n\n  setInterval(() => {\n    const t = new Date().toLocaleTimeString('it-IT');\n    ['home-clock', 'chat-clock'].forEach(id => {\n      const el = document.getElementById(id);\n      if (el) el.textContent = t;\n    });\n  }, 1000);\n\n  if ('serviceWorker' in navigator) {\n    navigator.serviceWorker.register('/sw.js').catch(() => {});\n  }\n\n  connect();\n  </script>\n</body>\n\n</html>"
+LOGIN_HTML = "<!DOCTYPE html>\n<html lang=\"it\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover\">\n<meta name=\"apple-mobile-web-app-capable\" content=\"yes\">\n<meta name=\"apple-mobile-web-app-status-bar-style\" content=\"black-translucent\">\n<meta name=\"theme-color\" content=\"#060a06\">\n<link rel=\"icon\" type=\"image/jpeg\" href=\"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k=\">\n<link rel=\"apple-touch-icon\" sizes=\"192x192\" href=\"data:image/jpeg;base64,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\">\n<link rel=\"manifest\" href=\"/manifest.json\">\n<title>Vessel — Login</title>\n<style>\n  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');\n  :root {\n    --bg: #060a06; --bg2: #0b110b; --card: #0e160e; --border: #1a2e1a;\n    --border2: #254025; --green: #00ff41; --green2: #00cc33; --green3: #009922;\n    --green-dim: #003311; --red: #ff3333; --muted: #3d6b3d; --text: #c8ffc8;\n    --amber: #ffb000; --font: 'JetBrains Mono', 'Fira Code', monospace;\n  }\n  * { box-sizing: border-box; margin: 0; padding: 0; }\n  body {\n    background: var(--bg); color: var(--text); font-family: var(--font);\n    height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center;\n    overflow: hidden; position: fixed; inset: 0;\n    background-image: repeating-linear-gradient(0deg, transparent, transparent 2px,\n      rgba(0,255,65,0.012) 2px, rgba(0,255,65,0.012) 4px);\n  }\n  .login-box {\n    background: var(--card); border: 1px solid var(--border2); border-radius: 8px;\n    padding: 36px 32px 28px; width: min(380px, 90vw); text-align: center;\n    box-shadow: 0 0 60px rgba(0,255,65,0.06);\n  }\n  .login-icon { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--green3);\n    filter: drop-shadow(0 0 10px rgba(0,255,65,0.4)); margin-bottom: 18px; }\n  .login-title { font-size: 20px; font-weight: 700; color: var(--green); letter-spacing: 2px;\n    text-shadow: 0 0 10px rgba(0,255,65,0.4); margin-bottom: 6px; }\n  .login-sub { font-size: 12px; color: var(--muted); margin-bottom: 24px; }\n  #pin-input { position: absolute; opacity: 0; pointer-events: none; }\n  .pin-display {\n    display: flex; gap: 10px; justify-content: center; margin-bottom: 6px;\n  }\n  .pin-dot {\n    width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--green3);\n    background: transparent; transition: background .15s, box-shadow .15s;\n  }\n  .pin-dot.filled {\n    background: var(--green); box-shadow: 0 0 8px rgba(0,255,65,0.5);\n  }\n  .pin-counter {\n    font-size: 11px; color: var(--muted); margin-bottom: 16px; letter-spacing: 1px;\n  }\n  .numpad {\n    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;\n    width: min(300px, 80vw); margin: 0 auto;\n  }\n  .numpad-btn {\n    font-family: var(--font); font-size: 24px; font-weight: 600;\n    padding: 16px 0; border: 1px solid var(--border2); border-radius: 8px;\n    background: var(--bg2); color: var(--green); cursor: pointer;\n    transition: all .15s; -webkit-tap-highlight-color: transparent;\n    user-select: none; min-height: 58px;\n  }\n  .numpad-btn:active { background: var(--green-dim); border-color: var(--green3); }\n  .numpad-btn.fn { font-size: 14px; color: var(--muted); }\n  .numpad-btn.fn:active { color: var(--green); }\n  .numpad-bottom {\n    width: min(300px, 80vw); margin: 14px auto 0;\n  }\n  .numpad-submit {\n    font-family: var(--font); font-size: 14px; font-weight: 600; letter-spacing: 2px;\n    width: 100%; padding: 16px 0; border: 1px solid var(--green3); border-radius: 8px;\n    background: var(--green-dim); color: var(--green); cursor: pointer;\n    transition: all .15s; -webkit-tap-highlight-color: transparent;\n    user-select: none; text-transform: uppercase;\n  }\n  .numpad-submit:active { background: #004422; }\n  #login-error {\n    margin-top: 12px; font-size: 11px; color: var(--red); min-height: 16px;\n  }\n  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }\n  .shake { animation: shake .3s; }\n</style>\n</head>\n<body>\n<div class=\"login-box\" id=\"login-box\">\n  <img class=\"login-icon\" src=\"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k=\" alt=\"Vessel\">\n  <div class=\"login-title\">VESSEL</div>\n  <div class=\"login-sub\" id=\"login-sub\">Inserisci PIN</div>\n  <input id=\"pin-input\" type=\"password\" inputmode=\"none\" pattern=\"[0-9]*\"\n    maxlength=\"4\" autocomplete=\"off\" readonly tabindex=\"-1\">\n  <div class=\"pin-display\" id=\"pin-display\"></div>\n  <div class=\"pin-counter\" id=\"pin-counter\">0 / 6</div>\n  <div class=\"numpad\">\n    <button class=\"numpad-btn\" onclick=\"numpadPress('1')\">1</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('2')\">2</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('3')\">3</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('4')\">4</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('5')\">5</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('6')\">6</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('7')\">7</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('8')\">8</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('9')\">9</button>\n    <button class=\"numpad-btn fn\" onclick=\"numpadClear()\">C</button>\n    <button class=\"numpad-btn\" onclick=\"numpadPress('0')\">0</button>\n    <button class=\"numpad-btn fn\" onclick=\"numpadDel()\">DEL</button>\n  </div>\n  <div class=\"numpad-bottom\">\n    <button class=\"numpad-submit\" onclick=\"doLogin()\">SBLOCCA</button>\n  </div>\n  <div id=\"login-error\"></div>\n</div>\n<script>\nconst MAX_PIN = 4;\nlet pinValue = '';\n\nfunction updatePinDisplay() {\n  const display = document.getElementById('pin-display');\n  const counter = document.getElementById('pin-counter');\n  display.innerHTML = '';\n  for (let i = 0; i < MAX_PIN; i++) {\n    const dot = document.createElement('div');\n    dot.className = 'pin-dot' + (i < pinValue.length ? ' filled' : '');\n    display.appendChild(dot);\n  }\n  counter.textContent = '';\n  document.getElementById('pin-input').value = pinValue;\n}\n\nfunction numpadPress(n) {\n  if (pinValue.length >= MAX_PIN) return;\n  pinValue += n;\n  updatePinDisplay();\n  if (pinValue.length === MAX_PIN) setTimeout(doLogin, 150);\n}\n\nfunction numpadDel() {\n  if (pinValue.length === 0) return;\n  pinValue = pinValue.slice(0, -1);\n  updatePinDisplay();\n}\n\nfunction numpadClear() {\n  pinValue = '';\n  updatePinDisplay();\n}\n\nupdatePinDisplay();\n\n(async function() {\n  const r = await fetch('/auth/check');\n  const d = await r.json();\n  if (d.authenticated) { window.location.href = '/'; return; }\n  if (d.setup) {\n    document.getElementById('login-sub').textContent = 'Imposta il PIN (4 cifre)';\n  }\n})();\n\nasync function doLogin() {\n  const pin = pinValue.trim();\n  if (!pin) return;\n  const errEl = document.getElementById('login-error');\n  errEl.textContent = '';\n  try {\n    const r = await fetch('/auth/login', {\n      method: 'POST', headers: {'Content-Type': 'application/json'},\n      body: JSON.stringify({ pin })\n    });\n    const d = await r.json();\n    if (d.ok) { window.location.href = '/'; }\n    else {\n      errEl.textContent = d.error || 'PIN errato';\n      document.getElementById('login-box').classList.add('shake');\n      setTimeout(() => document.getElementById('login-box').classList.remove('shake'), 400);\n      pinValue = '';\n      updatePinDisplay();\n    }\n  } catch(e) {\n    errEl.textContent = 'Errore di connessione';\n  }\n}\n\ndocument.addEventListener('keydown', e => {\n  if (e.key >= '0' && e.key <= '9') numpadPress(e.key);\n  else if (e.key === 'Backspace') numpadDel();\n  else if (e.key === 'Escape') numpadClear();\n  else if (e.key === 'Enter') doLogin();\n});\n</script>\n</body>\n</html>"
+
+# Inject variables that were previously in the HTML f-string
+HTML = HTML.replace("{VESSEL_ICON}", VESSEL_ICON) if "VESSEL_ICON" in globals() else HTML.replace("{VESSEL_ICON}", "")
+HTML = HTML.replace("{VESSEL_ICON_192}", VESSEL_ICON_192) if "VESSEL_ICON_192" in globals() else HTML.replace("{VESSEL_ICON_192}", "")
+LOGIN_HTML = LOGIN_HTML.replace("{VESSEL_ICON}", VESSEL_ICON) if "VESSEL_ICON" in globals() else LOGIN_HTML.replace("{VESSEL_ICON}", "")
+LOGIN_HTML = LOGIN_HTML.replace("{VESSEL_ICON_192}", VESSEL_ICON_192) if "VESSEL_ICON_192" in globals() else LOGIN_HTML.replace("{VESSEL_ICON_192}", "")
+
+
+# --- src/backend/providers.py ---
+# ─── Chat Providers ─────────────────────────────────────────────────────────────
+
+class BaseChatProvider:
+    def __init__(self, model: str, system_prompt: str, history: list):
+        self.model = model
+        self.system_prompt = system_prompt
+        self.history = history
+        self.host = ""
+        self.port = 80
+        self.use_https = False
+        self.path = ""
+        self.headers = {}
+        self.payload = ""
+        self.timeout = 60
+        self.parser_type = "json_lines"
+        self.is_valid = True
+        self.error_msg = ""
+    
+    def setup(self):
+        pass
+
+class AnthropicProvider(BaseChatProvider):
+    def setup(self):
+        cfg = _get_config("config.json")
+        api_key = cfg.get("providers", {}).get("anthropic", {}).get("apiKey", "")
+        if not api_key:
+            self.is_valid = False
+            self.error_msg = "(nessuna API key Anthropic)"
+            return
+        self.host, self.port, self.use_https = "api.anthropic.com", 443, True
+        self.path = "/v1/messages"
+        self.headers = {"Content-Type": "application/json", "anthropic-version": "2023-06-01", "x-api-key": api_key}
+        self.payload = json.dumps({"model": self.model, "max_tokens": 1024, "system": self.system_prompt, "messages": self.history, "stream": True})
+        self.parser_type = "sse_anthropic"
+
+class OpenRouterProvider(BaseChatProvider):
+    def setup(self):
+        or_cfg = _get_config("openrouter.json")
+        api_key = os.environ.get("OPENROUTER_API_KEY", or_cfg.get("apiKey", ""))
+        if not api_key:
+            self.is_valid = False
+            self.error_msg = "(nessuna API key OpenRouter)"
+            return
+        self.host, self.port, self.use_https = "openrouter.ai", 443, True
+        self.path = "/api/v1/chat/completions"
+        self.headers = {
+            "Content-Type": "application/json", "Authorization": f"Bearer {api_key}",
+            "HTTP-Referer": "https://picoclaw.local", "X-Title": "Vessel Dashboard"
+        }
+        self.payload = json.dumps({
+            "model": self.model, "messages": [{"role": "system", "content": self.system_prompt}] + self.history,
+            "max_tokens": 1024, "stream": True, "provider": {"order": or_cfg.get("providerOrder", ["ModelRun", "DeepInfra"])}
+        })
+        self.parser_type = "sse_openai"
+
+class OllamaPCProvider(BaseChatProvider):
+    def setup(self):
+        pc_cfg = _get_config("ollama_pc.json")
+        self.host = pc_cfg.get("host", "localhost")
+        self.port = pc_cfg.get("port", 11434)
+        self.use_https = False
+        self.path = "/api/chat"
+        self.headers = {"Content-Type": "application/json"}
+        self.payload = json.dumps({
+            "model": self.model, "messages": [{"role": "system", "content": self.system_prompt}] + self.history,
+            "stream": True, "keep_alive": "60m"
+        })
+
+class OllamaProvider(BaseChatProvider):
+    def setup(self):
+        self.host, self.port, self.use_https = "127.0.0.1", 11434, False
+        self.path = "/api/chat"
+        self.headers = {"Content-Type": "application/json"}
+        self.payload = json.dumps({
+            "model": self.model, "messages": [{"role": "system", "content": self.system_prompt}] + self.history,
+            "stream": True, "keep_alive": OLLAMA_KEEP_ALIVE
+        })
+        self.timeout = OLLAMA_TIMEOUT
+
+def get_provider(provider_id: str, model: str, system_prompt: str, history: list) -> BaseChatProvider:
+    if provider_id == "anthropic":
+        p = AnthropicProvider(model, system_prompt, history)
+    elif provider_id == "openrouter":
+        p = OpenRouterProvider(model, system_prompt, history)
+    elif provider_id.startswith("ollama_pc"):
+        p = OllamaPCProvider(model, system_prompt, history)
+    else:
+        p = OllamaProvider(model, system_prompt, history)
+    p.setup()
+    return p
+
+
+# --- src/backend/services.py ---
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 async def bg(fn, *args):
     """Esegue una funzione sincrona in un thread executor (non blocca l'event loop)."""
@@ -284,7 +390,7 @@ async def bg(fn, *args):
 
 def run(cmd: str) -> str:
     """Esegue un comando shell. SAFETY: usare SOLO con comandi hardcoded interni,
-    MAI con input utente. Per input utente usare subprocess con lista argomenti."""
+    MAI con input utente senza shlex.quote(). Per input utente usare subprocess con lista argomenti."""
     try:
         r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=30)
         return (r.stdout + r.stderr).strip()
@@ -310,12 +416,16 @@ def format_uptime(raw: str) -> str:
             parts.append(chunk.split()[0] + "m")
     return " ".join(parts) if parts else raw
 
-def get_pi_stats() -> dict:
-    cpu    = run("top -bn1 | grep 'Cpu(s)' | awk '{print $2}'").replace("%us,","").strip()
-    mem_raw = run("free -m | awk 'NR==2{print $2, $3}'")
-    disk   = run("df -h / | awk 'NR==2{print $3\"/\"$2\" (\"$5\")\"}' ")
-    temp   = run("cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null")
-    uptime = run("uptime -p")
+async def get_pi_stats() -> dict:
+    cpu_t = asyncio.to_thread(run, "top -bn1 | grep 'Cpu(s)' | awk '{print $2}'")
+    mem_raw_t = asyncio.to_thread(run, "free -m | awk 'NR==2{print $2, $3}'")
+    disk_t = asyncio.to_thread(run, "df -h / | awk 'NR==2{print $3\"/\"$2\" (\"$5\")\"}' ")
+    temp_t = asyncio.to_thread(run, "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null")
+    uptime_t = asyncio.to_thread(run, "uptime -p")
+
+    cpu, mem_raw, disk, temp, uptime = await asyncio.gather(cpu_t, mem_raw_t, disk_t, temp_t, uptime_t)
+
+    cpu = cpu.replace("%us,","").strip()
     try:
         temp_c = float(int(temp)/1000)
         temp_str = f"{temp_c:.1f}°C"
@@ -459,6 +569,7 @@ def add_cron_job(schedule: str, command: str) -> str:
     if new_line in existing:
         return "Questo cron job esiste già"
     new_crontab = existing.rstrip('\n') + '\n' + new_line + '\n'
+
     # Scrivi via pipe
     result = subprocess.run(
         ["crontab", "-"], input=new_crontab, capture_output=True, text=True
@@ -477,6 +588,7 @@ def delete_cron_job(line_index: int) -> str:
     orig_index = active_lines[line_index][0]
     lines.pop(orig_index)
     new_crontab = '\n'.join(lines) + '\n'
+
     result = subprocess.run(
         ["crontab", "-"], input=new_crontab, capture_output=True, text=True
     )
@@ -503,7 +615,9 @@ def get_briefing_data() -> dict:
 
 def run_briefing() -> dict:
     """Esegue briefing.py e restituisce il risultato."""
-    result = run(f"cd {BRIEFING_SCRIPT.parent} && python3.13 {BRIEFING_SCRIPT.name} 2>&1")
+    safe_parent = shlex.quote(str(BRIEFING_SCRIPT.parent))
+    safe_name = shlex.quote(str(BRIEFING_SCRIPT.name))
+    result = run(f"cd {safe_parent} && python3.13 {safe_name} 2>&1")
     return get_briefing_data()
 
 def get_crypto_prices() -> dict:
@@ -588,25 +702,10 @@ def get_token_stats() -> dict:
     if stats["total_calls"] == 0:
         stats["log_lines"].append("// nessuna chiamata API oggi")
         # Leggo config nanobot per mostrare almeno il modello
-        cfg_file = Path.home() / ".nanobot" / "config.json"
-        if cfg_file.exists():
-            try:
-                cfg = json.loads(cfg_file.read_text())
-                raw = cfg.get("agents", {}).get("defaults", {}).get("model", "N/A")
-                stats["last_model"] = raw.split("/")[-1] if "/" in raw else raw
-            except Exception:
-                pass
+        cfg = _get_config("config.json")
+        raw = cfg.get("agents", {}).get("defaults", {}).get("model", "N/A")
+        stats["last_model"] = raw.split("/")[-1] if "/" in raw else raw
     return stats
-
-def _get_nanobot_config() -> dict:
-    """Legge config nanobot per API key e modello."""
-    cfg_file = Path.home() / ".nanobot" / "config.json"
-    if cfg_file.exists():
-        try:
-            return json.loads(cfg_file.read_text())
-        except Exception:
-            pass
-    return {}
 
 def _resolve_model(raw: str) -> str:
     """Converte 'anthropic/claude-haiku-4-5' → 'claude-haiku-4-5-20251001' per l'API."""
@@ -654,86 +753,11 @@ def warmup_ollama():
     except Exception as e:
         print(f"[Ollama] Warmup fallito: {e}")
 
-async def chat_with_ollama_stream(websocket: WebSocket, message: str, chat_history: list):
-    """Chat con Ollama via streaming con history. Invia chunk progressivi via WS."""
-    queue: asyncio.Queue = asyncio.Queue()
-    start_time = time.time()
-
-    friends_ctx = _load_friends()
-    system_with_friends = OLLAMA_SYSTEM
-    if friends_ctx:
-        system_with_friends = OLLAMA_SYSTEM + "\n\n## Elenco Amici\n" + friends_ctx
-
-    chat_history.append({"role": "user", "content": message})
-    # Limita history a ultimi 20 messaggi per non esplodere la RAM
-    trimmed = chat_history[-20:]
-
-    def _stream_worker():
-        try:
-            conn = http.client.HTTPConnection("127.0.0.1", 11434, timeout=OLLAMA_TIMEOUT)
-            payload = json.dumps({
-                "model": OLLAMA_MODEL,
-                "messages": [{"role": "system", "content": system_with_friends}] + trimmed,
-                "stream": True,
-                "keep_alive": OLLAMA_KEEP_ALIVE,
-            })
-            conn.request("POST", "/api/chat", body=payload,
-                         headers={"Content-Type": "application/json"})
-            resp = conn.getresponse()
-            buf = ""
-            while True:
-                raw = resp.read(256)
-                if not raw:
-                    break
-                buf += raw.decode("utf-8", errors="replace")
-                while "\n" in buf:
-                    line, buf = buf.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    data = json.loads(line)
-                    token = data.get("message", {}).get("content", "")
-                    if token:
-                        queue.put_nowait(("chunk", token))
-                    if data.get("done"):
-                        queue.put_nowait(("meta", data))
-                        conn.close()
-                        return
-            conn.close()
-        except Exception as e:
-            queue.put_nowait(("error", str(e)))
-        finally:
-            queue.put_nowait(("end", None))
-
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _stream_worker)
-
-    full_reply = ""
-    eval_count = 0
-
-    while True:
-        kind, val = await queue.get()
-        if kind == "chunk":
-            full_reply += val
-            await websocket.send_json({"type": "chat_chunk", "text": val})
-        elif kind == "meta":
-            eval_count = val.get("eval_count", 0)
-        elif kind == "error":
-            if not full_reply:
-                await websocket.send_json({"type": "chat_chunk", "text": f"(errore Ollama: {val})"})
-        elif kind == "end":
-            break
-
-    chat_history.append({"role": "assistant", "content": full_reply})
-    elapsed = int((time.time() - start_time) * 1000)
-    await websocket.send_json({"type": "chat_done", "provider": "ollama"})
-    log_token_usage(0, eval_count, OLLAMA_MODEL, provider="ollama", response_time_ms=elapsed)
-
-async def chat_with_ollama_pc_stream(
+async def _stream_chat(
     websocket: WebSocket, message: str, chat_history: list,
-    model: str, system_prompt: str, provider_id: str,
+    provider_id: str, system_prompt: str, model: str
 ):
-    """Chat con Ollama PC (GPU Windows) via streaming. Funzione parametrizzata per modello."""
+    """Chat generica unificata per API e Ollama (SSE e JSON-lines) tramite Provider astratto."""
     queue: asyncio.Queue = asyncio.Queue()
     start_time = time.time()
 
@@ -743,108 +767,22 @@ async def chat_with_ollama_pc_stream(
         system_with_friends = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
 
     chat_history.append({"role": "user", "content": message})
+    if len(chat_history) > 100:
+        chat_history[:] = chat_history[-60:]
     trimmed = chat_history[-20:]
 
-    def _stream_worker():
-        try:
-            conn = http.client.HTTPConnection(OLLAMA_PC_HOST, OLLAMA_PC_PORT, timeout=OLLAMA_PC_TIMEOUT)
-            payload = json.dumps({
-                "model": model,
-                "messages": [{"role": "system", "content": system_with_friends}] + trimmed,
-                "stream": True,
-                "keep_alive": OLLAMA_PC_KEEP_ALIVE,
-            })
-            conn.request("POST", "/api/chat", body=payload,
-                         headers={"Content-Type": "application/json"})
-            resp = conn.getresponse()
-            buf = ""
-            while True:
-                raw = resp.read(256)
-                if not raw:
-                    break
-                buf += raw.decode("utf-8", errors="replace")
-                while "\n" in buf:
-                    line, buf = buf.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    data = json.loads(line)
-                    token = data.get("message", {}).get("content", "")
-                    if token:
-                        queue.put_nowait(("chunk", token))
-                    if data.get("done"):
-                        queue.put_nowait(("meta", data))
-                        conn.close()
-                        return
-            conn.close()
-        except Exception as e:
-            queue.put_nowait(("error", str(e)))
-        finally:
-            queue.put_nowait(("end", None))
-
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _stream_worker)
-
-    full_reply = ""
-    eval_count = 0
-
-    while True:
-        kind, val = await queue.get()
-        if kind == "chunk":
-            full_reply += val
-            await websocket.send_json({"type": "chat_chunk", "text": val})
-        elif kind == "meta":
-            eval_count = val.get("eval_count", 0)
-        elif kind == "error":
-            if not full_reply:
-                await websocket.send_json({"type": "chat_chunk", "text": f"(errore Ollama PC: {val})"})
-        elif kind == "end":
-            break
-
-    chat_history.append({"role": "assistant", "content": full_reply})
-    elapsed = int((time.time() - start_time) * 1000)
-    await websocket.send_json({"type": "chat_done", "provider": provider_id})
-    log_token_usage(0, eval_count, model, provider=provider_id, response_time_ms=elapsed)
-
-async def chat_with_anthropic_stream(websocket: WebSocket, message: str, chat_history: list):
-    """Chat con Anthropic API via streaming SSE con history."""
-    queue: asyncio.Queue = asyncio.Queue()
-    start_time = time.time()
-
-    cfg = _get_nanobot_config()
-    api_key = cfg.get("providers", {}).get("anthropic", {}).get("apiKey", "")
-    if not api_key:
-        await websocket.send_json({"type": "chat_chunk", "text": "(nessuna API key Anthropic configurata)"})
-        await websocket.send_json({"type": "chat_done", "provider": "anthropic"})
+    provider = get_provider(provider_id, model, system_with_friends, trimmed)
+    if not provider.is_valid:
+        await websocket.send_json({"type": "chat_chunk", "text": provider.error_msg})
+        await websocket.send_json({"type": "chat_done", "provider": provider_id})
         return
 
-    raw_model = cfg.get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
-    model = _resolve_model(raw_model)
-    system_prompt = cfg.get("system_prompt", OLLAMA_SYSTEM)
-    friends_ctx = _load_friends()
-    if friends_ctx:
-        system_prompt = system_prompt + "\n\n## Contesto Amici\n" + friends_ctx
-
-    chat_history.append({"role": "user", "content": message})
-    trimmed = chat_history[-20:]
-
     def _stream_worker():
-        input_tokens = 0
-        output_tokens = 0
+        input_tokens = output_tokens = 0
         try:
-            conn = http.client.HTTPSConnection("api.anthropic.com", timeout=60)
-            payload = json.dumps({
-                "model": model,
-                "max_tokens": 1024,
-                "system": system_prompt,
-                "messages": trimmed,
-                "stream": True,
-            })
-            conn.request("POST", "/v1/messages", body=payload, headers={
-                "Content-Type": "application/json",
-                "anthropic-version": "2023-06-01",
-                "x-api-key": api_key,
-            })
+            conn_class = http.client.HTTPSConnection if provider.use_https else http.client.HTTPConnection
+            conn = conn_class(provider.host, provider.port, timeout=provider.timeout)
+            conn.request("POST", provider.path, body=provider.payload, headers=provider.headers)
             resp = conn.getresponse()
             if resp.status != 200:
                 body = resp.read().decode("utf-8", errors="replace")
@@ -853,142 +791,56 @@ async def chat_with_anthropic_stream(websocket: WebSocket, message: str, chat_hi
             buf = ""
             while True:
                 raw = resp.read(512)
-                if not raw:
-                    break
+                if not raw: break
                 buf += raw.decode("utf-8", errors="replace")
                 while "\n" in buf:
                     line, buf = buf.split("\n", 1)
                     line = line.strip()
-                    if not line or line.startswith("event:"):
-                        continue
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        if data_str == "[DONE]":
-                            break
+                    if not line: continue
+                    
+                    if provider.parser_type == "json_lines":
                         try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-                        dtype = data.get("type", "")
-                        if dtype == "content_block_delta":
-                            delta = data.get("delta", {})
-                            if delta.get("type") == "text_delta":
-                                text = delta.get("text", "")
-                                if text:
-                                    queue.put_nowait(("chunk", text))
-                        elif dtype == "message_start":
-                            usage = data.get("message", {}).get("usage", {})
-                            input_tokens = usage.get("input_tokens", 0)
-                        elif dtype == "message_delta":
-                            usage = data.get("usage", {})
-                            output_tokens = usage.get("output_tokens", 0)
-            conn.close()
-        except Exception as e:
-            queue.put_nowait(("error", str(e)))
-        finally:
-            queue.put_nowait(("meta", {"input_tokens": input_tokens, "output_tokens": output_tokens, "model": model}))
-            queue.put_nowait(("end", None))
-
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _stream_worker)
-
-    full_reply = ""
-    token_meta = {}
-
-    while True:
-        kind, val = await queue.get()
-        if kind == "chunk":
-            full_reply += val
-            await websocket.send_json({"type": "chat_chunk", "text": val})
-        elif kind == "meta":
-            token_meta = val
-        elif kind == "error":
-            if not full_reply:
-                await websocket.send_json({"type": "chat_chunk", "text": f"(errore API: {val})"})
-        elif kind == "end":
-            break
-
-    chat_history.append({"role": "assistant", "content": full_reply})
-    elapsed = int((time.time() - start_time) * 1000)
-    await websocket.send_json({"type": "chat_done", "provider": "anthropic"})
-    log_token_usage(
-        token_meta.get("input_tokens", 0),
-        token_meta.get("output_tokens", 0),
-        token_meta.get("model", model),
-        provider="anthropic",
-        response_time_ms=elapsed,
-    )
-
-async def chat_with_openrouter_stream(websocket: WebSocket, message: str, chat_history: list):
-    """Chat con DeepSeek V3 via OpenRouter streaming (OpenAI-compatible SSE)."""
-    queue: asyncio.Queue = asyncio.Queue()
-    start_time = time.time()
-
-    if not OPENROUTER_API_KEY:
-        await websocket.send_json({"type": "chat_chunk", "text": "(nessuna API key OpenRouter configurata)"})
-        await websocket.send_json({"type": "chat_done", "provider": "openrouter"})
-        return
-
-    friends_ctx = _load_friends()
-    system_prompt = OLLAMA_SYSTEM
-    if friends_ctx:
-        system_prompt = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
-
-    chat_history.append({"role": "user", "content": message})
-    trimmed = chat_history[-20:]
-
-    def _stream_worker():
-        input_tokens = 0
-        output_tokens = 0
-        try:
-            conn = http.client.HTTPSConnection("openrouter.ai", timeout=60)
-            payload = json.dumps({
-                "model": OPENROUTER_MODEL,
-                "messages": [{"role": "system", "content": system_prompt}] + trimmed,
-                "max_tokens": 1024,
-                "stream": True,
-                "provider": {"order": OPENROUTER_PROVIDER_ORDER},
-            })
-            conn.request("POST", "/api/v1/chat/completions", body=payload, headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                "HTTP-Referer": "https://picoclaw.local",
-                "X-Title": "Vessel Dashboard",
-            })
-            resp = conn.getresponse()
-            if resp.status != 200:
-                body = resp.read().decode("utf-8", errors="replace")
-                queue.put_nowait(("error", f"HTTP {resp.status}: {body[:200]}"))
-                return
-            buf = ""
-            while True:
-                raw = resp.read(512)
-                if not raw:
-                    break
-                buf += raw.decode("utf-8", errors="replace")
-                while "\n" in buf:
-                    line, buf = buf.split("\n", 1)
-                    line = line.strip()
-                    if not line or line.startswith("event:") or line.startswith(":"):
-                        continue
-                    if line.startswith("data: "):
-                        data_str = line[6:]
-                        if data_str == "[DONE]":
-                            break
-                        try:
-                            data = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
-                        choices = data.get("choices", [])
-                        if choices:
-                            delta = choices[0].get("delta", {})
-                            text = delta.get("content", "")
-                            if text:
-                                queue.put_nowait(("chunk", text))
-                        usage = data.get("usage")
-                        if usage:
-                            input_tokens = usage.get("prompt_tokens", 0)
-                            output_tokens = usage.get("completion_tokens", 0)
+                            data = json.loads(line)
+                            token = data.get("message", {}).get("content", "")
+                            if token: queue.put_nowait(("chunk", token))
+                            if data.get("done"):
+                                t_eval = data.get("eval_count", 0)
+                                queue.put_nowait(("meta", {"output_tokens": t_eval}))
+                                conn.close()
+                                return
+                        except Exception: pass
+                        
+                    elif provider.parser_type == "sse_anthropic":
+                        if line.startswith("event:"): continue
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str == "[DONE]": break
+                            try:
+                                data = json.loads(data_str)
+                                dtype = data.get("type", "")
+                                if dtype == "content_block_delta":
+                                    queue.put_nowait(("chunk", data.get("delta", {}).get("text", "")))
+                                elif dtype == "message_start":
+                                    input_tokens = data.get("message", {}).get("usage", {}).get("input_tokens", 0)
+                                elif dtype == "message_delta":
+                                    output_tokens = data.get("usage", {}).get("output_tokens", 0)
+                            except Exception: pass
+                                
+                    elif provider.parser_type == "sse_openai":
+                        if line.startswith("event:") or line.startswith(":"): continue
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str == "[DONE]": break
+                            try:
+                                data = json.loads(data_str)
+                                choices = data.get("choices", [])
+                                if choices:
+                                    queue.put_nowait(("chunk", choices[0].get("delta", {}).get("content", "")))
+                                usage = data.get("usage")
+                                if usage:
+                                    input_tokens = usage.get("prompt_tokens", 0)
+                                    output_tokens = usage.get("completion_tokens", 0)
+                            except Exception: pass
             conn.close()
         except Exception as e:
             queue.put_nowait(("error", str(e)))
@@ -1005,29 +857,30 @@ async def chat_with_openrouter_stream(websocket: WebSocket, message: str, chat_h
     while True:
         kind, val = await queue.get()
         if kind == "chunk":
-            full_reply += val
-            await websocket.send_json({"type": "chat_chunk", "text": val})
+            if val:
+                full_reply += val
+                await websocket.send_json({"type": "chat_chunk", "text": val})
         elif kind == "meta":
             token_meta = val
         elif kind == "error":
             if not full_reply:
-                await websocket.send_json({"type": "chat_chunk", "text": f"(errore OpenRouter: {val})"})
+                await websocket.send_json({"type": "chat_chunk", "text": f"(errore {provider_id}: {val})"})
         elif kind == "end":
             break
 
     chat_history.append({"role": "assistant", "content": full_reply})
+    if len(chat_history) > 100:
+        chat_history[:] = chat_history[-60:]
     elapsed = int((time.time() - start_time) * 1000)
-    await websocket.send_json({"type": "chat_done", "provider": "openrouter"})
+    await websocket.send_json({"type": "chat_done", "provider": provider_id})
     log_token_usage(
         token_meta.get("input_tokens", 0),
         token_meta.get("output_tokens", 0),
-        OPENROUTER_MODEL,
-        provider="openrouter",
-        response_time_ms=elapsed,
+        model,
+        provider=provider_id,
     )
 
 def chat_with_nanobot(message: str) -> str:
-    """Fallback: CLI nanobot (senza shell per prevenire injection)."""
     try:
         r = subprocess.run(
             ["nanobot", "agent", "-m", message],
@@ -1177,10 +1030,63 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str):
         "duration_ms": elapsed,
         "iterations": iterations,
         "completed": completed,
+        "notify": True # Added notify flag
     })
     log_claude_task(prompt, status, exit_code, elapsed, full_output[:200])
 
 
+def _cleanup_expired():
+    now = time.time()
+    for key in list(RATE_LIMITS.keys()):
+        RATE_LIMITS[key] = [t for t in RATE_LIMITS[key] if now - t < 600]
+        if not RATE_LIMITS[key]:
+            del RATE_LIMITS[key]
+    for token in list(SESSIONS.keys()):
+        if now - SESSIONS[token] > SESSION_TIMEOUT:
+            del SESSIONS[token]
+
+import io
+import zipfile
+
+@app.get("/api/export")
+async def export_data(request: Request):
+    token = request.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        ip = request.client.host
+        if not _rate_limit(ip, "auth", 5, 300):
+            return JSONResponse({"error": "Rate limit superato"}, status_code=429)
+        raise HTTPException(status_code=401, detail="Non autenticato")
+
+    memory_dir = Path.home() / ".nanobot" / "workspace" / "memory"
+    history_dir = Path.home() / ".nanobot" / "workspace" / "history"
+    claude_log = Path.home() / ".nanobot" / "claude_tasks.jsonl"
+    token_log = Path.home() / ".nanobot" / "tokens.jsonl"
+    config_file = Path.home() / ".nanobot" / "config.json"
+    
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+        for d in [memory_dir, history_dir]:
+            if d.exists() and d.is_dir():
+                for file_path in d.rglob("*"):
+                    if file_path.is_file():
+                        arcname = file_path.relative_to(Path.home() / ".nanobot")
+                        zip_file.write(file_path, arcname=arcname)
+        
+        for f in [claude_log, token_log, config_file]:
+            if f.exists():
+                arcname = f.name
+                zip_file.write(f, arcname=arcname)
+                
+    zip_buffer.seek(0)
+    
+    headers = {
+        "Content-Disposition": 'attachment; filename="vessel_export.zip"'
+    }
+    return Response(zip_buffer.getvalue(), headers=headers, media_type="application/x-zip-compressed")
+
+
+
+# --- src/backend/routes.py ---
 # ─── Background broadcaster ───────────────────────────────────────────────────
 async def stats_broadcaster():
     cycle = 0
@@ -1189,20 +1095,9 @@ async def stats_broadcaster():
         cycle += 1
         # Pulizia rate limits e sessioni ogni ~5 min
         if cycle % 60 == 0:
-            now = time.time()
-            for key in list(RATE_LIMITS.keys()):
-                RATE_LIMITS[key] = [t for t in RATE_LIMITS[key] if now - t < 600]
-                if not RATE_LIMITS[key]:
-                    del RATE_LIMITS[key]
-            for token in list(SESSIONS.keys()):
-                if now - SESSIONS[token] > SESSION_TIMEOUT:
-                    del SESSIONS[token]
-            for ip in list(AUTH_ATTEMPTS.keys()):
-                AUTH_ATTEMPTS[ip] = [t for t in AUTH_ATTEMPTS[ip] if now - t < AUTH_LOCKOUT_SECONDS]
-                if not AUTH_ATTEMPTS[ip]:
-                    del AUTH_ATTEMPTS[ip]
+            _cleanup_expired()
         if manager.connections:
-            pi = await bg(get_pi_stats)
+            pi = await get_pi_stats()
             tmux = await bg(get_tmux_sessions)
             await manager.broadcast({
                 "type": "stats",
@@ -1214,6 +1109,198 @@ async def stats_broadcaster():
             })
 
 # ─── WebSocket ────────────────────────────────────────────────────────────────
+# ─── WebSocket Dispatcher ───────────────────────────────────────────────────
+async def handle_chat(websocket, msg, ctx):
+    text = msg.get("text", "").strip()[:4000]
+    provider = msg.get("provider", "cloud")
+    if not text: return
+    ip = websocket.client.host
+    if not _rate_limit(ip, "chat", 20, 60):
+        await websocket.send_json({"type": "chat_reply", "text": "⚠️ Troppi messaggi. Attendi un momento."})
+        return
+    await websocket.send_json({"type": "chat_thinking"})
+    if provider == "local":
+        await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL)
+    elif provider == "pc_coder":
+        await _stream_chat(websocket, text, ctx["pc_coder"], "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL)
+    elif provider == "pc_deep":
+        await _stream_chat(websocket, text, ctx["pc_deep"], "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL)
+    elif provider == "deepseek":
+        await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL)
+    else:
+        raw_model = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
+        await _stream_chat(websocket, text, ctx["cloud"], "anthropic", _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM), _resolve_model(raw_model))
+
+async def handle_clear_chat(websocket, msg, ctx):
+    for history in ctx.values():
+        history.clear()
+
+async def handle_check_ollama(websocket, msg, ctx):
+    alive = await bg(check_ollama_health)
+    await websocket.send_json({"type": "ollama_status", "alive": alive})
+
+async def handle_get_memory(websocket, msg, ctx):
+    await websocket.send_json({"type": "memory", "text": get_memory_preview()})
+
+async def handle_get_history(websocket, msg, ctx):
+    await websocket.send_json({"type": "history", "text": get_history_preview()})
+
+async def handle_get_quickref(websocket, msg, ctx):
+    await websocket.send_json({"type": "quickref", "text": get_quickref_preview()})
+
+async def handle_get_stats(websocket, msg, ctx):
+    await websocket.send_json({
+        "type": "stats",
+        "data": {"pi": await get_pi_stats(), "tmux": await bg(get_tmux_sessions), "time": time.strftime("%H:%M:%S")}
+    })
+
+async def handle_get_logs(websocket, msg, ctx):
+    search = msg.get("search", "")
+    date_f = msg.get("date", "")
+    logs = await bg(get_nanobot_logs, 80, search, date_f)
+    await websocket.send_json({"type": "logs", "data": logs})
+
+async def handle_get_cron(websocket, msg, ctx):
+    jobs = await bg(get_cron_jobs)
+    await websocket.send_json({"type": "cron", "jobs": jobs})
+
+async def handle_add_cron(websocket, msg, ctx):
+    ip = websocket.client.host
+    if not _rate_limit(ip, "cron", 10, 60):
+        await websocket.send_json({"type": "toast", "text": "⚠️ Troppi tentativi"})
+        return
+    sched = msg.get("schedule", "")
+    cmd = msg.get("command", "")
+    result = await bg(add_cron_job, sched, cmd)
+    if result == "ok":
+        await websocket.send_json({"type": "toast", "text": "✅ Cron job aggiunto"})
+        jobs = await bg(get_cron_jobs)
+        await websocket.send_json({"type": "cron", "jobs": jobs})
+    else:
+        await websocket.send_json({"type": "toast", "text": f"⚠️ {result}"})
+
+async def handle_delete_cron(websocket, msg, ctx):
+    idx = msg.get("index", -1)
+    result = await bg(delete_cron_job, idx)
+    if result == "ok":
+        await websocket.send_json({"type": "toast", "text": "✅ Cron job rimosso"})
+        jobs = await bg(get_cron_jobs)
+        await websocket.send_json({"type": "cron", "jobs": jobs})
+    else:
+        await websocket.send_json({"type": "toast", "text": f"⚠️ {result}"})
+
+async def handle_get_tokens(websocket, msg, ctx):
+    ts = await bg(get_token_stats)
+    await websocket.send_json({"type": "tokens", "data": ts})
+
+async def handle_get_crypto(websocket, msg, ctx):
+    cp = await bg(get_crypto_prices)
+    await websocket.send_json({"type": "crypto", "data": cp})
+
+async def handle_get_briefing(websocket, msg, ctx):
+    bd = await bg(get_briefing_data)
+    await websocket.send_json({"type": "briefing", "data": bd})
+
+async def handle_run_briefing(websocket, msg, ctx):
+    await websocket.send_json({"type": "toast", "text": "⏳ Generazione briefing…"})
+    bd = await bg(run_briefing)
+    await websocket.send_json({"type": "briefing", "data": bd})
+    await websocket.send_json({"type": "toast", "text": "✅ Briefing generato con successo", "notify": True})
+
+async def handle_tmux_kill(websocket, msg, ctx):
+    session = msg.get("session", "")
+    active = {s["name"] for s in get_tmux_sessions()}
+    if session not in active:
+        await websocket.send_json({"type": "toast", "text": "⚠️ Sessione non trovata tra quelle attive"})
+    elif not session.startswith("nanobot"):
+        await websocket.send_json({"type": "toast", "text": f"⚠️ Solo sessioni nanobot-* possono essere terminate"})
+    else:
+        r = subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True, text=True, timeout=10)
+        result = (r.stdout + r.stderr).strip()
+        await websocket.send_json({"type": "toast", "text": f"✅ Sessione {session} terminata" if not result else f"⚠️ {result}"})
+
+async def handle_gateway_restart(websocket, msg, ctx):
+    subprocess.run(["tmux", "kill-session", "-t", "nanobot-gateway"], capture_output=True, text=True, timeout=10)
+    await asyncio.sleep(1)
+    subprocess.run(["tmux", "new-session", "-d", "-s", "nanobot-gateway", "nanobot", "gateway"], capture_output=True, text=True, timeout=10)
+    await websocket.send_json({"type": "toast", "text": "✅ Gateway riavviato"})
+
+async def handle_reboot(websocket, msg, ctx):
+    ip = websocket.client.host
+    if not _rate_limit(ip, "reboot", 1, 300):
+        await websocket.send_json({"type": "toast", "text": "⚠️ Reboot già richiesto di recente"})
+        return
+    await manager.broadcast({"type": "reboot_ack"})
+    await asyncio.sleep(0.5)
+    subprocess.run(["sudo", "reboot"])
+
+async def handle_shutdown(websocket, msg, ctx):
+    ip = websocket.client.host
+    if not _rate_limit(ip, "shutdown", 1, 300):
+        await websocket.send_json({"type": "toast", "text": "⚠️ Shutdown già richiesto di recente"})
+        return
+    await manager.broadcast({"type": "shutdown_ack"})
+    await asyncio.sleep(0.5)
+    subprocess.run(["sudo", "shutdown", "-h", "now"])
+
+async def handle_claude_task(websocket, msg, ctx):
+    prompt = msg.get("prompt", "").strip()[:10000]
+    if not prompt:
+        await websocket.send_json({"type": "toast", "text": "⚠️ Prompt vuoto"})
+        return
+    if not CLAUDE_BRIDGE_TOKEN:
+        await websocket.send_json({"type": "toast", "text": "⚠️ Bridge non configurato"})
+        return
+    ip = websocket.client.host
+    if not _rate_limit(ip, "claude_task", 5, 3600):
+        await websocket.send_json({"type": "toast", "text": "⚠️ Limite task raggiunto (max 5/ora)"})
+        return
+    await websocket.send_json({"type": "claude_thinking"})
+    await run_claude_task_stream(websocket, prompt)
+
+async def handle_claude_cancel(websocket, msg, ctx):
+    try:
+        payload = json.dumps({"token": CLAUDE_BRIDGE_TOKEN}).encode()
+        req = urllib.request.Request(f"{CLAUDE_BRIDGE_URL}/cancel", data=payload, headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=5): pass
+        await websocket.send_json({"type": "toast", "text": "✅ Task cancellato"})
+    except Exception as e:
+        await websocket.send_json({"type": "toast", "text": f"⚠️ Errore cancel: {e}"})
+
+async def handle_check_bridge(websocket, msg, ctx):
+    health = await bg(check_bridge_health)
+    await websocket.send_json({"type": "bridge_status", "data": health})
+
+async def handle_get_claude_tasks(websocket, msg, ctx):
+    tasks = get_claude_tasks(10)
+    await websocket.send_json({"type": "claude_tasks", "tasks": tasks})
+
+WS_DISPATCHER = {
+    "chat": handle_chat,
+    "clear_chat": handle_clear_chat,
+    "check_ollama": handle_check_ollama,
+    "get_memory": handle_get_memory,
+    "get_history": handle_get_history,
+    "get_quickref": handle_get_quickref,
+    "get_stats": handle_get_stats,
+    "get_logs": handle_get_logs,
+    "get_cron": handle_get_cron,
+    "add_cron": handle_add_cron,
+    "delete_cron": handle_delete_cron,
+    "get_tokens": handle_get_tokens,
+    "get_crypto": handle_get_crypto,
+    "get_briefing": handle_get_briefing,
+    "run_briefing": handle_run_briefing,
+    "tmux_kill": handle_tmux_kill,
+    "gateway_restart": handle_gateway_restart,
+    "reboot": handle_reboot,
+    "shutdown": handle_shutdown,
+    "claude_task": handle_claude_task,
+    "claude_cancel": handle_claude_cancel,
+    "check_bridge": handle_check_bridge,
+    "get_claude_tasks": handle_get_claude_tasks,
+}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     # Auth check via cookie prima di accettare
@@ -1222,16 +1309,18 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4001, reason="Non autenticato")
         return
     await manager.connect(websocket)
-    ollama_chat_history: list[dict] = []
-    cloud_chat_history: list[dict] = []
-    deepseek_chat_history: list[dict] = []
-    pc_coder_chat_history: list[dict] = []
-    pc_deep_chat_history: list[dict] = []
+    ctx = {
+        "ollama": [],
+        "cloud": [],
+        "deepseek": [],
+        "pc_coder": [],
+        "pc_deep": []
+    }
     await websocket.send_json({
         "type": "init",
         "data": {
-            "pi": get_pi_stats(),
-            "tmux": get_tmux_sessions(),
+            "pi": await get_pi_stats(),
+            "tmux": await bg(get_tmux_sessions),
             "version": get_nanobot_version(),
             "memory": get_memory_preview(),
             "time": time.strftime("%H:%M:%S"),
@@ -1241,2284 +1330,28 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             msg = await websocket.receive_json()
             action = msg.get("action")
-
-            if action == "chat":
-                text = msg.get("text", "").strip()[:4000]
-                provider = msg.get("provider", "cloud")
-                if text:
-                    ip = websocket.client.host
-                    if not _rate_limit(ip, "chat", 20, 60):
-                        await websocket.send_json({"type": "chat_reply", "text": "⚠️ Troppi messaggi. Attendi un momento."})
-                        continue
-                    await websocket.send_json({"type": "chat_thinking"})
-                    if provider == "local":
-                        await chat_with_ollama_stream(websocket, text, ollama_chat_history)
-                    elif provider == "pc_coder":
-                        await chat_with_ollama_pc_stream(websocket, text, pc_coder_chat_history,
-                            OLLAMA_PC_CODER_MODEL, OLLAMA_PC_CODER_SYSTEM, "ollama_pc_coder")
-                    elif provider == "pc_deep":
-                        await chat_with_ollama_pc_stream(websocket, text, pc_deep_chat_history,
-                            OLLAMA_PC_DEEP_MODEL, OLLAMA_PC_DEEP_SYSTEM, "ollama_pc_deep")
-                    elif provider == "deepseek":
-                        await chat_with_openrouter_stream(websocket, text, deepseek_chat_history)
-                    else:
-                        await chat_with_anthropic_stream(websocket, text, cloud_chat_history)
-
-            elif action == "clear_chat":
-                ollama_chat_history.clear()
-                cloud_chat_history.clear()
-                deepseek_chat_history.clear()
-                pc_coder_chat_history.clear()
-                pc_deep_chat_history.clear()
-
-            elif action == "check_ollama":
-                alive = await bg(check_ollama_health)
-                await websocket.send_json({"type": "ollama_status", "alive": alive})
-
-            elif action == "get_memory":
-                await websocket.send_json({"type": "memory", "text": get_memory_preview()})
-            elif action == "get_history":
-                await websocket.send_json({"type": "history", "text": get_history_preview()})
-            elif action == "get_quickref":
-                await websocket.send_json({"type": "quickref", "text": get_quickref_preview()})
-            elif action == "get_stats":
-                await websocket.send_json({
-                    "type": "stats",
-                    "data": {"pi": get_pi_stats(), "tmux": get_tmux_sessions(), "time": time.strftime("%H:%M:%S")}
-                })
-            elif action == "get_logs":
-                search = msg.get("search", "")
-                date_f = msg.get("date", "")
-                logs = await bg(get_nanobot_logs, 80, search, date_f)
-                await websocket.send_json({"type": "logs", "data": logs})
-            elif action == "get_cron":
-                jobs = await bg(get_cron_jobs)
-                await websocket.send_json({"type": "cron", "jobs": jobs})
-            elif action == "add_cron":
-                ip = websocket.client.host
-                if not _rate_limit(ip, "cron", 10, 60):
-                    await websocket.send_json({"type": "toast", "text": "⚠️ Troppi tentativi"})
-                    continue
-                sched = msg.get("schedule", "")
-                cmd = msg.get("command", "")
-                result = await bg(add_cron_job, sched, cmd)
-                if result == "ok":
-                    await websocket.send_json({"type": "toast", "text": "✅ Cron job aggiunto"})
-                    jobs = await bg(get_cron_jobs)
-                    await websocket.send_json({"type": "cron", "jobs": jobs})
-                else:
-                    await websocket.send_json({"type": "toast", "text": f"⚠️ {result}"})
-            elif action == "delete_cron":
-                idx = msg.get("index", -1)
-                result = await bg(delete_cron_job, idx)
-                if result == "ok":
-                    await websocket.send_json({"type": "toast", "text": "✅ Cron job rimosso"})
-                    jobs = await bg(get_cron_jobs)
-                    await websocket.send_json({"type": "cron", "jobs": jobs})
-                else:
-                    await websocket.send_json({"type": "toast", "text": f"⚠️ {result}"})
-            elif action == "get_tokens":
-                ts = await bg(get_token_stats)
-                await websocket.send_json({"type": "tokens", "data": ts})
-            elif action == "get_crypto":
-                cp = await bg(get_crypto_prices)
-                await websocket.send_json({"type": "crypto", "data": cp})
-
-            elif action == "get_briefing":
-                bd = await bg(get_briefing_data)
-                await websocket.send_json({"type": "briefing", "data": bd})
-            elif action == "run_briefing":
-                await websocket.send_json({"type": "toast", "text": "⏳ Generazione briefing…"})
-                bd = await bg(run_briefing)
-                await websocket.send_json({"type": "briefing", "data": bd})
-                await websocket.send_json({"type": "toast", "text": "✅ Briefing generato e inviato su Discord"})
-
-            elif action == "tmux_kill":
-                session = msg.get("session", "")
-                active = {s["name"] for s in get_tmux_sessions()}
-                if session not in active:
-                    await websocket.send_json({"type": "toast", "text": "⚠️ Sessione non trovata tra quelle attive"})
-                elif not session.startswith("nanobot"):
-                    await websocket.send_json({"type": "toast", "text": f"⚠️ Solo sessioni nanobot-* possono essere terminate"})
-                else:
-                    r = subprocess.run(
-                        ["tmux", "kill-session", "-t", session],
-                        capture_output=True, text=True, timeout=10
-                    )
-                    result = (r.stdout + r.stderr).strip()
-                    await websocket.send_json({"type": "toast",
-                        "text": f"✅ Sessione {session} terminata" if not result else f"⚠️ {result}"})
-            elif action == "gateway_restart":
-                subprocess.run(["tmux", "kill-session", "-t", "nanobot-gateway"],
-                               capture_output=True, text=True, timeout=10)
-                await asyncio.sleep(1)
-                subprocess.run(["tmux", "new-session", "-d", "-s", "nanobot-gateway", "nanobot", "gateway"],
-                               capture_output=True, text=True, timeout=10)
-                await websocket.send_json({"type": "toast", "text": "✅ Gateway riavviato"})
-
-            elif action == "reboot":
-                ip = websocket.client.host
-                if not _rate_limit(ip, "reboot", 1, 300):
-                    await websocket.send_json({"type": "toast", "text": "⚠️ Reboot già richiesto di recente"})
-                    continue
-                await manager.broadcast({"type": "reboot_ack"})
-                await asyncio.sleep(0.5)
-                subprocess.run(["sudo", "reboot"])
-
-            elif action == "shutdown":
-                ip = websocket.client.host
-                if not _rate_limit(ip, "shutdown", 1, 300):
-                    await websocket.send_json({"type": "toast", "text": "⚠️ Shutdown già richiesto di recente"})
-                    continue
-                await manager.broadcast({"type": "shutdown_ack"})
-                await asyncio.sleep(0.5)
-                subprocess.run(["sudo", "shutdown", "-h", "now"])
-
-            # ── Remote Code (Claude Bridge) ──
-            elif action == "claude_task":
-                prompt = msg.get("prompt", "").strip()[:10000]
-                if not prompt:
-                    await websocket.send_json({"type": "toast", "text": "⚠️ Prompt vuoto"})
-                    continue
-                if not CLAUDE_BRIDGE_TOKEN:
-                    await websocket.send_json({"type": "toast", "text": "⚠️ Bridge non configurato"})
-                    continue
-                ip = websocket.client.host
-                if not _rate_limit(ip, "claude_task", 5, 3600):
-                    await websocket.send_json({"type": "toast", "text": "⚠️ Limite task raggiunto (max 5/ora)"})
-                    continue
-                await websocket.send_json({"type": "claude_thinking"})
-                await run_claude_task_stream(websocket, prompt)
-
-            elif action == "claude_cancel":
-                try:
-                    payload = json.dumps({"token": CLAUDE_BRIDGE_TOKEN}).encode()
-                    req = urllib.request.Request(
-                        f"{CLAUDE_BRIDGE_URL}/cancel",
-                        data=payload,
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    with urllib.request.urlopen(req, timeout=5) as resp:
-                        pass
-                    await websocket.send_json({"type": "toast", "text": "✅ Task cancellato"})
-                except Exception as e:
-                    await websocket.send_json({"type": "toast", "text": f"⚠️ Errore cancel: {e}"})
-
-            elif action == "check_bridge":
-                health = await bg(check_bridge_health)
-                await websocket.send_json({"type": "bridge_status", "data": health})
-
-            elif action == "get_claude_tasks":
-                tasks = get_claude_tasks(10)
-                await websocket.send_json({"type": "claude_tasks", "tasks": tasks})
-
+            handler = WS_DISPATCHER.get(action)
+            if handler:
+                await handler(websocket, msg, ctx)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
 # ─── HTML ─────────────────────────────────────────────────────────────────────
-VESSEL_ICON = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k="
+VESSEL_ICON = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxAAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k="
 
-VESSEL_ICON_192 = "data:image/jpeg;base64,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"
+VESSEL_ICON_192 = "data:image/jpeg;base64,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"
 
-HTML = f"""<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#060a06">
-<link rel="icon" type="image/jpeg" href="{VESSEL_ICON}">
-<link rel="apple-touch-icon" sizes="192x192" href="{VESSEL_ICON_192}">
-<link rel="manifest" href="/manifest.json">
-<title>Vessel Dashboard</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
-  :root {{
-    --bg:        #060a06;
-    --bg2:       #0b110b;
-    --card:      #0e160e;
-    --card2:     #121a12;
-    --border:    #1a2e1a;
-    --border2:   #254025;
-    --green:     #00ff41;
-    --green2:    #00cc33;
-    --green3:    #009922;
-    --green-dim: #003311;
-    --amber:     #ffb000;
-    --red:       #ff3333;
-    --red-dim:   #3a0808;
-    --cyan:      #00ffcc;
-    --text:      #c8ffc8;
-    --text2:     #7ab87a;
-    --muted:     #3d6b3d;
-    --font:      'JetBrains Mono', 'Fira Code', monospace;
-    --safe-top: env(safe-area-inset-top, 0px);
-    --safe-bot: env(safe-area-inset-bottom, 0px);
-    --safe-l:   env(safe-area-inset-left, 0px);
-    --safe-r:   env(safe-area-inset-right, 0px);
-  }}
 
-  * {{ box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }}
 
-  html, body {{
-    height: 100%;
-    overscroll-behavior: none;
-    -webkit-overflow-scrolling: touch;
-    overflow: hidden;
-  }}
 
-  body {{
-    background: var(--bg);
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 13px;
-    background-image: repeating-linear-gradient(
-      0deg, transparent, transparent 2px,
-      rgba(0,255,65,0.012) 2px, rgba(0,255,65,0.012) 4px
-    );
-  }}
 
-  /* ── App Layout (3-zone mobile-first) ── */
-  .app-layout {{
-    display: flex; flex-direction: column;
-    height: 100%; height: 100dvh;
-  }}
-
-  /* (status-bar rimossa — sostituita da home-view) */
-
-  .logo-icon {{
-    width: 24px; height: 24px;
-    border-radius: 50%; object-fit: cover;
-    border: 1px solid var(--green3);
-    filter: drop-shadow(0 0 6px rgba(0,255,65,0.4));
-  }}
-  /* #clock e #conn-dot rimossi — sostituiti da .home-clock e .conn-dot-mini */
-  .version-badge {{
-    font-size: 10px; background: var(--green-dim); border: 1px solid var(--green3);
-    border-radius: 3px; padding: 2px 7px; color: var(--green2);
-  }}
-  .health-dot {{
-    width: 10px; height: 10px; border-radius: 50%;
-    background: var(--muted); transition: all .5s;
-  }}
-  .health-dot.green {{ background: var(--green); box-shadow: 0 0 8px var(--green); }}
-  .health-dot.yellow {{ background: var(--amber); box-shadow: 0 0 8px var(--amber); }}
-  .health-dot.red {{ background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }}
-
-  /* ── Layout ── */
-  .app-content {{
-    flex: 1; display: flex; flex-direction: column;
-    min-height: 0; overflow: hidden;
-  }}
-  /* (chat-area e chat-header rimossi — sostituiti da home-view e chat-view) */
-  /* ── Desktop: two-column layout ── */
-  @media (min-width: 768px) {{
-    .app-content.has-drawer {{
-      flex-direction: row;
-    }}
-    .app-content.has-drawer .home-view {{
-      flex: 1; max-width: none;
-    }}
-    .app-content.has-drawer .chat-view {{
-      flex: 1;
-    }}
-    .home-view {{
-      padding: 0 24px; max-width: 900px; margin: 0 auto;
-    }}
-    .home-stats {{
-      grid-template-columns: repeat(4, 1fr);
-    }}
-    .hc-value {{ font-size: 26px; }}
-    .home-chart #pi-chart {{ height: 100px; }}
-    .chat-view {{
-      flex: 1;
-    }}
-    .chat-view.active + .drawer-overlay {{
-      border-left: 1px solid var(--border2);
-    }}
-    .drawer-overlay {{
-      position: static !important; inset: auto !important;
-      background: none !important; opacity: 1 !important;
-      pointer-events: auto !important; z-index: auto !important;
-      display: none; flex: 0 0 380px;
-      transition: none !important;
-    }}
-    .drawer-overlay.show {{
-      display: flex;
-    }}
-    .drawer {{
-      position: static !important;
-      transform: none !important;
-      max-height: none !important;
-      border-radius: 0 !important;
-      border-top: none !important;
-      border-left: 1px solid var(--border2);
-      height: 100%;
-      flex: 1;
-    }}
-    .drawer-handle {{ display: none; }}
-    .tab-bar {{ height: 44px; }}
-    .tab-bar-btn {{ flex-direction: row; gap: 6px; }}
-    .tab-bar-btn.active::after {{ display: none; }}
-    .tab-bar-btn span:last-child {{ font-size: 10px; }}
-  }}
-  @media (max-width: 767px) {{
-    .card-body {{ padding: 10px; }}
-    .stats-grid {{ gap: 5px; }}
-    .stat-item {{ padding: 7px 9px; }}
-    .widget-placeholder {{ padding: 16px 10px; min-height: 60px; }}
-    .mono-block {{ max-height: 150px; }}
-    .token-grid {{ grid-template-columns: repeat(3, 1fr); gap: 5px; }}
-    button {{ min-height: 44px; }}
-  }}
-
-  /* ── Tab Bar (bottom) ── */
-  .tab-bar {{
-    flex-shrink: 0; height: calc(56px + env(safe-area-inset-bottom, 0px));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    background: var(--card); border-top: 1px solid var(--border2);
-    display: flex; justify-content: space-around; align-items: center;
-    z-index: 100;
-  }}
-  .tab-bar-btn {{
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    color: var(--muted); background: none; border: none;
-    padding: 4px 6px; cursor: pointer; gap: 2px;
-    font-family: var(--font); min-height: 0; transition: color .15s;
-    position: relative;
-  }}
-  .tab-bar-btn span:first-child {{ font-size: 16px; line-height: 1; font-family: var(--font); }}
-  .tab-bar-btn span:last-child {{ font-size: 9px; letter-spacing: 0.5px; }}
-  .tab-bar-btn.active {{ color: var(--green); }}
-  .tab-bar-btn.active::after {{
-    content: ''; display: block;
-    width: 4px; height: 4px; border-radius: 50%;
-    background: var(--green);
-    position: absolute; bottom: 0;
-  }}
-  .tab-bar-btn:hover {{ color: var(--green2); }}
-
-  /* ── Drawer (slide up) ── */
-  .drawer-overlay {{
-    position: fixed; inset: 0; z-index: 150;
-    background: rgba(0,0,0,0.5);
-    opacity: 0; pointer-events: none; transition: opacity .2s;
-  }}
-  .drawer-overlay.show {{ opacity: 1; pointer-events: auto; }}
-  .drawer {{
-    position: fixed; bottom: 0; left: 0; right: 0;
-    max-height: 75vh; background: var(--card);
-    border-top: 2px solid var(--green3);
-    border-radius: 12px 12px 0 0;
-    transform: translateY(100%); transition: transform .3s ease;
-    display: flex; flex-direction: column;
-    z-index: 160;
-  }}
-  .drawer-overlay.show .drawer {{ transform: translateY(0); }}
-  .drawer-handle {{
-    width: 36px; height: 4px; background: var(--muted);
-    border-radius: 2px; margin: 8px auto 0; flex-shrink: 0;
-  }}
-  .drawer-header {{
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 16px; border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }}
-  .drawer-body {{
-    overflow-y: auto; flex: 1; min-height: 0;
-    -webkit-overflow-scrolling: touch;
-  }}
-  .drawer-widget {{ display: none; padding: 12px; }}
-  .drawer-widget.active {{ display: block; }}
-  #dw-memoria {{ padding: 0; }}
-  #dw-memoria .tab-row {{ margin: 0; }}
-  #dw-memoria .mem-content {{ padding: 12px; }}
-  /* drawer max-width su mobile landscape / tablet */
-  @media (min-width: 601px) and (max-width: 767px) {{
-    .drawer {{ max-width: 600px; margin: 0 auto; left: 0; right: 0; }}
-  }}
-
-  /* ── Cards ── */
-  .card {{
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    overflow: hidden;
-    position: relative;
-  }}
-  .card::before {{
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, var(--green-dim), transparent);
-  }}
-  .card-header {{
-    padding: 9px 13px;
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--card2);
-  }}
-  .card-title {{
-    font-weight: 600; font-size: 11px; display: flex; align-items: center; gap: 7px;
-    color: var(--green2); letter-spacing: 0.8px; text-transform: uppercase;
-  }}
-  .card-body {{ padding: 12px; }}
-
-  /* ── Chat (area principale) ── */
-  #chat-messages {{
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px 12px;
-    display: flex; flex-direction: column; gap: 8px;
-    scroll-behavior: smooth;
-    -webkit-overflow-scrolling: touch;
-    min-height: 0;
-  }}
-
-  /* (chat-fs-overlay rimosso — chat mode è ora il chat-view) */
-  .msg {{ max-width: 85%; padding: 8px 12px; border-radius: 4px; line-height: 1.5; font-size: 12px; }}
-  .msg-user {{
-    align-self: flex-end;
-    background: var(--green-dim); color: var(--green);
-    border: 1px solid var(--green3);
-  }}
-  .msg-bot {{
-    align-self: flex-start; background: var(--card2);
-    border: 1px solid var(--border); color: var(--text2); white-space: pre-wrap;
-  }}
-
-  /* ── Copy button ── */
-  .copy-btn {{
-    position: absolute; top: 4px; right: 4px;
-    background: var(--card2); border: 1px solid var(--border); border-radius: 3px;
-    color: var(--muted); font-size: 12px; cursor: pointer; padding: 2px 6px;
-    opacity: 0; transition: opacity .15s; z-index: 2; line-height: 1;
-    min-height: 0; font-family: var(--font);
-  }}
-  .copy-btn:hover {{ color: var(--green2); border-color: var(--green3); }}
-  .copy-wrap {{ position: relative; }}
-  .copy-wrap:hover .copy-btn {{ opacity: 1; }}
-  @media (hover: none) {{ .copy-btn {{ opacity: 0.5; }} }}
-
-  .msg-thinking {{
-    align-self: flex-start; color: var(--muted); font-style: italic; font-size: 11px;
-    display: flex; align-items: center; gap: 6px;
-  }}
-  .dots span {{ animation: blink 1.2s infinite; display: inline-block; color: var(--green); }}
-  .dots span:nth-child(2) {{ animation-delay: .2s; }}
-  .dots span:nth-child(3) {{ animation-delay: .4s; }}
-  @keyframes blink {{ 0%,80%,100%{{opacity:.2}} 40%{{opacity:1}} }}
-  @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.4}} }}
-
-  /* (chat-input-row rimosso — sostituito da home-input-row e chat-input-row-v2) */
-  #chat-input {{
-    flex: 1; background: var(--bg2); border: 1px solid var(--border2);
-    border-radius: 4px; color: var(--green);
-    padding: 9px 12px; /* min 16px per evitare autozoom iOS */
-    font-family: var(--font); font-size: 16px; outline: none;
-    caret-color: var(--green);
-    -webkit-appearance: none;
-  }}
-  #chat-input::placeholder {{ color: var(--muted); font-size: 13px; }}
-  #chat-input:focus {{ border-color: var(--green3); }}
-
-  /* (model-switch/indicator rimossi — sostituiti da provider-dropdown) */
-  .dot-cloud {{ background: #ffb300; box-shadow: 0 0 4px #ffb300; }}
-  .dot-local {{ background: #00ffcc; box-shadow: 0 0 4px #00ffcc; }}
-  .dot-deepseek {{ background: #6c5ce7; box-shadow: 0 0 4px #6c5ce7; }}
-  .dot-pc-coder {{ background: #ff006e; box-shadow: 0 0 4px #ff006e; }}
-  .dot-pc-deep {{ background: #e74c3c; box-shadow: 0 0 4px #e74c3c; }}
-
-  /* ── Stats ── */
-  .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }}
-  .stat-item {{
-    background: var(--card2); border: 1px solid var(--border);
-    border-radius: 4px; padding: 9px 11px;
-  }}
-  .stat-item.full {{ grid-column: 1/-1; }}
-  .stat-label {{ font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }}
-  .stat-value {{ font-size: 12px; color: var(--green); font-weight: 600; text-shadow: 0 0 6px rgba(0,255,65,0.25); }}
-
-  /* ── Sessions ── */
-  .session-list {{ display: flex; flex-direction: column; gap: 6px; }}
-  .session-item {{
-    display: flex; align-items: center; justify-content: space-between;
-    background: var(--card2); border: 1px solid var(--border); border-radius: 4px; padding: 8px 11px;
-  }}
-  .session-name {{ font-size: 12px; display: flex; align-items: center; gap: 7px; color: var(--text); }}
-  .session-dot {{ width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }}
-
-  /* ── Buttons ── */
-  button {{
-    border: none; border-radius: 4px; cursor: pointer; font-family: var(--font);
-    font-size: 11px; font-weight: 600; padding: 6px 13px; letter-spacing: 0.5px;
-    transition: all .15s; touch-action: manipulation; min-height: 36px;
-  }}
-  .btn-green {{ background: var(--green-dim); color: var(--green2); border: 1px solid var(--green3); }}
-  .btn-green:hover {{ background: #004422; color: var(--green); }}
-  .btn-red {{ background: var(--red-dim); color: var(--red); border: 1px solid #5a1a1a; }}
-  .btn-red:hover {{ background: #5a1a1a; }}
-  .btn-ghost {{ background: transparent; color: var(--muted); border: 1px solid var(--border); }}
-  .btn-ghost:hover {{ color: var(--green2); border-color: var(--green3); }}
-
-  /* ── Mono block ── */
-  .mono-block {{
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
-    padding: 9px 11px; font-family: var(--font); font-size: 11px; line-height: 1.7;
-    color: var(--text2); max-height: 180px; overflow-y: auto;
-    white-space: pre-wrap; word-break: break-word;
-    -webkit-overflow-scrolling: touch;
-  }}
-
-  /* ── Placeholder widget (on-demand) ── */
-  .widget-placeholder {{
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 10px; padding: 24px 12px; color: var(--muted);
-    font-size: 11px; text-align: center; min-height: 80px;
-  }}
-  .widget-placeholder .ph-icon {{ font-size: 24px; opacity: 0.5; }}
-
-  /* ── Collapsible widgets ── */
-  .card.collapsible > .card-header {{
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-select: none;
-  }}
-  .card.collapsible > .card-header .collapse-arrow {{
-    display: inline-block;
-    transition: transform .2s;
-    font-size: 10px;
-    color: var(--muted);
-    margin-right: 4px;
-  }}
-  .card.collapsible.collapsed > .card-header .collapse-arrow {{
-    transform: rotate(-90deg);
-  }}
-  .card.collapsible > .card-body,
-  .card.collapsible > .tab-row,
-  .card.collapsible > .tab-row + .card-body {{
-    transition: max-height .25s ease, opacity .2s ease, padding .2s ease;
-    overflow: hidden;
-  }}
-  .card.collapsible.collapsed > .card-body,
-  .card.collapsible.collapsed > .tab-row,
-  .card.collapsible.collapsed > .tab-row + .card-body {{
-    max-height: 0 !important;
-    opacity: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-top: none;
-  }}
-
-  /* ── Token grid ── */
-  .token-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 10px; }}
-  .token-item {{ background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 9px; text-align: center; }}
-  .token-label {{ font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px; }}
-  .token-value {{ font-size: 15px; font-weight: 700; color: var(--amber); text-shadow: 0 0 6px rgba(255,176,0,0.3); }}
-
-  /* ── Cron ── */
-  .cron-list {{ display: flex; flex-direction: column; gap: 6px; }}
-  .cron-item {{
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
-    padding: 8px 11px; display: flex; align-items: flex-start; gap: 9px;
-  }}
-  .cron-schedule {{ font-size: 10px; color: var(--cyan); white-space: nowrap; min-width: 90px; padding-top: 1px; }}
-  .cron-cmd {{ font-size: 11px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-  .cron-desc {{ font-size: 10px; color: var(--muted); margin-top: 2px; }}
-  .no-items {{ color: var(--muted); font-size: 11px; text-align: center; padding: 16px; }}
-
-  /* ── Remote Code ── */
-  .claude-output {{
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
-    padding: 9px 11px; font-family: var(--font); font-size: 11px; line-height: 1.6;
-    color: var(--text2); max-height: 500px; overflow-y: auto; white-space: pre-wrap;
-    word-break: break-word; -webkit-overflow-scrolling: touch;
-  }}
-  .claude-output-header {{
-    display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;
-  }}
-  .claude-output-header span {{ font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }}
-  .output-fs-content {{
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
-    padding: 12px; font-family: var(--font); font-size: 12px; line-height: 1.6;
-    color: var(--text2); max-height: calc(90vh - 90px); overflow-y: auto; white-space: pre-wrap;
-    word-break: break-word; -webkit-overflow-scrolling: touch;
-  }}
-  .claude-task-item {{
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
-    padding: 8px 11px; margin-bottom: 6px;
-  }}
-  .claude-task-prompt {{
-    font-size: 11px; color: var(--text); overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px;
-  }}
-  .claude-task-meta {{
-    font-size: 10px; color: var(--muted); display: flex; gap: 10px;
-  }}
-  .claude-task-status {{ font-weight: 600; }}
-  .claude-task-status.done {{ color: var(--green); }}
-  .claude-task-status.error {{ color: var(--red); }}
-  .claude-task-status.cancelled {{ color: var(--muted); }}
-  .ralph-marker {{
-    color: var(--green); font-weight: 700; padding: 6px 0 2px; font-size: 11px;
-    border-top: 1px solid var(--border); margin-top: 4px;
-  }}
-  .ralph-supervisor {{
-    color: #f0c040; font-size: 11px; padding: 2px 0; font-style: italic;
-  }}
-  .ralph-info {{ color: var(--muted); font-size: 10px; padding: 2px 0; }}
-
-  /* ── Tabs ── */
-  .tab-row {{
-    display: flex; gap: 4px; padding: 7px 13px;
-    border-bottom: 1px solid var(--border); background: var(--card2);
-  }}
-  .tab {{
-    padding: 5px 12px; border-radius: 3px; font-size: 11px; cursor: pointer;
-    background: transparent; color: var(--muted); border: 1px solid transparent;
-    touch-action: manipulation; min-height: 32px;
-  }}
-  .tab.active {{ background: var(--green-dim); color: var(--green2); border-color: var(--green3); }}
-  .tab-content {{ display: none; }}
-  .tab-content.active {{ display: block; }}
-
-  /* ── Toast ── */
-  #toast {{
-    position: fixed; bottom: calc(70px + var(--safe-bot)); right: 16px;
-    background: var(--card); border: 1px solid var(--green3); border-radius: 4px;
-    padding: 10px 16px; font-size: 12px; color: var(--green2);
-    box-shadow: 0 0 20px rgba(0,255,65,0.15);
-    opacity: 0; transform: translateY(8px); transition: all .25s;
-    pointer-events: none; z-index: 999;
-  }}
-  #toast.show {{ opacity: 1; transform: translateY(0); }}
-
-  /* ── Chart ── */
-  .chart-container {{
-    margin-top: 8px; padding: 8px;
-    background: var(--bg2); border: 1px solid var(--border); border-radius: 4px;
-  }}
-  .chart-header {{
-    display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
-  }}
-  .chart-label {{ font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }}
-  .chart-legend {{ display: flex; gap: 12px; }}
-  .chart-legend span {{ font-size: 9px; display: flex; align-items: center; gap: 4px; }}
-  .chart-legend .dot-cpu {{ width: 6px; height: 6px; border-radius: 50%; background: var(--green); }}
-  .chart-legend .dot-temp {{ width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }}
-  #pi-chart {{ width: 100%; height: 80px; display: block; }}
-
-  /* ── Modal ── */
-  .modal-overlay {{
-    position: fixed; inset: 0; background: rgba(0,0,0,0.75);
-    display: flex; align-items: center; justify-content: center;
-    z-index: 200; opacity: 0; pointer-events: none; transition: opacity .2s;
-  }}
-  .modal-overlay.show {{ opacity: 1; pointer-events: auto; }}
-  .modal-box {{
-    background: var(--card); border: 1px solid var(--border2);
-    border-radius: 8px; padding: 24px; max-width: 340px; width: 90%;
-    text-align: center; box-shadow: 0 0 40px rgba(0,255,65,0.1);
-  }}
-  .modal-title {{ font-size: 14px; font-weight: 700; color: var(--green); margin-bottom: 8px; }}
-  .modal-text {{ font-size: 12px; color: var(--text2); margin-bottom: 20px; line-height: 1.6; }}
-  .modal-btns {{ display: flex; gap: 10px; justify-content: center; }}
-
-  /* ── Reboot overlay ── */
-  .reboot-overlay {{
-    position: fixed; inset: 0; background: var(--bg);
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    z-index: 300; opacity: 0; pointer-events: none; transition: opacity .3s;
-    gap: 16px;
-  }}
-  .reboot-overlay.show {{ opacity: 1; pointer-events: auto; }}
-  .reboot-spinner {{
-    width: 40px; height: 40px; border: 3px solid var(--border2);
-    border-top-color: var(--green); border-radius: 50%;
-    animation: spin 1s linear infinite;
-  }}
-  @keyframes spin {{ to {{ transform: rotate(360deg); }} }}
-  .reboot-text {{ font-size: 13px; color: var(--green2); }}
-  .reboot-status {{ font-size: 11px; color: var(--muted); }}
-
-  ::-webkit-scrollbar {{ width: 3px; height: 3px; }}
-  ::-webkit-scrollbar-track {{ background: var(--bg2); }}
-  ::-webkit-scrollbar-thumb {{ background: var(--border2); border-radius: 2px; }}
-
-  /* ══════ HOME VIEW ══════ */
-  .home-view {{
-    flex: 1; display: flex; flex-direction: column;
-    min-height: 0; overflow-y: auto; overflow-x: hidden;
-    padding: 0 12px;
-    padding-top: calc(8px + var(--safe-top));
-    -webkit-overflow-scrolling: touch;
-  }}
-  .home-header {{
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 0 8px; flex-shrink: 0;
-  }}
-  .home-title {{
-    font-weight: 700; color: var(--green); letter-spacing: 1.5px; font-size: 14px;
-  }}
-  .home-spacer {{ flex: 1; }}
-  .home-clock {{
-    font-size: 12px; color: var(--amber);
-    text-shadow: 0 0 6px rgba(255,176,0,0.4);
-    letter-spacing: 1px; white-space: nowrap;
-  }}
-  .conn-dot-mini {{
-    width: 8px; height: 8px; border-radius: 50%;
-    background: var(--red); transition: all .3s; flex-shrink: 0;
-  }}
-  .conn-dot-mini.on {{ background: var(--green); box-shadow: 0 0 10px var(--green); }}
-
-  /* ── Home Stats Cards ── */
-  .home-stats {{
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
-    margin: 8px 0; flex-shrink: 0;
-  }}
-  .home-card {{
-    background: var(--card); border: 1px solid var(--border2);
-    border-radius: 8px; padding: 14px 16px;
-    position: relative; overflow: hidden;
-  }}
-  .home-card::before {{
-    content: ''; position: absolute;
-    top: 0; left: 0; right: 0; height: 2px;
-    background: linear-gradient(90deg, transparent, var(--green3), transparent);
-  }}
-  .hc-label {{
-    font-size: 10px; color: var(--muted); text-transform: uppercase;
-    letter-spacing: 1.5px; margin-bottom: 6px;
-  }}
-  .hc-value {{
-    font-size: 22px; font-weight: 700; color: var(--green);
-    text-shadow: 0 0 10px rgba(0,255,65,0.3);
-    line-height: 1.2;
-  }}
-  .hc-sub {{
-    font-size: 9px; color: var(--text2); margin-top: 2px;
-  }}
-  .hc-bar {{
-    margin-top: 8px; height: 4px; background: var(--bg2);
-    border-radius: 2px; overflow: hidden;
-  }}
-  .hc-bar-fill {{
-    height: 100%; background: var(--green); border-radius: 2px;
-    transition: width .5s ease; width: 0%;
-  }}
-  .hc-bar-fill.hc-bar-cyan {{ background: var(--cyan); }}
-  .hc-bar-fill.hc-bar-amber {{ background: var(--amber); }}
-
-  /* ── Home Chart ── */
-  .home-chart {{
-    margin: 4px 0 8px; padding: 10px;
-    background: var(--card); border: 1px solid var(--border);
-    border-radius: 8px; flex-shrink: 0;
-  }}
-  .home-chart #pi-chart {{ width: 100%; height: 80px; display: block; }}
-
-  /* ── Home Services (collapsible) ── */
-  .home-services {{
-    max-height: 0; overflow: hidden;
-    transition: max-height .35s ease; flex-shrink: 0;
-  }}
-  .home-services.open {{ max-height: 400px; }}
-  .home-services-inner {{
-    padding: 0 0 8px;
-  }}
-  .home-services-toggle {{
-    display: flex; align-items: center; justify-content: center;
-    gap: 6px; width: 100%; padding: 6px 0;
-    background: none; border: none; color: var(--muted);
-    font-family: var(--font); font-size: 10px; cursor: pointer;
-    text-transform: uppercase; letter-spacing: 1px;
-    transition: color .15s; flex-shrink: 0;
-  }}
-  .home-services-toggle:hover {{ color: var(--text2); }}
-  .home-services-toggle .svc-arrow {{
-    font-size: 10px; transition: transform .2s; display: inline-block;
-  }}
-  .home-services-toggle.open .svc-arrow {{ transform: rotate(180deg); }}
-
-  /* ── Home Input Area ── */
-  .home-input-area {{
-    margin-top: auto;
-    padding: 12px 0;
-    padding-bottom: calc(8px + var(--safe-bot));
-    flex-shrink: 0;
-  }}
-  .home-input-row {{
-    display: flex; gap: 8px; align-items: stretch;
-  }}
-
-  /* ── Provider Dropdown ── */
-  .provider-dropdown {{
-    position: relative; flex-shrink: 0;
-  }}
-  .provider-btn {{
-    display: flex; align-items: center; gap: 5px;
-    padding: 8px 10px; min-height: 36px;
-    background: var(--card2); border: 1px solid var(--border2);
-    border-radius: 4px; color: var(--text2);
-    font-family: var(--font); font-size: 11px; font-weight: 600;
-    cursor: pointer; white-space: nowrap;
-    transition: border-color .15s;
-  }}
-  .provider-btn:hover {{ border-color: var(--green3); }}
-  .provider-dot {{
-    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  }}
-  .provider-arrow {{
-    font-size: 10px; color: var(--muted); transition: transform .15s;
-  }}
-  .provider-dropdown.open .provider-arrow {{ transform: rotate(180deg); }}
-  .provider-menu {{
-    position: absolute; bottom: 100%; left: 0; right: auto;
-    margin-bottom: 4px; min-width: 200px;
-    background: var(--card); border: 1px solid var(--border2);
-    border-radius: 6px; overflow: hidden;
-    box-shadow: 0 -4px 20px rgba(0,0,0,0.5);
-    display: none; z-index: 50;
-  }}
-  .provider-dropdown.open .provider-menu {{ display: block; }}
-  .provider-menu button {{
-    display: flex; align-items: center; gap: 8px;
-    width: 100%; padding: 10px 14px; min-height: 40px;
-    background: none; border: none; border-bottom: 1px solid var(--border);
-    color: var(--text2); font-family: var(--font); font-size: 12px;
-    cursor: pointer; text-align: left;
-  }}
-  .provider-menu button:last-child {{ border-bottom: none; }}
-  .provider-menu button:hover {{
-    background: var(--green-dim); color: var(--green);
-  }}
-  .provider-menu .dot {{
-    width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  }}
-
-  /* ══════ CHAT VIEW ══════ */
-  .chat-view {{
-    flex: 1; display: none; flex-direction: column;
-    min-height: 0; overflow: hidden;
-  }}
-  .chat-view.active {{ display: flex; }}
-  .chat-compact-header {{
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 12px; padding-top: calc(8px + var(--safe-top));
-    background: var(--card); border-bottom: 1px solid var(--border);
-    flex-shrink: 0;
-  }}
-  .back-home-btn {{
-    background: none; border: 1px solid var(--border2);
-    border-radius: 4px; color: var(--green2);
-    font-family: var(--font); font-size: 11px; font-weight: 600;
-    padding: 4px 10px; cursor: pointer; min-height: 28px;
-    letter-spacing: 0.3px; transition: all .15s;
-  }}
-  .back-home-btn:hover {{ border-color: var(--green3); color: var(--green); }}
-  .chat-compact-title {{
-    font-weight: 700; color: var(--green); font-size: 12px; letter-spacing: 1px;
-  }}
-  .chat-compact-temp {{ font-size: 11px; color: var(--text2); }}
-  .chat-compact-spacer {{ flex: 1; }}
-  .chat-input-area {{
-    padding: 9px 12px; padding-bottom: calc(9px + var(--safe-bot));
-    border-top: 1px solid var(--border); background: var(--card2);
-    flex-shrink: 0;
-  }}
-  .chat-input-row-v2 {{
-    display: flex; gap: 8px; align-items: stretch;
-  }}
-
-  /* ── Transizioni vista ── */
-  .chat-view.entering {{
-    animation: slideUp .25s ease forwards;
-  }}
-  @keyframes slideUp {{
-    from {{ opacity: 0; transform: translateY(20px); }}
-    to {{ opacity: 1; transform: translateY(0); }}
-  }}
-</style>
-</head>
-<body>
-<div class="app-layout">
-
-<!-- ─── App Content ─── -->
-<div class="app-content">
-
-<!-- ═══ HOME VIEW (default) ═══ -->
-<div id="home-view" class="home-view">
-  <div class="home-header">
-    <img class="logo-icon" src="{VESSEL_ICON}" alt="V">
-    <span class="home-title">VESSEL</span>
-    <div id="home-health-dot" class="health-dot" title="Salute Pi"></div>
-    <span class="home-spacer"></span>
-    <span id="home-clock" class="home-clock">--:--:--</span>
-    <div id="home-conn-dot" class="conn-dot-mini" title="WebSocket"></div>
-  </div>
-
-  <div class="home-stats">
-    <div class="home-card">
-      <div class="hc-label">CPU</div>
-      <div class="hc-value" id="hc-cpu-val">--</div>
-      <div class="hc-bar"><div class="hc-bar-fill" id="hc-cpu-bar"></div></div>
-    </div>
-    <div class="home-card">
-      <div class="hc-label">RAM</div>
-      <div class="hc-value" id="hc-ram-val">--</div>
-      <div class="hc-sub" id="hc-ram-sub"></div>
-      <div class="hc-bar"><div class="hc-bar-fill hc-bar-cyan" id="hc-ram-bar"></div></div>
-    </div>
-    <div class="home-card">
-      <div class="hc-label">Temp</div>
-      <div class="hc-value" id="hc-temp-val">--</div>
-      <div class="hc-bar"><div class="hc-bar-fill hc-bar-amber" id="hc-temp-bar"></div></div>
-    </div>
-    <div class="home-card">
-      <div class="hc-label">Uptime</div>
-      <div class="hc-value" id="hc-uptime-val" style="font-size:16px;">--</div>
-    </div>
-  </div>
-
-  <div class="home-chart">
-    <div class="chart-header">
-      <span class="chart-label">Ultimi 15 min</span>
-      <div class="chart-legend">
-        <span><div class="dot-cpu"></div> <span style="color:var(--text2)">CPU%</span></span>
-        <span><div class="dot-temp"></div> <span style="color:var(--text2)">Temp</span></span>
-      </div>
-    </div>
-    <canvas id="pi-chart"></canvas>
-  </div>
-
-  <button class="home-services-toggle" id="home-svc-toggle" onclick="toggleHomeServices()">
-    <span>Pi Stats</span>
-    <span class="svc-arrow">&#x25BE;</span>
-  </button>
-  <div class="home-services" id="home-services">
-    <div class="home-services-inner">
-      <div class="stats-grid">
-        <div class="stat-item"><div class="stat-label">CPU</div><div class="stat-value" id="stat-cpu">—</div></div>
-        <div class="stat-item"><div class="stat-label">Temp</div><div class="stat-value" id="stat-temp">—</div></div>
-        <div class="stat-item"><div class="stat-label">RAM</div><div class="stat-value" id="stat-mem">—</div></div>
-        <div class="stat-item"><div class="stat-label">Disco</div><div class="stat-value" id="stat-disk">—</div></div>
-        <div class="stat-item full"><div class="stat-label">Uptime</div><div class="stat-value" id="stat-uptime">—</div></div>
-      </div>
-      <div style="margin-top:10px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-          <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Sessioni tmux</span>
-          <button class="btn-green" onclick="gatewayRestart()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BA; Gateway</button>
-        </div>
-        <div class="session-list" id="session-list">
-          <div class="no-items">Caricamento…</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;margin-top:10px;justify-content:space-between;align-items:center;">
-        <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn-ghost" onclick="requestStats()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BB; Refresh</button>
-          <span id="version-badge" class="version-badge">—</span>
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn-red" onclick="showRebootModal()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BA; Reboot</button>
-          <button class="btn-red" onclick="showShutdownModal()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x23FB; Off</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="home-input-area">
-    <div class="home-input-row" id="home-input-row">
-      <input id="chat-input" placeholder="scrivi qui…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
-      <div class="provider-dropdown" id="provider-dropdown">
-        <button class="provider-btn" id="provider-trigger" onclick="toggleProviderMenu()" type="button">
-          <span class="provider-dot dot-local" id="provider-dot"></span>
-          <span id="provider-short">Local</span>
-          <span class="provider-arrow">&#x25BE;</span>
-        </button>
-        <div class="provider-menu" id="provider-menu">
-          <button type="button" onclick="switchProvider('cloud')"><span class="dot dot-cloud"></span> Haiku</button>
-          <button type="button" onclick="switchProvider('local')"><span class="dot dot-local"></span> Local (Gemma)</button>
-          <button type="button" onclick="switchProvider('pc_coder')"><span class="dot dot-pc-coder"></span> PC Coder</button>
-          <button type="button" onclick="switchProvider('pc_deep')"><span class="dot dot-pc-deep"></span> PC Deep</button>
-          <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> Deep (DeepSeek)</button>
-        </div>
-      </div>
-      <button class="btn-green" id="chat-send" onclick="sendChat()">Invia &#x21B5;</button>
-    </div>
-  </div>
-</div>
-
-<!-- ═══ CHAT VIEW (nascosto, attivato su invio messaggio) ═══ -->
-<div id="chat-view" class="chat-view">
-  <div class="chat-compact-header">
-    <button class="back-home-btn" onclick="goHome()" type="button">&#x2190; Home</button>
-    <span class="chat-compact-title">VESSEL</span>
-    <div id="chat-health-dot" class="health-dot" title="Salute Pi"></div>
-    <span class="chat-compact-temp" id="chat-temp">--</span>
-    <span class="chat-compact-spacer"></span>
-    <span id="chat-clock" class="home-clock">--:--:--</span>
-    <div id="chat-conn-dot" class="conn-dot-mini" title="WebSocket"></div>
-    <button class="btn-ghost" onclick="clearChat()" style="padding:3px 6px;min-height:28px;margin-left:4px;">&#x1F5D1;</button>
-  </div>
-  <div id="chat-messages">
-    <div class="msg msg-bot">Eyyy, sono Vessel &#x1F408; — dimmi cosa vuoi, psychoSocial.</div>
-  </div>
-  <div class="chat-input-area">
-    <div class="chat-input-row-v2" id="chat-input-row-v2">
-    </div>
-  </div>
-</div>
-
-<!-- ─── Drawer (side panel on desktop, bottom sheet on mobile) ─── -->
-<div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()">
-  <div class="drawer" onclick="event.stopPropagation()">
-    <div class="drawer-handle"></div>
-    <div class="drawer-header">
-      <span class="card-title" id="drawer-title"></span>
-      <div style="display:flex;gap:6px;align-items:center;" id="drawer-actions"></div>
-    </div>
-    <div class="drawer-body">
-      <div class="drawer-widget" id="dw-briefing">
-        <div id="briefing-body">
-          <div class="widget-placeholder"><span class="ph-icon">&#x25A4;</span><span>Premi Carica per vedere l'ultimo briefing</span></div>
-        </div>
-      </div>
-      <div class="drawer-widget" id="dw-crypto">
-        <div id="crypto-body">
-          <div class="widget-placeholder"><span class="ph-icon">&#x20BF;</span><span>Premi Carica per vedere BTC/ETH</span></div>
-        </div>
-      </div>
-      <div class="drawer-widget" id="dw-tokens">
-        <div id="tokens-body">
-          <div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Premi Carica per vedere i dati token di oggi</span></div>
-        </div>
-      </div>
-      <div class="drawer-widget" id="dw-logs">
-        <div id="logs-body">
-          <div class="widget-placeholder"><span class="ph-icon">&#x2261;</span><span>Premi Carica per vedere i log recenti</span></div>
-        </div>
-      </div>
-      <div class="drawer-widget" id="dw-cron">
-        <div id="cron-body">
-          <div class="widget-placeholder"><span class="ph-icon">&#x25C7;</span><span>Premi Carica per vedere i cron job</span></div>
-        </div>
-      </div>
-      <div class="drawer-widget" id="dw-claude">
-        <div id="claude-body">
-          <div class="widget-placeholder"><span class="ph-icon">&gt;_</span><span>Premi Carica per verificare lo stato del bridge</span></div>
-        </div>
-      </div>
-      <div class="drawer-widget" id="dw-memoria">
-        <div class="tab-row">
-          <button class="tab active" onclick="switchTab('memory', this)">MEMORY.md</button>
-          <button class="tab" onclick="switchTab('history', this)">HISTORY.md</button>
-          <button class="tab" onclick="switchTab('quickref', this)">Quick Ref</button>
-        </div>
-        <div class="mem-content">
-          <div id="tab-memory" class="tab-content active">
-            <div class="mono-block" id="memory-content">Caricamento…</div>
-            <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="refreshMemory()">&#x21BB; Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('memory-content').textContent)">&#x25A4; Copia</button></div>
-          </div>
-          <div id="tab-history" class="tab-content">
-            <div class="mono-block" id="history-content">Premi Carica…</div>
-            <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="refreshHistory()">&#x21BB; Carica</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('history-content').textContent)">&#x25A4; Copia</button></div>
-          </div>
-          <div id="tab-quickref" class="tab-content">
-            <div class="mono-block" id="quickref-content">Caricamento…</div>
-            <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">&#x25A4; Copia</button></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-</div><!-- /app-content -->
-
-<!-- ─── Tab Bar ─── -->
-<nav class="tab-bar">
-  <button class="tab-bar-btn" data-widget="briefing" onclick="openDrawer('briefing')"><span>&#x25A4;</span><span>Brief</span></button>
-  <button class="tab-bar-btn" data-widget="crypto" onclick="openDrawer('crypto')"><span>&#x20BF;</span><span>Crypto</span></button>
-  <button class="tab-bar-btn" data-widget="tokens" onclick="openDrawer('tokens')"><span>&#x00A4;</span><span>Token</span></button>
-  <button class="tab-bar-btn" data-widget="logs" onclick="openDrawer('logs')"><span>&#x2261;</span><span>Log</span></button>
-  <button class="tab-bar-btn" data-widget="cron" onclick="openDrawer('cron')"><span>&#x25C7;</span><span>Cron</span></button>
-  <button class="tab-bar-btn" data-widget="claude" onclick="openDrawer('claude')"><span>&gt;_</span><span>Code</span></button>
-  <button class="tab-bar-btn" data-widget="memoria" onclick="openDrawer('memoria')"><span>&#x25CE;</span><span>Mem</span></button>
-</nav>
-
-</div><!-- /app-layout -->
-
-<!-- Modale conferma reboot -->
-<div class="modal-overlay" id="reboot-modal">
-  <div class="modal-box">
-    <div class="modal-title">⏻ Reboot Raspberry Pi</div>
-    <div class="modal-text">Sei sicuro? Il Pi si riavvierà e la dashboard sarà offline per circa 30-60 secondi.</div>
-    <div class="modal-btns">
-      <button class="btn-ghost" onclick="hideRebootModal()">Annulla</button>
-      <button class="btn-red" onclick="confirmReboot()">Conferma Reboot</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modale conferma shutdown -->
-<div class="modal-overlay" id="shutdown-modal">
-  <div class="modal-box">
-    <div class="modal-title">&#x23FB; Spegnimento Raspberry Pi</div>
-    <div class="modal-text">Sei sicuro? Il Pi si spegnerà completamente. Per riaccenderlo dovrai staccare e riattaccare l'alimentazione.</div>
-    <div class="modal-btns">
-      <button class="btn-ghost" onclick="hideShutdownModal()">Annulla</button>
-      <button class="btn-red" onclick="confirmShutdown()">Conferma Spegnimento</button>
-    </div>
-  </div>
-</div>
-
-<!-- Overlay durante reboot -->
-<div class="reboot-overlay" id="reboot-overlay">
-  <div class="reboot-spinner"></div>
-  <div class="reboot-text">Riavvio in corso…</div>
-  <div class="reboot-status" id="reboot-status">In attesa che il Pi torni online</div>
-</div>
-
-<!-- (chat-fs-overlay rimosso — chat-view è la nuova modalità fullscreen) -->
-
-<!-- Overlay output fullscreen -->
-<div class="modal-overlay" id="output-fullscreen" onclick="closeOutputFullscreen()">
-  <div class="modal-box" onclick="event.stopPropagation()" style="max-width:90%;width:900px;max-height:90vh;text-align:left;padding:16px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Output Remote Code</span>
-      <div style="display:flex;gap:6px;">
-        <button class="btn-ghost" style="min-height:28px;" onclick="copyToClipboard(document.getElementById('output-fs-content').textContent)">📋 Copia tutto</button>
-        <button class="btn-ghost" style="min-height:28px;" onclick="closeOutputFullscreen()">✕ Chiudi</button>
-      </div>
-    </div>
-    <div id="output-fs-content" class="output-fs-content"></div>
-  </div>
-</div>
-
-<div id="toast"></div>
-
-<script>
-  let ws = null;
-  let reconnectTimer = null;
-
-  function connect() {{
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${{proto}}://${{location.host}}/ws`);
-    ws.onopen = () => {{
-      ['home-conn-dot', 'chat-conn-dot'].forEach(id => {{
-        const el = document.getElementById(id);
-        if (el) el.classList.add('on');
-      }});
-      if (reconnectTimer) {{ clearTimeout(reconnectTimer); reconnectTimer = null; }}
-    }};
-    ws.onclose = (e) => {{
-      ['home-conn-dot', 'chat-conn-dot'].forEach(id => {{
-        const el = document.getElementById(id);
-        if (el) el.classList.remove('on');
-      }});
-      if (e.code === 4001) {{ window.location.href = '/'; return; }}
-      reconnectTimer = setTimeout(connect, 3000);
-    }};
-    ws.onerror = () => ws.close();
-    ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
-  }}
-
-  function send(data) {{
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
-  }}
-
-  function esc(s) {{
-    if (typeof s !== 'string') return s == null ? '' : String(s);
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
-  }}
-
-  function handleMessage(msg) {{
-    if (msg.type === 'init') {{
-      updateStats(msg.data.pi);
-      updateSessions(msg.data.tmux);
-      document.getElementById('version-badge').textContent = msg.data.version;
-      document.getElementById('memory-content').textContent = msg.data.memory;
-    }}
-    else if (msg.type === 'stats') {{
-      updateStats(msg.data.pi); updateSessions(msg.data.tmux);
-      ['home-clock', 'chat-clock'].forEach(id => {{
-        const el = document.getElementById(id);
-        if (el) el.textContent = msg.data.time;
-      }});
-    }}
-    else if (msg.type === 'chat_thinking') {{ appendThinking(); }}
-    else if (msg.type === 'chat_chunk') {{ removeThinking(); appendChunk(msg.text); }}
-    else if (msg.type === 'chat_done') {{ finalizeStream(); document.getElementById('chat-send').disabled = false; }}
-    else if (msg.type === 'chat_reply') {{ removeThinking(); appendMessage(msg.text, 'bot'); document.getElementById('chat-send').disabled = false; }}
-    else if (msg.type === 'ollama_status') {{ /* ollama status ricevuto — info disponibile via provider dropdown */ }}
-    else if (msg.type === 'memory')   {{ document.getElementById('memory-content').textContent = msg.text; }}
-    else if (msg.type === 'history')  {{ document.getElementById('history-content').textContent = msg.text; }}
-    else if (msg.type === 'quickref') {{ document.getElementById('quickref-content').textContent = msg.text; }}
-    else if (msg.type === 'logs')    {{ renderLogs(msg.data); }}
-    else if (msg.type === 'cron')    {{ renderCron(msg.jobs); }}
-    else if (msg.type === 'tokens')  {{ renderTokens(msg.data); }}
-    else if (msg.type === 'briefing') {{ renderBriefing(msg.data); }}
-    else if (msg.type === 'crypto')   {{ renderCrypto(msg.data); }}
-    else if (msg.type === 'toast')   {{ showToast(msg.text); }}
-    else if (msg.type === 'reboot_ack') {{ startRebootWait(); }}
-    else if (msg.type === 'shutdown_ack') {{ document.getElementById('reboot-overlay').classList.add('show'); document.getElementById('reboot-status').textContent = 'Il Pi si sta spegnendo…'; document.querySelector('.reboot-text').textContent = 'Spegnimento in corso…'; }}
-    else if (msg.type === 'claude_thinking') {{
-      const wrap = document.getElementById('claude-output-wrap');
-      if (wrap) wrap.style.display = 'block';
-      const out = document.getElementById('claude-output');
-      if (out) {{ out.innerHTML = ''; out.appendChild(document.createTextNode('Connessione al bridge...\\n')); }}
-    }}
-    else if (msg.type === 'claude_chunk') {{
-      const out = document.getElementById('claude-output');
-      if (out) {{ out.appendChild(document.createTextNode(msg.text)); out.scrollTop = out.scrollHeight; }}
-    }}
-    else if (msg.type === 'claude_iteration') {{
-      const out = document.getElementById('claude-output');
-      if (out) {{
-        const m = document.createElement('div');
-        m.className = 'ralph-marker';
-        m.textContent = '═══ ITERAZIONE ' + msg.iteration + '/' + msg.max + ' ═══';
-        out.appendChild(m);
-        out.scrollTop = out.scrollHeight;
-      }}
-    }}
-    else if (msg.type === 'claude_supervisor') {{
-      const out = document.getElementById('claude-output');
-      if (out) {{
-        const m = document.createElement('div');
-        m.className = 'ralph-supervisor';
-        m.textContent = '▸ ' + msg.text;
-        out.appendChild(m);
-        out.scrollTop = out.scrollHeight;
-      }}
-    }}
-    else if (msg.type === 'claude_info') {{
-      const out = document.getElementById('claude-output');
-      if (out) {{
-        const m = document.createElement('div');
-        m.className = 'ralph-info';
-        m.textContent = msg.text;
-        out.appendChild(m);
-        out.scrollTop = out.scrollHeight;
-      }}
-    }}
-    else if (msg.type === 'claude_done') {{ finalizeClaudeTask(msg); }}
-    else if (msg.type === 'claude_cancelled') {{
-      claudeRunning = false;
-      const rb = document.getElementById('claude-run-btn');
-      const cb = document.getElementById('claude-cancel-btn');
-      if (rb) rb.disabled = false;
-      if (cb) cb.style.display = 'none';
-      showToast('Task cancellato');
-    }}
-    else if (msg.type === 'bridge_status') {{ renderBridgeStatus(msg.data); }}
-    else if (msg.type === 'claude_tasks') {{ renderClaudeTasks(msg.tasks); }}
-  }}
-
-  // ── Storico campioni per grafico ──
-  const MAX_SAMPLES = 180; // 180 campioni x 5s = 15 minuti di storia
-  const cpuHistory = [];
-  const tempHistory = [];
-
-  function updateStats(pi) {{
-    const cpuPct = pi.cpu_val || 0;
-    const tempC = pi.temp_val || 0;
-    const memPct = pi.mem_pct || 0;
-
-    // ── Home cards ──
-    const hcCpu = document.getElementById('hc-cpu-val');
-    if (hcCpu) hcCpu.textContent = pi.cpu ? cpuPct.toFixed(1) + '%' : '--';
-    const hcRam = document.getElementById('hc-ram-val');
-    if (hcRam) hcRam.textContent = memPct + '%';
-    const hcRamSub = document.getElementById('hc-ram-sub');
-    if (hcRamSub) hcRamSub.textContent = pi.mem || '';
-    const hcTemp = document.getElementById('hc-temp-val');
-    if (hcTemp) hcTemp.textContent = pi.temp || '--';
-    const hcUptime = document.getElementById('hc-uptime-val');
-    if (hcUptime) hcUptime.textContent = pi.uptime || '--';
-
-    // Barre progresso
-    const cpuBar = document.getElementById('hc-cpu-bar');
-    if (cpuBar) {{
-      cpuBar.style.width = cpuPct + '%';
-      cpuBar.style.background = cpuPct > 80 ? 'var(--red)' : cpuPct > 60 ? 'var(--amber)' : 'var(--green)';
-    }}
-    const ramBar = document.getElementById('hc-ram-bar');
-    if (ramBar) {{
-      ramBar.style.width = memPct + '%';
-      ramBar.style.background = memPct > 85 ? 'var(--red)' : memPct > 70 ? 'var(--amber)' : 'var(--cyan)';
-    }}
-    const tempBar = document.getElementById('hc-temp-bar');
-    if (tempBar) {{
-      const tPct = Math.min(100, (tempC / 85) * 100);
-      tempBar.style.width = tPct + '%';
-      tempBar.style.background = tempC > 70 ? 'var(--red)' : tempC > 55 ? 'var(--amber)' : 'var(--amber)';
-    }}
-
-    // ── Stats detail (sezione servizi) ──
-    const sc = document.getElementById('stat-cpu');    if (sc) sc.textContent = pi.cpu || '—';
-    const st = document.getElementById('stat-temp');   if (st) st.textContent = pi.temp || '—';
-    const sm = document.getElementById('stat-mem');    if (sm) sm.textContent = pi.mem || '—';
-    const sd = document.getElementById('stat-disk');   if (sd) sd.textContent = pi.disk || '—';
-    const su = document.getElementById('stat-uptime'); if (su) su.textContent = pi.uptime || '—';
-
-    // ── Health dots (tutti) ──
-    ['home-health-dot', 'chat-health-dot'].forEach(id => {{
-      const el = document.getElementById(id);
-      if (el) {{
-        el.className = 'health-dot ' + (pi.health || '');
-        el.title = pi.health === 'red' ? 'ATTENZIONE' : pi.health === 'yellow' ? 'Sotto controllo' : 'Tutto OK';
-      }}
-    }});
-
-    // ── Chat compact temp ──
-    const chatTemp = document.getElementById('chat-temp');
-    if (chatTemp) chatTemp.textContent = pi.temp || '--';
-
-    // ── Storico per grafico ──
-    cpuHistory.push(cpuPct);
-    tempHistory.push(tempC);
-    if (cpuHistory.length > MAX_SAMPLES) cpuHistory.shift();
-    if (tempHistory.length > MAX_SAMPLES) tempHistory.shift();
-    drawChart();
-  }}
-
-  function drawChart() {{
-    const canvas = document.getElementById('pi-chart');
-    if (!canvas || canvas.offsetParent === null) return;
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-    const w = rect.width, h = rect.height;
-    ctx.clearRect(0, 0, w, h);
-    // Griglia
-    ctx.strokeStyle = 'rgba(0,255,65,0.08)';
-    ctx.lineWidth = 1;
-    for (let y = 0; y <= h; y += h / 4) {{
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
-    }}
-    if (cpuHistory.length < 2) return;
-    // Disegna linea
-    function drawLine(data, maxVal, color) {{
-      ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
-      ctx.beginPath();
-      const step = w / (MAX_SAMPLES - 1);
-      const offset = MAX_SAMPLES - data.length;
-      for (let i = 0; i < data.length; i++) {{
-        const x = (offset + i) * step;
-        const y = h - (data[i] / maxVal) * (h - 4) - 2;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-      }}
-      ctx.stroke();
-    }}
-    drawLine(cpuHistory, 100, '#00ff41');
-    drawLine(tempHistory, 85, '#ffb000');
-  }}
-
-  function updateSessions(sessions) {{
-    const el = document.getElementById('session-list');
-    if (!sessions || !sessions.length) {{
-      el.innerHTML = '<div class="no-items">// nessuna sessione attiva</div>'; return;
-    }}
-    el.innerHTML = sessions.map(s => `
-      <div class="session-item">
-        <div class="session-name"><div class="session-dot"></div><code>${{esc(s.name)}}</code></div>
-        <button class="btn-red" onclick="killSession('${{esc(s.name)}}')">✕ Kill</button>
-      </div>`).join('');
-  }}
-
-  // ── Vista corrente + Chat ──
-  let currentView = 'home';
-  let chatProvider = 'local';
-  let streamDiv = null;
-
-  // ── Transizione Home → Chat ──
-  function switchToChat() {{
-    if (currentView === 'chat') return;
-    currentView = 'chat';
-
-    const homeView = document.getElementById('home-view');
-    const chatView = document.getElementById('chat-view');
-
-    // Sposta input + provider + send nel chat view
-    const chatInputRow = document.getElementById('chat-input-row-v2');
-    chatInputRow.appendChild(document.getElementById('chat-input'));
-    chatInputRow.appendChild(document.getElementById('provider-dropdown'));
-    chatInputRow.appendChild(document.getElementById('chat-send'));
-
-    // Switch viste
-    homeView.style.display = 'none';
-    chatView.style.display = 'flex';
-    chatView.classList.add('active');
-    chatView.classList.add('entering');
-    setTimeout(() => chatView.classList.remove('entering'), 250);
-
-    const msgs = document.getElementById('chat-messages');
-    msgs.scrollTop = msgs.scrollHeight;
-    document.getElementById('chat-input').focus();
-  }}
-
-  // ── Transizione Chat → Home ──
-  function goHome() {{
-    if (currentView === 'home') return;
-    currentView = 'home';
-
-    const homeView = document.getElementById('home-view');
-    const chatView = document.getElementById('chat-view');
-
-    // Sposta input + provider + send nella home
-    const homeInputRow = document.getElementById('home-input-row');
-    homeInputRow.appendChild(document.getElementById('chat-input'));
-    homeInputRow.appendChild(document.getElementById('provider-dropdown'));
-    homeInputRow.appendChild(document.getElementById('chat-send'));
-
-    // Switch viste
-    chatView.style.display = 'none';
-    chatView.classList.remove('active');
-    homeView.style.display = 'flex';
-
-    // Ridisegna il canvas (potrebbe aver perso dimensioni)
-    requestAnimationFrame(() => drawChart());
-  }}
-
-  // ── Provider dropdown ──
-  function toggleProviderMenu() {{
-    document.getElementById('provider-dropdown').classList.toggle('open');
-  }}
-  function switchProvider(provider) {{
-    chatProvider = provider;
-    const dot = document.getElementById('provider-dot');
-    const label = document.getElementById('provider-short');
-    const names = {{ cloud: 'Haiku', local: 'Local', pc_coder: 'PC Coder', pc_deep: 'PC Deep', deepseek: 'Deep' }};
-    const dotClass = {{ cloud: 'dot-cloud', local: 'dot-local', pc_coder: 'dot-pc-coder', pc_deep: 'dot-pc-deep', deepseek: 'dot-deepseek' }};
-    dot.className = 'provider-dot ' + (dotClass[provider] || 'dot-local');
-    label.textContent = names[provider] || 'Local';
-    document.getElementById('provider-dropdown').classList.remove('open');
-  }}
-  // Chiudi dropdown quando click fuori
-  document.addEventListener('click', (e) => {{
-    const dd = document.getElementById('provider-dropdown');
-    if (dd && !dd.contains(e.target)) dd.classList.remove('open');
-  }});
-
-  // ── Home services toggle ──
-  function toggleHomeServices() {{
-    const svc = document.getElementById('home-services');
-    const btn = document.getElementById('home-svc-toggle');
-    svc.classList.toggle('open');
-    btn.classList.toggle('open');
-  }}
-
-  // ── Focus input → chat mode (solo mobile) ──
-  document.addEventListener('DOMContentLoaded', () => {{
-    document.getElementById('chat-input').addEventListener('focus', () => {{
-      if (window.innerWidth < 768) switchToChat();
-    }});
-  }});
-
-  function appendChunk(text) {{
-    const box = document.getElementById('chat-messages');
-    if (!streamDiv) {{
-      streamDiv = document.createElement('div');
-      streamDiv.className = 'msg msg-bot';
-      streamDiv.textContent = '';
-      box.appendChild(streamDiv);
-    }}
-    streamDiv.textContent += text;
-    box.scrollTop = box.scrollHeight;
-  }}
-
-  function finalizeStream() {{
-    if (streamDiv) {{
-      const box = streamDiv.parentNode;
-      const wrap = document.createElement('div');
-      wrap.className = 'copy-wrap';
-      wrap.style.cssText = 'align-self:flex-start;max-width:85%;';
-      streamDiv.style.maxWidth = '100%';
-      box.insertBefore(wrap, streamDiv);
-      wrap.appendChild(streamDiv);
-      const btn = document.createElement('button');
-      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';
-      btn.onclick = () => copyToClipboard(streamDiv.textContent);
-      wrap.appendChild(btn);
-    }}
-    streamDiv = null;
-  }}
-
-  function sendChat() {{
-    const input = document.getElementById('chat-input');
-    const text = input.value.trim();
-    if (!text) return;
-    switchToChat();
-    appendMessage(text, 'user');
-    send({{ action: 'chat', text, provider: chatProvider }});
-    input.value = '';
-    document.getElementById('chat-send').disabled = true;
-  }}
-  document.addEventListener('DOMContentLoaded', () => {{
-    document.getElementById('chat-input').addEventListener('keydown', e => {{
-      if (e.key === 'Enter' && !e.shiftKey) {{ e.preventDefault(); sendChat(); }}
-    }});
-  }});
-  function appendMessage(text, role) {{
-    const box = document.getElementById('chat-messages');
-    if (role === 'bot') {{
-      const wrap = document.createElement('div');
-      wrap.className = 'copy-wrap';
-      wrap.style.cssText = 'align-self:flex-start;max-width:85%;';
-      const div = document.createElement('div');
-      div.className = 'msg msg-bot';
-      div.style.maxWidth = '100%';
-      div.textContent = text;
-      const btn = document.createElement('button');
-      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';
-      btn.onclick = () => copyToClipboard(div.textContent);
-      wrap.appendChild(div); wrap.appendChild(btn);
-      box.appendChild(wrap);
-    }} else {{
-      const div = document.createElement('div');
-      div.className = `msg msg-${{role}}`;
-      div.textContent = text;
-      box.appendChild(div);
-    }}
-    box.scrollTop = box.scrollHeight;
-  }}
-  function appendThinking() {{
-    const box = document.getElementById('chat-messages');
-    const div = document.createElement('div');
-    div.id = 'thinking'; div.className = 'msg-thinking';
-    div.innerHTML = 'elaborazione <span class="dots"><span>.</span><span>.</span><span>.</span></span>';
-    box.appendChild(div); box.scrollTop = box.scrollHeight;
-  }}
-  function removeThinking() {{ const el = document.getElementById('thinking'); if (el) el.remove(); }}
-  function clearChat() {{
-    document.getElementById('chat-messages').innerHTML =
-      '<div class="msg msg-bot">Chat pulita 🧹</div>';
-    send({{ action: 'clear_chat' }});
-  }}
-
-  /* toggleStatusDetail e updateStatusBar rimossi — home cards aggiornate da updateStats */
-
-  // ── Drawer (bottom sheet) ──
-  let activeDrawer = null;
-  const DRAWER_CFG = {{
-    briefing: {{ title: '\u25A4 Morning Briefing', actions: '<button class="btn-ghost" onclick="loadBriefing(this)">Carica</button><button class="btn-green" onclick="runBriefing(this)">\u25B6 Genera</button>' }},
-    crypto:   {{ title: '\u20BF Crypto', actions: '<button class="btn-ghost" onclick="loadCrypto(this)">Carica</button>' }},
-    tokens:   {{ title: '\u00A4 Token & API', actions: '<button class="btn-ghost" onclick="loadTokens(this)">Carica</button>' }},
-    logs:     {{ title: '\u2261 Log Nanobot', actions: '<button class="btn-ghost" onclick="loadLogs(this)">Carica</button>' }},
-    cron:     {{ title: '\u25C7 Task schedulati', actions: '<button class="btn-ghost" onclick="loadCron(this)">Carica</button>' }},
-    claude:   {{ title: '>_ Remote Code', actions: '<span id="bridge-dot" class="health-dot" title="Bridge" style="width:8px;height:8px;"></span><button class="btn-ghost" onclick="loadBridge(this)">Carica</button>' }},
-    memoria:  {{ title: '\u25CE Memoria', actions: '' }}
-  }};
-  function openDrawer(widgetId) {{
-    // Toggle: se clicchi lo stesso tab, chiudi
-    if (activeDrawer === widgetId) {{ closeDrawer(); return; }}
-    // Hide all, show target
-    document.querySelectorAll('.drawer-widget').forEach(w => w.classList.remove('active'));
-    const dw = document.getElementById('dw-' + widgetId);
-    if (dw) dw.classList.add('active');
-    // Header
-    const cfg = DRAWER_CFG[widgetId];
-    document.getElementById('drawer-title').textContent = cfg ? cfg.title : widgetId;
-    document.getElementById('drawer-actions').innerHTML =
-      (cfg ? cfg.actions : '') +
-      '<button class="btn-ghost" onclick="closeDrawer()" style="min-height:28px;padding:3px 8px;">\u2715</button>';
-    // Show overlay + enable two-column on desktop
-    document.getElementById('drawer-overlay').classList.add('show');
-    document.querySelector('.app-content').classList.add('has-drawer');
-    // Tab bar highlight
-    document.querySelectorAll('.tab-bar-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.widget === widgetId));
-    activeDrawer = widgetId;
-  }}
-  function closeDrawer() {{
-    document.getElementById('drawer-overlay').classList.remove('show');
-    document.querySelector('.app-content').classList.remove('has-drawer');
-    document.querySelectorAll('.tab-bar-btn').forEach(b => b.classList.remove('active'));
-    activeDrawer = null;
-  }}
-
-  // ── Drawer swipe-down to close (mobile) ──
-  (function() {{
-    const drawer = document.querySelector('.drawer');
-    if (!drawer) return;
-    let touchStartY = 0;
-    drawer.addEventListener('touchstart', function(e) {{
-      touchStartY = e.touches[0].clientY;
-    }}, {{ passive: true }});
-    drawer.addEventListener('touchmove', function(e) {{
-      const dy = e.touches[0].clientY - touchStartY;
-      if (dy > 80) {{ closeDrawer(); touchStartY = 9999; }}
-    }}, {{ passive: true }});
-  }})();
-
-  // Escape chiude chat view / drawer / overlay
-  document.addEventListener('keydown', (e) => {{
-    if (e.key === 'Escape') {{
-      if (currentView === 'chat') goHome();
-      else if (activeDrawer) closeDrawer();
-      const outFs = document.getElementById('output-fullscreen');
-      if (outFs && outFs.classList.contains('show')) closeOutputFullscreen();
-    }}
-  }});
-
-  // ── On-demand widget loaders ──
-  function loadTokens(btn) {{
-    if (btn) btn.textContent = '…';
-    send({{ action: 'get_tokens' }});
-  }}
-  function loadLogs(btn) {{
-    if (btn) btn.textContent = '…';
-    const dateEl = document.getElementById('log-date-filter');
-    const searchEl = document.getElementById('log-search-filter');
-    const dateVal = dateEl ? dateEl.value : '';
-    const searchVal = searchEl ? searchEl.value.trim() : '';
-    send({{ action: 'get_logs', date: dateVal, search: searchVal }});
-  }}
-  function loadCron(btn) {{
-    if (btn) btn.textContent = '…';
-    send({{ action: 'get_cron' }});
-  }}
-  function loadBriefing(btn) {{
-    if (btn) btn.textContent = '…';
-    send({{ action: 'get_briefing' }});
-  }}
-  function runBriefing(btn) {{
-    if (btn) btn.textContent = '…';
-    send({{ action: 'run_briefing' }});
-  }}
-
-  function loadCrypto(btn) {{
-    if (btn) btn.textContent = '…';
-    send({{ action: 'get_crypto' }});
-  }}
-
-  function renderCrypto(data) {{
-    const el = document.getElementById('crypto-body');
-    if (data.error && !data.btc) {{
-      el.innerHTML = `<div class="no-items">// errore: ${{esc(data.error)}}</div>
-        <div style="margin-top:8px;text-align:center;"><button class="btn-ghost" onclick="loadCrypto()">↻ Riprova</button></div>`;
-      return;
-    }}
-    function coinRow(symbol, label, d) {{
-      if (!d) return '';
-      const arrow = d.change_24h >= 0 ? '▲' : '▼';
-      const color = d.change_24h >= 0 ? 'var(--green)' : 'var(--red)';
-      return `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:6px;">
-          <div>
-            <div style="font-size:13px;font-weight:700;color:var(--amber);">${{symbol}} ${{label}}</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px;">€${{d.eur.toLocaleString()}}</div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-size:15px;font-weight:700;color:var(--green);">$${{d.usd.toLocaleString()}}</div>
-            <div style="font-size:11px;color:${{color}};margin-top:2px;">${{arrow}} ${{Math.abs(d.change_24h)}}%</div>
-          </div>
-        </div>`;
-    }}
-    el.innerHTML = coinRow('₿', 'Bitcoin', data.btc) + coinRow('Ξ', 'Ethereum', data.eth) +
-      '<div style="margin-top:4px;"><button class="btn-ghost" onclick="loadCrypto()">↻ Aggiorna</button></div>';
-  }}
-
-  function renderBriefing(data) {{
-    const el = document.getElementById('briefing-body');
-    if (!data.last) {{
-      el.innerHTML = '<div class="no-items">// nessun briefing generato ancora</div>' +
-        '<div style="margin-top:8px;text-align:center;"><button class="btn-green" onclick="runBriefing()">▶ Genera ora</button></div>';
-      return;
-    }}
-    const b = data.last;
-    const ts = b.ts ? b.ts.replace('T', ' ') : '—';
-    const weather = b.weather || '—';
-    const calToday = b.calendar_today || [];
-    const calTomorrow = b.calendar_tomorrow || [];
-    const calTodayHtml = calToday.length > 0
-      ? calToday.map(e => {{
-          const loc = e.location ? ` <span style="color:var(--muted)">@ ${{esc(e.location)}}</span>` : '';
-          return `<div style="margin:3px 0;font-size:11px;"><span style="color:var(--cyan);font-weight:600">${{esc(e.time)}}</span> <span style="color:var(--text2)">${{esc(e.summary)}}</span>${{loc}}</div>`;
-        }}).join('')
-      : '<div style="font-size:11px;color:var(--muted);font-style:italic">Nessun evento oggi</div>';
-    const calTomorrowHtml = calTomorrow.length > 0
-      ? `<div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px">📅 DOMANI (${{calTomorrow.length}} eventi)</div>` +
-        calTomorrow.map(e =>
-          `<div style="margin:2px 0;font-size:10px;color:var(--text2)"><span style="color:var(--cyan)">${{esc(e.time)}}</span> ${{esc(e.summary)}}</div>`
-        ).join('')
-      : '';
-    const stories = (b.stories || []).map((s, i) =>
-      `<div style="margin:4px 0;font-size:11px;color:var(--text2);">${{i+1}}. ${{esc(s.title)}}</div>`
-    ).join('');
-    el.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <div style="font-size:10px;color:var(--muted);">ULTIMO: <span style="color:var(--amber)">${{ts}}</span></div>
-        <div style="font-size:10px;color:var(--muted);">PROSSIMO: <span style="color:var(--cyan)">${{data.next_run || '07:30'}}</span></div>
-      </div>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:8px;">
-        <div style="font-size:11px;color:var(--amber);margin-bottom:8px;">🌤 ${{esc(weather)}}</div>
-        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">📅 CALENDARIO OGGI</div>
-        ${{calTodayHtml}}
-        ${{calTomorrowHtml}}
-        <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px;">📰 TOP HACKERNEWS</div>
-        ${{stories}}
-      </div>
-      <div style="display:flex;gap:6px;">
-        <button class="btn-ghost" onclick="loadBriefing()">↻ Aggiorna</button>
-        <button class="btn-green" onclick="runBriefing()">▶ Genera nuovo</button>
-        <button class="btn-ghost" onclick="copyToClipboard(document.getElementById('briefing-body').textContent)">📋 Copia</button>
-      </div>`;
-  }}
-
-  function renderTokens(data) {{
-    const src = data.source === 'api' ? '🌐 Anthropic API' : '📁 Log locale';
-    document.getElementById('tokens-body').innerHTML = `
-      <div class="token-grid">
-        <div class="token-item"><div class="token-label">Input oggi</div><div class="token-value">${{(data.today_input||0).toLocaleString()}}</div></div>
-        <div class="token-item"><div class="token-label">Output oggi</div><div class="token-value">${{(data.today_output||0).toLocaleString()}}</div></div>
-        <div class="token-item"><div class="token-label">Chiamate</div><div class="token-value">${{data.total_calls||0}}</div></div>
-      </div>
-      <div style="margin-bottom:6px;font-size:10px;color:var(--muted);">
-        MODELLO: <span style="color:var(--cyan)">${{esc(data.last_model||'N/A')}}</span>
-        &nbsp;·&nbsp; FONTE: <span style="color:var(--text2)">${{src}}</span>
-      </div>
-      <div class="mono-block" style="max-height:100px;">${{(data.log_lines||[]).map(l=>esc(l)).join('\\n')||'// nessun log disponibile'}}</div>
-      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadTokens()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('tokens-body').textContent)">📋 Copia</button></div>`;
-  }}
-
-  function renderLogs(data) {{
-    const el = document.getElementById('logs-body');
-    // data può essere stringa (vecchio formato) o oggetto {{lines, total, filtered}}
-    if (typeof data === 'string') {{
-      el.innerHTML = `<div class="mono-block" style="max-height:200px;">${{esc(data)||'(nessun log)'}}</div>
-        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">📋 Copia</button></div>`;
-      return;
-    }}
-    const dateVal = document.getElementById('log-date-filter')?.value || '';
-    const searchVal = document.getElementById('log-search-filter')?.value || '';
-    const lines = data.lines || [];
-    const total = data.total || 0;
-    const filtered = data.filtered || 0;
-    const countInfo = (dateVal || searchVal)
-      ? `<span style="color:var(--amber)">${{filtered}}</span> / ${{total}} righe`
-      : `${{total}} righe totali`;
-    // Evidenzia testo cercato nelle righe
-    let content = lines.length ? lines.map(l => {{
-      if (searchVal) {{
-        const re = new RegExp('(' + searchVal.replace(/[.*+?^${{}}()|[\\]\\\\]/g, '\\\\$&') + ')', 'gi');
-        return l.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(re, '<span style="background:var(--green-dim);color:var(--green);font-weight:700;">$1</span>');
-      }}
-      return l.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }}).join('\\n') : '(nessun log corrispondente)';
-    el.innerHTML = `
-      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">
-        <input type="date" id="log-date-filter" value="${{dateVal}}"
-          style="background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--amber);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;">
-        <input type="text" id="log-search-filter" placeholder="🔍 cerca…" value="${{searchVal}}"
-          style="flex:1;min-width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;">
-        <button class="btn-green" onclick="loadLogs()" style="min-height:32px;">🔍 Filtra</button>
-        <button class="btn-ghost" onclick="clearLogFilters()" style="min-height:32px;">✕ Reset</button>
-      </div>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">${{countInfo}}</div>
-      <div class="mono-block" style="max-height:240px;">${{content}}</div>
-      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">📋 Copia</button></div>`;
-    // Enter su campo ricerca = filtra
-    document.getElementById('log-search-filter')?.addEventListener('keydown', e => {{
-      if (e.key === 'Enter') loadLogs();
-    }});
-  }}
-  function clearLogFilters() {{
-    const d = document.getElementById('log-date-filter');
-    const s = document.getElementById('log-search-filter');
-    if (d) d.value = '';
-    if (s) s.value = '';
-    loadLogs();
-  }}
-
-  function renderCron(jobs) {{
-    const el = document.getElementById('cron-body');
-    const jobList = (jobs && jobs.length) ? '<div class="cron-list">' + jobs.map((j, i) => `
-      <div class="cron-item" style="align-items:center;">
-        <div class="cron-schedule">${{j.schedule}}</div>
-        <div style="flex:1;"><div class="cron-cmd">${{j.command}}</div>${{j.desc?`<div class="cron-desc">// ${{j.desc}}</div>`:''}}</div>
-        <button class="btn-red" style="padding:3px 8px;font-size:10px;min-height:28px;" onclick="deleteCron(${{i}})">✕</button>
-      </div>`).join('') + '</div>'
-      : '<div class="no-items">// nessun cron job configurato</div>';
-    el.innerHTML = jobList + `
-      <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
-        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">AGGIUNGI TASK</div>
-        <div style="display:flex;gap:6px;margin-bottom:6px;">
-          <input id="cron-schedule" placeholder="30 7 * * *" style="width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;">
-          <input id="cron-command" placeholder="python3.13 /path/to/script.py" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;">
-        </div>
-        <div style="display:flex;gap:6px;">
-          <button class="btn-green" onclick="addCron()">+ Aggiungi</button>
-          <button class="btn-ghost" onclick="loadCron()">↻ Aggiorna</button>
-        </div>
-      </div>`;
-  }}
-  function addCron() {{
-    const sched = document.getElementById('cron-schedule').value.trim();
-    const cmd = document.getElementById('cron-command').value.trim();
-    if (!sched || !cmd) {{ showToast('⚠️ Compila schedule e comando'); return; }}
-    send({{ action: 'add_cron', schedule: sched, command: cmd }});
-  }}
-  function deleteCron(index) {{
-    send({{ action: 'delete_cron', index: index }});
-  }}
-
-  // ── Remote Code ──
-  let claudeRunning = false;
-
-  function loadBridge(btn) {{
-    if (btn) btn.textContent = '...';
-    send({{ action: 'check_bridge' }});
-    send({{ action: 'get_claude_tasks' }});
-  }}
-
-  function runClaudeTask() {{
-    const input = document.getElementById('claude-prompt');
-    const prompt = input.value.trim();
-    if (!prompt) {{ showToast('Scrivi un prompt'); return; }}
-    if (claudeRunning) {{ showToast('Task già in esecuzione'); return; }}
-    claudeRunning = true;
-    document.getElementById('claude-run-btn').disabled = true;
-    document.getElementById('claude-cancel-btn').style.display = 'inline-block';
-    const wrap = document.getElementById('claude-output-wrap');
-    if (wrap) wrap.style.display = 'block';
-    const out = document.getElementById('claude-output');
-    if (out) out.innerHTML = '';
-    send({{ action: 'claude_task', prompt: prompt }});
-  }}
-
-  function cancelClaudeTask() {{
-    send({{ action: 'claude_cancel' }});
-  }}
-
-  function finalizeClaudeTask(data) {{
-    claudeRunning = false;
-    const rb = document.getElementById('claude-run-btn');
-    const cb = document.getElementById('claude-cancel-btn');
-    if (rb) rb.disabled = false;
-    if (cb) cb.style.display = 'none';
-    const status = data.completed ? '✅ completato' : (data.exit_code === 0 ? '⚠️ incompleto' : '⚠️ errore');
-    const dur = (data.duration_ms / 1000).toFixed(1);
-    const iter = data.iterations > 1 ? ` (${{data.iterations}} iter)` : '';
-    showToast(`Task ${{status}} in ${{dur}}s${{iter}}`);
-    send({{ action: 'get_claude_tasks' }});
-  }}
-
-  function renderBridgeStatus(data) {{
-    const dot = document.getElementById('bridge-dot');
-    if (!dot) return;
-    if (data.status === 'ok') {{
-      dot.className = 'health-dot green';
-      dot.title = 'Bridge online';
-    }} else {{
-      dot.className = 'health-dot red';
-      dot.title = 'Bridge offline';
-    }}
-    // Se il body è ancora il placeholder, renderizza il form
-    const body = document.getElementById('claude-body');
-    if (body && body.querySelector('.widget-placeholder')) {{
-      renderClaudeUI(data.status === 'ok');
-    }}
-  }}
-
-  function renderClaudeUI(isOnline) {{
-    const body = document.getElementById('claude-body');
-    if (!body) return;
-    body.innerHTML = `
-      <div style="margin-bottom:10px;">
-        <textarea id="claude-prompt" rows="3" placeholder="Descrivi il task per Claude Code..."
-          style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;
-          color:var(--green);padding:9px 12px;font-family:var(--font);font-size:13px;
-          outline:none;resize:vertical;caret-color:var(--green);min-height:60px;box-sizing:border-box;"></textarea>
-        <div style="display:flex;gap:6px;margin-top:6px;">
-          <button class="btn-green" id="claude-run-btn" onclick="runClaudeTask()"
-            ${{!isOnline ? 'disabled title="Bridge offline"' : ''}}>▶ Esegui</button>
-          <button class="btn-red" id="claude-cancel-btn" onclick="cancelClaudeTask()"
-            style="display:none;">■ Stop</button>
-          <button class="btn-ghost" onclick="loadBridge()">↻ Stato</button>
-        </div>
-      </div>
-      <div id="claude-output-wrap" style="display:none;margin-bottom:10px;">
-        <div class="claude-output-header">
-          <span>OUTPUT</span>
-          <div style="display:flex;gap:4px;">
-            <button class="btn-ghost" style="padding:2px 8px;font-size:10px;min-height:24px;" onclick="copyClaudeOutput()">📋 Copia</button>
-            <button class="btn-ghost" style="padding:2px 8px;font-size:10px;min-height:24px;" onclick="openOutputFullscreen()">⛶ Espandi</button>
-          </div>
-        </div>
-        <div id="claude-output" class="claude-output"></div>
-      </div>
-      <div id="claude-tasks-list"></div>`;
-  }}
-
-  function renderClaudeTasks(tasks) {{
-    // Se il body è ancora placeholder, renderizza prima il form
-    const body = document.getElementById('claude-body');
-    if (body && body.querySelector('.widget-placeholder')) {{
-      renderClaudeUI(document.getElementById('bridge-dot')?.classList.contains('green'));
-    }}
-    const el = document.getElementById('claude-tasks-list');
-    if (!el) return;
-    if (!tasks || !tasks.length) {{
-      el.innerHTML = '<div class="no-items">// nessun task eseguito</div>';
-      return;
-    }}
-    const list = tasks.slice().reverse();
-    el.innerHTML = '<div style="font-size:10px;color:var(--muted);margin-bottom:6px;">ULTIMI TASK</div>' +
-      list.map(t => {{
-        const dur = t.duration_ms ? (t.duration_ms/1000).toFixed(1)+'s' : '';
-        const ts = (t.ts || '').replace('T', ' ');
-        return `<div class="claude-task-item">
-          <div class="claude-task-prompt" title="${{esc(t.prompt)}}">${{esc(t.prompt)}}</div>
-          <div class="claude-task-meta">
-            <span class="claude-task-status ${{esc(t.status)}}">${{esc(t.status)}}</span>
-            <span>${{esc(ts)}}</span>
-            <span>${{dur}}</span>
-          </div>
-        </div>`;
-      }}).join('');
-  }}
-
-  // ── Tabs ──
-  function switchTab(name, btn) {{
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-' + name).classList.add('active');
-    if (name === 'history') send({{ action: 'get_history' }});
-    if (name === 'quickref') send({{ action: 'get_quickref' }});
-  }}
-
-  // ── Misc ──
-  // ── Collapsible cards ──
-  function toggleCard(id) {{
-    const card = document.getElementById(id);
-    if (card) card.classList.toggle('collapsed');
-  }}
-  function expandCard(id) {{
-    const card = document.getElementById(id);
-    if (card) card.classList.remove('collapsed');
-  }}
-
-  function requestStats() {{ send({{ action: 'get_stats' }}); }}
-  function refreshMemory() {{ send({{ action: 'get_memory' }}); }}
-  function refreshHistory() {{ send({{ action: 'get_history' }}); }}
-  function killSession(name) {{ send({{ action: 'tmux_kill', session: name }}); }}
-  function gatewayRestart() {{ showToast('⏳ Riavvio gateway…'); send({{ action: 'gateway_restart' }}); }}
-
-  // ── Reboot / Shutdown ──
-  function showRebootModal() {{
-    document.getElementById('reboot-modal').classList.add('show');
-  }}
-  function hideRebootModal() {{
-    document.getElementById('reboot-modal').classList.remove('show');
-  }}
-  function confirmReboot() {{
-    hideRebootModal();
-    send({{ action: 'reboot' }});
-  }}
-  function showShutdownModal() {{
-    document.getElementById('shutdown-modal').classList.add('show');
-  }}
-  function hideShutdownModal() {{
-    document.getElementById('shutdown-modal').classList.remove('show');
-  }}
-  function confirmShutdown() {{
-    hideShutdownModal();
-    send({{ action: 'shutdown' }});
-  }}
-  function startRebootWait() {{
-    document.getElementById('reboot-overlay').classList.add('show');
-    const statusEl = document.getElementById('reboot-status');
-    let seconds = 0;
-    const timer = setInterval(() => {{
-      seconds++;
-      statusEl.textContent = `Attesa: ${{seconds}}s — tentativo riconnessione…`;
-    }}, 1000);
-    // Tenta di riconnettersi ogni 3 secondi
-    const tryReconnect = setInterval(() => {{
-      fetch('/', {{ method: 'HEAD', cache: 'no-store' }})
-        .then(r => {{
-          if (r.ok) {{
-            clearInterval(timer);
-            clearInterval(tryReconnect);
-            document.getElementById('reboot-overlay').classList.remove('show');
-            showToast('✅ Pi riavviato con successo');
-            // Riconnetti WebSocket
-            if (ws) {{ try {{ ws.close(); }} catch(e) {{}} }}
-            connect();
-          }}
-        }})
-        .catch(() => {{}});
-    }}, 3000);
-    // Timeout massimo: 2 minuti
-    setTimeout(() => {{
-      clearInterval(timer);
-      clearInterval(tryReconnect);
-      statusEl.textContent = 'Timeout — il Pi potrebbe non essere raggiungibile. Ricarica la pagina manualmente.';
-    }}, 120000);
-  }}
-
-  function showToast(text) {{
-    const el = document.getElementById('toast');
-    el.textContent = text; el.classList.add('show');
-    const ms = Math.max(2500, Math.min(text.length * 60, 6000));
-    setTimeout(() => el.classList.remove('show'), ms);
-  }}
-
-  function copyToClipboard(text) {{
-    if (navigator.clipboard && navigator.clipboard.writeText) {{
-      navigator.clipboard.writeText(text).then(() => showToast('📋 Copiato'))
-        .catch(() => _fallbackCopy(text));
-    }} else {{ _fallbackCopy(text); }}
-  }}
-  function _fallbackCopy(text) {{
-    const ta = document.createElement('textarea');
-    ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
-    document.body.appendChild(ta); ta.select();
-    try {{ document.execCommand('copy'); showToast('📋 Copiato'); }}
-    catch(e) {{ showToast('Copia non riuscita'); }}
-    document.body.removeChild(ta);
-  }}
-
-  // ── Remote Code output helpers ──
-  function copyClaudeOutput() {{
-    const out = document.getElementById('claude-output');
-    if (out) copyToClipboard(out.textContent);
-  }}
-  function openOutputFullscreen() {{
-    const out = document.getElementById('claude-output');
-    if (!out) return;
-    document.getElementById('output-fs-content').textContent = out.textContent;
-    document.getElementById('output-fullscreen').classList.add('show');
-  }}
-  function closeOutputFullscreen() {{
-    document.getElementById('output-fullscreen').classList.remove('show');
-  }}
-
-  setInterval(() => {{
-    const t = new Date().toLocaleTimeString('it-IT');
-    ['home-clock', 'chat-clock'].forEach(id => {{
-      const el = document.getElementById(id);
-      if (el) el.textContent = t;
-    }});
-  }}, 1000);
-
-  if ('serviceWorker' in navigator) {{
-    navigator.serviceWorker.register('/sw.js').catch(() => {{}});
-  }}
-
-  connect();
-</script>
-</body>
-</html>"""
-
-
-# ─── Login page ──────────────────────────────────────────────────────────────
-LOGIN_HTML = f"""<!DOCTYPE html>
-<html lang="it">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="theme-color" content="#060a06">
-<link rel="icon" type="image/jpeg" href="{VESSEL_ICON}">
-<link rel="apple-touch-icon" sizes="192x192" href="{VESSEL_ICON_192}">
-<link rel="manifest" href="/manifest.json">
-<title>Vessel — Login</title>
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
-  :root {{
-    --bg: #060a06; --bg2: #0b110b; --card: #0e160e; --border: #1a2e1a;
-    --border2: #254025; --green: #00ff41; --green2: #00cc33; --green3: #009922;
-    --green-dim: #003311; --red: #ff3333; --muted: #3d6b3d; --text: #c8ffc8;
-    --amber: #ffb000; --font: 'JetBrains Mono', 'Fira Code', monospace;
-  }}
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{
-    background: var(--bg); color: var(--text); font-family: var(--font);
-    height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center;
-    overflow: hidden; position: fixed; inset: 0;
-    background-image: repeating-linear-gradient(0deg, transparent, transparent 2px,
-      rgba(0,255,65,0.012) 2px, rgba(0,255,65,0.012) 4px);
-  }}
-  .login-box {{
-    background: var(--card); border: 1px solid var(--border2); border-radius: 8px;
-    padding: 36px 32px 28px; width: min(380px, 90vw); text-align: center;
-    box-shadow: 0 0 60px rgba(0,255,65,0.06);
-  }}
-  .login-icon {{ width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--green3);
-    filter: drop-shadow(0 0 10px rgba(0,255,65,0.4)); margin-bottom: 18px; }}
-  .login-title {{ font-size: 20px; font-weight: 700; color: var(--green); letter-spacing: 2px;
-    text-shadow: 0 0 10px rgba(0,255,65,0.4); margin-bottom: 6px; }}
-  .login-sub {{ font-size: 12px; color: var(--muted); margin-bottom: 24px; }}
-  #pin-input {{ position: absolute; opacity: 0; pointer-events: none; }}
-  .pin-display {{
-    display: flex; gap: 10px; justify-content: center; margin-bottom: 6px;
-  }}
-  .pin-dot {{
-    width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--green3);
-    background: transparent; transition: background .15s, box-shadow .15s;
-  }}
-  .pin-dot.filled {{
-    background: var(--green); box-shadow: 0 0 8px rgba(0,255,65,0.5);
-  }}
-  .pin-counter {{
-    font-size: 11px; color: var(--muted); margin-bottom: 16px; letter-spacing: 1px;
-  }}
-  .numpad {{
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
-    width: min(300px, 80vw); margin: 0 auto;
-  }}
-  .numpad-btn {{
-    font-family: var(--font); font-size: 24px; font-weight: 600;
-    padding: 16px 0; border: 1px solid var(--border2); border-radius: 8px;
-    background: var(--bg2); color: var(--green); cursor: pointer;
-    transition: all .15s; -webkit-tap-highlight-color: transparent;
-    user-select: none; min-height: 58px;
-  }}
-  .numpad-btn:active {{ background: var(--green-dim); border-color: var(--green3); }}
-  .numpad-btn.fn {{ font-size: 14px; color: var(--muted); }}
-  .numpad-btn.fn:active {{ color: var(--green); }}
-  .numpad-bottom {{
-    width: min(300px, 80vw); margin: 14px auto 0;
-  }}
-  .numpad-submit {{
-    font-family: var(--font); font-size: 14px; font-weight: 600; letter-spacing: 2px;
-    width: 100%; padding: 16px 0; border: 1px solid var(--green3); border-radius: 8px;
-    background: var(--green-dim); color: var(--green); cursor: pointer;
-    transition: all .15s; -webkit-tap-highlight-color: transparent;
-    user-select: none; text-transform: uppercase;
-  }}
-  .numpad-submit:active {{ background: #004422; }}
-  #login-error {{
-    margin-top: 12px; font-size: 11px; color: var(--red); min-height: 16px;
-  }}
-  @keyframes shake {{ 0%,100%{{transform:translateX(0)}} 25%{{transform:translateX(-6px)}} 75%{{transform:translateX(6px)}} }}
-  .shake {{ animation: shake .3s; }}
-</style>
-</head>
-<body>
-<div class="login-box" id="login-box">
-  <img class="login-icon" src="{VESSEL_ICON}" alt="Vessel">
-  <div class="login-title">VESSEL</div>
-  <div class="login-sub" id="login-sub">Inserisci PIN</div>
-  <input id="pin-input" type="password" inputmode="none" pattern="[0-9]*"
-    maxlength="4" autocomplete="off" readonly>
-  <div class="pin-display" id="pin-display"></div>
-  <div class="pin-counter" id="pin-counter">0 / 6</div>
-  <div class="numpad">
-    <button class="numpad-btn" onclick="numpadPress('1')">1</button>
-    <button class="numpad-btn" onclick="numpadPress('2')">2</button>
-    <button class="numpad-btn" onclick="numpadPress('3')">3</button>
-    <button class="numpad-btn" onclick="numpadPress('4')">4</button>
-    <button class="numpad-btn" onclick="numpadPress('5')">5</button>
-    <button class="numpad-btn" onclick="numpadPress('6')">6</button>
-    <button class="numpad-btn" onclick="numpadPress('7')">7</button>
-    <button class="numpad-btn" onclick="numpadPress('8')">8</button>
-    <button class="numpad-btn" onclick="numpadPress('9')">9</button>
-    <button class="numpad-btn fn" onclick="numpadClear()">C</button>
-    <button class="numpad-btn" onclick="numpadPress('0')">0</button>
-    <button class="numpad-btn fn" onclick="numpadDel()">DEL</button>
-  </div>
-  <div class="numpad-bottom">
-    <button class="numpad-submit" onclick="doLogin()">SBLOCCA</button>
-  </div>
-  <div id="login-error"></div>
-</div>
-<script>
-const MAX_PIN = 4;
-let pinValue = '';
-
-function updatePinDisplay() {{
-  const display = document.getElementById('pin-display');
-  const counter = document.getElementById('pin-counter');
-  display.innerHTML = '';
-  for (let i = 0; i < MAX_PIN; i++) {{
-    const dot = document.createElement('div');
-    dot.className = 'pin-dot' + (i < pinValue.length ? ' filled' : '');
-    display.appendChild(dot);
-  }}
-  counter.textContent = '';
-  document.getElementById('pin-input').value = pinValue;
-}}
-
-function numpadPress(n) {{
-  if (pinValue.length >= MAX_PIN) return;
-  pinValue += n;
-  updatePinDisplay();
-  if (pinValue.length === MAX_PIN) setTimeout(doLogin, 150);
-}}
-
-function numpadDel() {{
-  if (pinValue.length === 0) return;
-  pinValue = pinValue.slice(0, -1);
-  updatePinDisplay();
-}}
-
-function numpadClear() {{
-  pinValue = '';
-  updatePinDisplay();
-}}
-
-updatePinDisplay();
-
-(async function() {{
-  const r = await fetch('/auth/check');
-  const d = await r.json();
-  if (d.authenticated) {{ window.location.href = '/'; return; }}
-  if (d.setup) {{
-    document.getElementById('login-sub').textContent = 'Imposta il PIN (4 cifre)';
-  }}
-}})();
-
-async function doLogin() {{
-  const pin = pinValue.trim();
-  if (!pin) return;
-  const errEl = document.getElementById('login-error');
-  errEl.textContent = '';
-  try {{
-    const r = await fetch('/auth/login', {{
-      method: 'POST', headers: {{'Content-Type': 'application/json'}},
-      body: JSON.stringify({{ pin }})
-    }});
-    const d = await r.json();
-    if (d.ok) {{ window.location.href = '/'; }}
-    else {{
-      errEl.textContent = d.error || 'PIN errato';
-      document.getElementById('login-box').classList.add('shake');
-      setTimeout(() => document.getElementById('login-box').classList.remove('shake'), 400);
-      pinValue = '';
-      updatePinDisplay();
-    }}
-  }} catch(e) {{
-    errEl.textContent = 'Errore di connessione';
-  }}
-}}
-
-document.addEventListener('keydown', e => {{
-  if (e.key >= '0' && e.key <= '9') numpadPress(e.key);
-  else if (e.key === 'Backspace') numpadDel();
-  else if (e.key === 'Escape') numpadClear();
-  else if (e.key === 'Enter') doLogin();
-}});
-</script>
-</body>
-</html>"""
 
 # ─── Auth routes ─────────────────────────────────────────────────────────────
 @app.post("/auth/login")
 async def auth_login(request: Request):
     ip = request.client.host
-    if not _check_auth_rate(ip):
+    if not _rate_limit(ip, "auth", MAX_AUTH_ATTEMPTS, AUTH_LOCKOUT_SECONDS):
         return JSONResponse({"error": "Troppi tentativi. Riprova tra 5 minuti."}, status_code=429)
     body = await request.json()
     pin = body.get("pin", "")
@@ -3529,18 +1362,39 @@ async def auth_login(request: Request):
         _set_pin(pin)
         token = _create_session()
         resp = JSONResponse({"ok": True, "setup": True})
+        is_secure = request.url.scheme == "https"
         resp.set_cookie("vessel_session", token, max_age=SESSION_TIMEOUT,
-                        httponly=True, samesite="lax")
+                        httponly=True, samesite="lax", secure=is_secure)
         return resp
-    _record_auth_attempt(ip)
     if not _verify_pin(pin):
         return JSONResponse({"error": "PIN errato"}, status_code=401)
-    AUTH_ATTEMPTS.pop(ip, None)
+    RATE_LIMITS.pop(f"{ip}:auth", None)
     token = _create_session()
     resp = JSONResponse({"ok": True})
+    is_secure = request.url.scheme == "https"
     resp.set_cookie("vessel_session", token, max_age=SESSION_TIMEOUT,
-                    httponly=True, samesite="lax")
+                    httponly=True, samesite="lax", secure=is_secure)
     return resp
+
+@app.get("/api/health")
+async def api_health():
+    pi = await get_pi_stats()
+    ollama = await bg(check_ollama_health)
+    bridge = await bg(check_bridge_health)
+    return {
+        "status": "ok",
+        "timestamp": time.time(),
+        "services": {
+            "pi": pi["health"],
+            "ollama": "online" if ollama else "offline",
+            "bridge": bridge.get("status", "offline")
+        },
+        "details": {
+            "pi_temp": pi.get("temp_val"),
+            "pi_cpu": pi.get("cpu_val"),
+            "pi_mem": pi.get("mem_pct")
+        }
+    }
 
 @app.get("/auth/check")
 async def auth_check(request: Request):
@@ -3572,7 +1426,7 @@ async def manifest():
 @app.get("/sw.js")
 async def service_worker():
     sw_code = """
-const CACHE = 'vessel-v2';
+const CACHE = 'vessel-v3';
 const OFFLINE_URL = '/';
 
 self.addEventListener('install', e => {
@@ -3623,9 +1477,13 @@ async def api_file(request: Request, path: str = ""):
     except Exception:
         return {"content": "File non trovato"}
 
+
+
+# --- src/backend/main.py ---
 if __name__ == "__main__":
     print(f"\n🐈 Vessel Dashboard")
     print(f"   → http://picoclaw.local:{PORT}")
     print(f"   → http://localhost:{PORT}")
     print(f"   Ctrl+C per fermare\n")
     uvicorn.run(app, host="0.0.0.0", port=PORT, log_level="warning")
+
