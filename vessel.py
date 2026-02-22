@@ -36,6 +36,10 @@ import uvicorn
 PORT = int(os.environ.get("PORT", 8090))
 VESSEL_HOST = os.environ.get("VESSEL_HOST", "vessel.local")
 VESSEL_USER = os.environ.get("VESSEL_USER", "user")
+# ─── Identity ─────────────────────────────────────────────────────────────────
+# Change VESSEL_NAME to rename your assistant (UI, prompts, PWA).
+# Technical internals (cookies, cache keys) stay unchanged.
+VESSEL_NAME = os.environ.get("VESSEL_NAME", "Vessel")
 NANOBOT_DIR = Path(os.environ.get("NANOBOT_DIR", str(Path.home() / ".nanobot")))
 NANOBOT_WORKSPACE = NANOBOT_DIR / "workspace"
 MEMORY_FILE  = NANOBOT_WORKSPACE / "memory" / "MEMORY.md"
@@ -47,7 +51,8 @@ OLLAMA_BASE = os.environ.get("OLLAMA_BASE", "http://127.0.0.1:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma3:4b")
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "120"))
 OLLAMA_SYSTEM = os.environ.get("OLLAMA_SYSTEM",
-    "You are Vessel, a concise assistant running on a Raspberry Pi. Be brief and direct.")
+    f"You are {VESSEL_NAME}, {VESSEL_USER}'s personal assistant running on a Raspberry Pi. "
+    f"If someone doesn't introduce themselves, assume they are {VESSEL_USER}. Be brief and direct.")
 _ollama_url = urlparse(OLLAMA_BASE)
 _OLLAMA_HOST = _ollama_url.hostname or "127.0.0.1"
 _OLLAMA_PORT = _ollama_url.port or 11434
@@ -584,7 +589,7 @@ def chat_with_nanobot(message: str) -> str:
     api_key = cfg.get("providers", {}).get("anthropic", {}).get("apiKey", "")
     raw_model = cfg.get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
     model = _resolve_model(raw_model)
-    system_prompt = cfg.get("system_prompt", "Sei Vessel, un assistente sarcastico e informale.")
+    system_prompt = cfg.get("system_prompt", f"Sei {VESSEL_NAME}, assistente personale di {VESSEL_USER}. Se qualcuno non si presenta, assumi che sia {VESSEL_USER}.")
     if api_key:
         try:
             payload = json.dumps({
@@ -814,7 +819,7 @@ HTML = f"""<!DOCTYPE html>
 <link rel="icon" type="image/jpeg" href="{VESSEL_ICON}">
 <link rel="apple-touch-icon" sizes="192x192" href="{VESSEL_ICON_192}">
 <link rel="manifest" href="/manifest.json">
-<title>Vessel Dashboard</title>
+<title>{VESSEL_NAME} Dashboard</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
 
@@ -1210,9 +1215,9 @@ HTML = f"""<!DOCTYPE html>
 
 <header>
   <div class="logo">
-    <img class="logo-icon" src="{VESSEL_ICON}" alt="Vessel">
+    <img class="logo-icon" src="{VESSEL_ICON}" alt="{VESSEL_NAME}">
     <div>
-      <h1>VESSEL</h1>
+      <h1>{VESSEL_NAME.upper()}</h1>
       <small id="hostname">{VESSEL_HOST}</small>
     </div>
   </div>
@@ -1229,7 +1234,7 @@ HTML = f"""<!DOCTYPE html>
   <!-- ① CHAT — primo elemento visibile -->
   <div class="card">
     <div class="card-header">
-      <span class="card-title">💬 Chat con Vessel</span>
+      <span class="card-title">💬 Chat con {VESSEL_NAME}</span>
       <div style="display:flex;gap:6px;align-items:center;">
         <div class="model-switch">
           <button class="model-btn" id="btn-cloud" onclick="switchModel('cloud')">☁ Cloud</button>
@@ -1243,7 +1248,7 @@ HTML = f"""<!DOCTYPE html>
       <span id="model-label">Gemma 3 4B (locale)</span>
     </div>
     <div id="chat-messages">
-      <div class="msg msg-bot">Hey, I'm Vessel — what can I do for you, {VESSEL_USER}?</div>
+      <div class="msg msg-bot">Hey, I'm {VESSEL_NAME} — what can I do for you, {VESSEL_USER}?</div>
     </div>
     <div class="chat-input-row">
       <input id="chat-input" placeholder="scrivi qui…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
@@ -1912,7 +1917,7 @@ LOGIN_HTML = f"""<!DOCTYPE html>
 <link rel="icon" type="image/jpeg" href="{VESSEL_ICON}">
 <link rel="apple-touch-icon" sizes="192x192" href="{VESSEL_ICON_192}">
 <link rel="manifest" href="/manifest.json">
-<title>Vessel — Login</title>
+<title>{VESSEL_NAME} — Login</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&display=swap');
   :root {{
@@ -1962,8 +1967,8 @@ LOGIN_HTML = f"""<!DOCTYPE html>
 </head>
 <body>
 <div class="login-box">
-  <img class="login-icon" src="{VESSEL_ICON}" alt="Vessel">
-  <div class="login-title">VESSEL</div>
+  <img class="login-icon" src="{VESSEL_ICON}" alt="{VESSEL_NAME}">
+  <div class="login-title">{VESSEL_NAME.upper()}</div>
   <div class="login-sub" id="login-sub">Inserisci PIN</div>
   <input id="pin-input" type="password" inputmode="numeric" pattern="[0-9]*"
     maxlength="6" placeholder="****" autocomplete="off">
@@ -2053,8 +2058,8 @@ async def root(request: Request):
 @app.get("/manifest.json")
 async def manifest():
     return {
-        "name": "Vessel Dashboard",
-        "short_name": "Vessel",
+        "name": f"{VESSEL_NAME} Dashboard",
+        "short_name": VESSEL_NAME,
         "start_url": "/",
         "display": "standalone",
         "background_color": "#060a06",
@@ -2120,7 +2125,7 @@ async def api_file(request: Request, path: str = ""):
         return {"content": "File non trovato"}
 
 if __name__ == "__main__":
-    print(f"\n  Vessel Dashboard")
+    print(f"\n  {VESSEL_NAME} Dashboard")
     print(f"   → http://{VESSEL_HOST}:{PORT}")
     print(f"   → http://localhost:{PORT}")
     print(f"   Ctrl+C to stop\n")

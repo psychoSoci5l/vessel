@@ -1,3 +1,101 @@
+# ─── Telegram polling ────────────────────────────────────────────────────────
+# History in-memory per canale telegram (ricaricata dal DB al primo messaggio)
+_tg_histories: dict[str, list] = {}
+
+def _tg_history(provider_id: str) -> list:
+    if provider_id not in _tg_histories:
+        _tg_histories[provider_id] = db_load_chat_history(provider_id, channel="telegram")
+    return _tg_histories[provider_id]
+
+async def _handle_telegram_message(text: str):
+    """Routing prefissi e risposta via Telegram."""
+    provider_id = "openrouter"   # default Telegram: OpenRouter (come Discord)
+    system      = OLLAMA_SYSTEM
+    model       = OPENROUTER_MODEL
+
+    low = text.lower()
+    if low.startswith("@coder ") or low.startswith("@pc "):
+        provider_id = "ollama_pc_coder"
+        system      = OLLAMA_PC_CODER_SYSTEM
+        model       = OLLAMA_PC_CODER_MODEL
+        text        = text.split(" ", 1)[1]
+    elif low.startswith("@deep "):
+        provider_id = "ollama_pc_deep"
+        system      = OLLAMA_PC_DEEP_SYSTEM
+        model       = OLLAMA_PC_DEEP_MODEL
+        text        = text.split(" ", 1)[1]
+    elif low.startswith("@local "):
+        provider_id = "ollama"
+        system      = OLLAMA_SYSTEM
+        model       = OLLAMA_MODEL
+        text        = text.split(" ", 1)[1]
+
+    # Comandi speciali
+    if text.strip() == "/status":
+        pi = await get_pi_stats()
+        tmux = await bg(get_tmux_sessions)
+        sessions = ", ".join(s["name"] for s in tmux) or "nessuna"
+        reply = (
+            f"Pi Status\n"
+            f"CPU: {pi['cpu']} | Temp: {pi['temp']}\n"
+            f"RAM: {pi['mem']}\n"
+            f"Disco: {pi['disk']}\n"
+            f"Uptime: {pi['uptime']}\n"
+            f"Tmux: {sessions}"
+        )
+        telegram_send(reply)
+        return
+
+    if text.strip() == "/help":
+        reply = (
+            "Vessel - comandi Telegram\n\n"
+            "Scrivi liberamente per chattare (provider default: DeepSeek V3)\n\n"
+            "Prefissi provider:\n"
+            "  @coder - Qwen2.5-Coder PC\n"
+            "  @deep - DeepSeek-R1 PC\n"
+            "  @local - Gemma3 Pi locale\n\n"
+            "Comandi:\n"
+            "  /status - stats Pi\n"
+            "  /help - questo messaggio"
+        )
+        telegram_send(reply)
+        return
+
+    history = _tg_history(provider_id)
+    reply = await _chat_response(text, history, provider_id, system, model, channel="telegram")
+    telegram_send(reply)
+
+async def telegram_polling_task():
+    """Long polling Telegram. Avviato nel lifespan se token configurato."""
+    offset = 0
+    print("[Telegram] Polling avviato")
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={offset}&timeout=30"
+
+            def _poll():
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req, timeout=35) as resp:
+                    return json.loads(resp.read())
+
+            updates = await asyncio.get_running_loop().run_in_executor(None, _poll)
+            for upd in updates.get("result", []):
+                offset = upd["update_id"] + 1
+                msg = upd.get("message") or upd.get("edited_message")
+                if not msg:
+                    continue
+                chat_id = str(msg.get("chat", {}).get("id", ""))
+                if chat_id != TELEGRAM_CHAT_ID:
+                    print(f"[Telegram] Messaggio da chat non autorizzata: {chat_id}")
+                    continue
+                text = msg.get("text", "").strip()
+                if not text:
+                    continue
+                asyncio.create_task(_handle_telegram_message(text))
+        except Exception as e:
+            print(f"[Telegram] Polling error: {e}")
+            await asyncio.sleep(10)  # backoff su errore
+
 # ─── Background broadcaster ───────────────────────────────────────────────────
 async def stats_broadcaster():
     cycle = 0
@@ -45,6 +143,7 @@ async def handle_chat(websocket, msg, ctx):
 async def handle_clear_chat(websocket, msg, ctx):
     for history in ctx.values():
         history.clear()
+    db_clear_chat_history("dashboard")
 
 async def handle_check_ollama(websocket, msg, ctx):
     alive = await bg(check_ollama_health)
@@ -187,6 +286,19 @@ async def handle_get_claude_tasks(websocket, msg, ctx):
     tasks = get_claude_tasks(10)
     await websocket.send_json({"type": "claude_tasks", "tasks": tasks})
 
+async def handle_search_memory(websocket, msg, ctx):
+    results = await bg(db_search_chat,
+                       msg.get("keyword", ""),
+                       msg.get("provider", ""),
+                       msg.get("date_from", ""),
+                       msg.get("date_to", ""))
+    await websocket.send_json({"type": "memory_search", "results": results})
+
+async def handle_get_entities(websocket, msg, ctx):
+    entities = await bg(db_get_entities, msg.get("type", ""))
+    relations = await bg(db_get_relations)
+    await websocket.send_json({"type": "knowledge_graph", "entities": entities, "relations": relations})
+
 WS_DISPATCHER = {
     "chat": handle_chat,
     "clear_chat": handle_clear_chat,
@@ -211,6 +323,8 @@ WS_DISPATCHER = {
     "claude_cancel": handle_claude_cancel,
     "check_bridge": handle_check_bridge,
     "get_claude_tasks": handle_get_claude_tasks,
+    "search_memory": handle_search_memory,
+    "get_entities": handle_get_entities,
 }
 
 @app.websocket("/ws")
@@ -221,13 +335,11 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close(code=4001, reason="Non autenticato")
         return
     await manager.connect(websocket)
-    ctx = {
-        "ollama": [],
-        "cloud": [],
-        "deepseek": [],
-        "pc_coder": [],
-        "pc_deep": []
+    provider_map = {
+        "ollama": "ollama", "cloud": "anthropic", "deepseek": "openrouter",
+        "pc_coder": "ollama_pc_coder", "pc_deep": "ollama_pc_deep"
     }
+    ctx = {k: db_load_chat_history(pid) for k, pid in provider_map.items()}
     await websocket.send_json({
         "type": "init",
         "data": {

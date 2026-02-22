@@ -103,6 +103,11 @@ OPENROUTER_MODEL = _or_cfg.get("model", "deepseek/deepseek-chat-v3-0324")
 OPENROUTER_PROVIDER_ORDER = _or_cfg.get("providerOrder", ["ModelRun", "DeepInfra"])
 OPENROUTER_LABEL = _or_cfg.get("label", "DeepSeek V3")
 
+# ─── Telegram ────────────────────────────────────────────────────────────────
+_tg_cfg = _get_config("telegram.json")
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   _tg_cfg.get("token", ""))
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", str(_tg_cfg.get("chat_id", "")))
+
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 PIN_FILE = Path.home() / ".nanobot" / "dashboard_pin.hash"
 SESSION_FILE = Path.home() / ".nanobot" / "sessions.json"
@@ -183,7 +188,10 @@ def _rate_limit(ip: str, action: str, max_requests: int, window_seconds: int) ->
 
 @asynccontextmanager
 async def lifespan(app):
+    init_db()
     asyncio.create_task(stats_broadcaster())
+    if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+        asyncio.create_task(telegram_polling_task())
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, warmup_ollama)
     yield

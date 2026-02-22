@@ -26,6 +26,16 @@ Vessel is a self-hosted AI dashboard that runs entirely from one Python file. No
 - **PWA** — Install on iPhone/Android, works as a native-feeling app
 - **Secure** — PIN authentication, session tokens, rate limiting, security headers, path whitelist
 
+## Glossary
+
+| Term | Meaning |
+|------|---------|
+| **Vessel Pi** | The open source project — turn a Raspberry Pi into a personal AI assistant |
+| **Vessel** | The AI assistant itself (default name, configurable via `VESSEL_NAME` env var) |
+| **Nanobot** | Optional AI agent runtime ([nanobot-ai](https://github.com/nanobot-ai/nanobot)) — not required |
+| **Dashboard** | The web interface served by FastAPI (port 8090, installable as PWA) |
+| **Bridge** | Optional Windows component for invoking Claude Code over LAN |
+
 ## Quick Start
 
 ### 1. Install dependencies
@@ -52,6 +62,9 @@ Open `http://localhost:8090` in your browser. On first visit, you'll be prompted
 ### 4. Configure (optional)
 
 ```bash
+# Rename your assistant
+export VESSEL_NAME=Jarvis
+
 # Set your hostname and username
 export VESSEL_HOST=mypi.local
 export VESSEL_USER=myname
@@ -88,8 +101,9 @@ All settings are configurable via environment variables:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `8090` | Dashboard port |
+| `VESSEL_NAME` | `Vessel` | Assistant name (UI, prompts, PWA) |
 | `VESSEL_HOST` | `vessel.local` | Hostname shown in header |
-| `VESSEL_USER` | `user` | Username in chat greeting |
+| `VESSEL_USER` | `user` | Owner name (chat greeting, system prompt) |
 | `OLLAMA_BASE` | `http://127.0.0.1:11434` | Ollama API endpoint |
 | `OLLAMA_MODEL` | `gemma3:4b` | LLM model for local chat |
 | `OLLAMA_SYSTEM` | *(see code)* | System prompt for local AI |

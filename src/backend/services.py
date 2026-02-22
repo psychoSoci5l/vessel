@@ -216,17 +216,8 @@ BRIEFING_SCRIPT = Path.home() / ".nanobot" / "workspace" / "skills" / "morning-b
 BRIEFING_CRON = "30 7 * * *"  # 07:30 ogni giorno
 
 def get_briefing_data() -> dict:
-    """Legge ultimo briefing dal log e calcola prossima esecuzione."""
-    data = {"last": None, "next_run": "07:30"}
-    if BRIEFING_LOG.exists():
-        lines = BRIEFING_LOG.read_text().splitlines()
-        for line in reversed(lines):
-            try:
-                data["last"] = json.loads(line)
-                break
-            except Exception:
-                continue
-    return data
+    """Legge ultimo briefing da SQLite."""
+    return db_get_briefing()
 
 def run_briefing() -> dict:
     """Esegue briefing.py e restituisce il risultato."""
@@ -260,15 +251,8 @@ ADMIN_KEY_FILE = Path.home() / ".nanobot" / "admin_api_key"
 
 def log_token_usage(input_tokens: int, output_tokens: int, model: str,
                     provider: str = "anthropic", response_time_ms: int = 0):
-    """Appende una riga al log locale dei token."""
-    entry = json.dumps({
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "input": input_tokens, "output": output_tokens,
-        "model": model, "provider": provider,
-        "response_time_ms": response_time_ms,
-    })
-    with open(USAGE_LOG, "a") as f:
-        f.write(entry + "\n")
+    """Logga utilizzo token in SQLite."""
+    db_log_usage(input_tokens, output_tokens, model, provider, response_time_ms)
 
 def get_token_stats() -> dict:
     stats = {"today_input": 0, "today_output": 0, "total_calls": 0,
@@ -301,19 +285,14 @@ def get_token_stats() -> dict:
                     return stats
             except Exception as e:
                 stats["log_lines"].append(f"Admin API fallita: {str(e)[:80]}")
-    # 2) Fallback: log locale dashboard
-    if USAGE_LOG.exists():
-        for line in USAGE_LOG.read_text().splitlines():
-            if today in line:
-                try:
-                    d = json.loads(line)
-                    stats["today_input"]  += d.get("input", 0)
-                    stats["today_output"] += d.get("output", 0)
-                    stats["total_calls"]  += 1
-                    if d.get("model"): stats["last_model"] = d["model"]
-                except Exception:
-                    pass
-        stats["log_lines"] = USAGE_LOG.read_text().splitlines()[-8:]
+    # 2) Fallback: log locale SQLite
+    db_stats = db_get_token_stats()
+    stats["today_input"] = db_stats["today_input"]
+    stats["today_output"] = db_stats["today_output"]
+    stats["total_calls"] = db_stats["total_calls"]
+    if db_stats["last_model"] != "N/A":
+        stats["last_model"] = db_stats["last_model"]
+    stats["log_lines"] = db_stats["log_lines"]
     if stats["total_calls"] == 0:
         stats["log_lines"].append("// nessuna chiamata API oggi")
         # Leggo config nanobot per mostrare almeno il modello
@@ -368,6 +347,35 @@ def warmup_ollama():
     except Exception as e:
         print(f"[Ollama] Warmup fallito: {e}")
 
+# ─── Context Pruning (Fase 16B) ───────────────────────────────────────────────
+CONTEXT_BUDGETS = {
+    "anthropic":        6000,
+    "openrouter":       8000,
+    "ollama":           3000,
+    "ollama_pc_coder":  6000,
+    "ollama_pc_deep":   6000,
+}
+
+def estimate_tokens(text: str) -> int:
+    """Stima approssimativa token: ~3.5 char/token (compromesso it/en)."""
+    return max(1, int(len(text) / 3.5))
+
+def build_context(chat_history: list, provider_id: str, system_prompt: str) -> list:
+    """Seleziona messaggi recenti fino a riempire il budget token del provider."""
+    budget = CONTEXT_BUDGETS.get(provider_id, 4000)
+    remaining = budget - estimate_tokens(system_prompt)
+    selected = []
+    for msg in reversed(chat_history):
+        cost = estimate_tokens(msg["content"]) + 4
+        if remaining - cost < 0 and len(selected) >= 4:
+            break
+        remaining -= cost
+        selected.insert(0, msg)
+    if len(selected) < len(chat_history):
+        used = budget - remaining
+        print(f"[Context] {provider_id}: {len(selected)}/{len(chat_history)} msg, ~{used}/{budget} tok")
+    return selected
+
 async def _stream_chat(
     websocket: WebSocket, message: str, chat_history: list,
     provider_id: str, system_prompt: str, model: str
@@ -382,9 +390,10 @@ async def _stream_chat(
         system_with_friends = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
 
     chat_history.append({"role": "user", "content": message})
+    db_save_chat_message(provider_id, "dashboard", "user", message)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
-    trimmed = chat_history[-20:]
+    trimmed = build_context(chat_history, provider_id, system_with_friends)
 
     provider = get_provider(provider_id, model, system_with_friends, trimmed)
     if not provider.is_valid:
@@ -484,6 +493,7 @@ async def _stream_chat(
             break
 
     chat_history.append({"role": "assistant", "content": full_reply})
+    db_save_chat_message(provider_id, "dashboard", "assistant", full_reply)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
     elapsed = int((time.time() - start_time) * 1000)
@@ -494,6 +504,159 @@ async def _stream_chat(
         model,
         provider=provider_id,
     )
+
+# ─── Telegram ────────────────────────────────────────────────────────────────
+def telegram_send(text: str) -> bool:
+    """Invia un messaggio al bot Telegram. Restituisce True se successo."""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return False
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        data = json.dumps({
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": text[:4096],
+        }).encode("utf-8")
+        req = urllib.request.Request(url, data=data,
+                                     headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+        return True
+    except Exception as e:
+        print(f"[Telegram] send error: {e}")
+        return False
+
+async def _chat_response(
+    message: str, chat_history: list,
+    provider_id: str, system_prompt: str, model: str,
+    channel: str = "telegram",
+) -> str:
+    """Variante non-streaming di _stream_chat: accumula la risposta e la restituisce.
+    Usata dal Telegram handler (non ha WebSocket)."""
+    queue: asyncio.Queue = asyncio.Queue()
+    start_time = time.time()
+
+    friends_ctx = _load_friends()
+    system_with_friends = system_prompt
+    if friends_ctx:
+        system_with_friends = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
+
+    chat_history.append({"role": "user", "content": message})
+    db_save_chat_message(provider_id, channel, "user", message)
+    if len(chat_history) > 100:
+        chat_history[:] = chat_history[-60:]
+    trimmed = build_context(chat_history, provider_id, system_with_friends)
+
+    provider = get_provider(provider_id, model, system_with_friends, trimmed)
+    if not provider.is_valid:
+        return f"⚠️ Provider non disponibile: {provider.error_msg}"
+
+    def _worker():
+        input_tokens = output_tokens = 0
+        try:
+            conn_class = http.client.HTTPSConnection if provider.use_https else http.client.HTTPConnection
+            conn = conn_class(provider.host, provider.port, timeout=provider.timeout)
+            conn.request("POST", provider.path, body=provider.payload, headers=provider.headers)
+            resp = conn.getresponse()
+            if resp.status != 200:
+                body = resp.read().decode("utf-8", errors="replace")
+                queue.put_nowait(("error", f"HTTP {resp.status}: {body[:200]}"))
+                return
+            buf = ""
+            while True:
+                raw = resp.read(512)
+                if not raw:
+                    break
+                buf += raw.decode("utf-8", errors="replace")
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
+                    if provider.parser_type == "json_lines":
+                        try:
+                            data = json.loads(line)
+                            token = data.get("message", {}).get("content", "")
+                            if token:
+                                queue.put_nowait(("chunk", token))
+                            if data.get("done"):
+                                t_eval = data.get("eval_count", 0)
+                                queue.put_nowait(("meta", {"output_tokens": t_eval}))
+                                conn.close()
+                                return
+                        except Exception:
+                            pass
+                    elif provider.parser_type == "sse_anthropic":
+                        if line.startswith("event:"):
+                            continue
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(data_str)
+                                dtype = data.get("type", "")
+                                if dtype == "content_block_delta":
+                                    queue.put_nowait(("chunk", data.get("delta", {}).get("text", "")))
+                                elif dtype == "message_start":
+                                    input_tokens = data.get("message", {}).get("usage", {}).get("input_tokens", 0)
+                                elif dtype == "message_delta":
+                                    output_tokens = data.get("usage", {}).get("output_tokens", 0)
+                            except Exception:
+                                pass
+                    elif provider.parser_type == "sse_openai":
+                        if line.startswith("event:") or line.startswith(":"):
+                            continue
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(data_str)
+                                choices = data.get("choices", [])
+                                if choices:
+                                    queue.put_nowait(("chunk", choices[0].get("delta", {}).get("content", "")))
+                                usage = data.get("usage")
+                                if usage:
+                                    input_tokens = usage.get("prompt_tokens", 0)
+                                    output_tokens = usage.get("completion_tokens", 0)
+                            except Exception:
+                                pass
+            conn.close()
+        except Exception as e:
+            queue.put_nowait(("error", str(e)))
+        finally:
+            queue.put_nowait(("meta", {"input_tokens": input_tokens, "output_tokens": output_tokens}))
+            queue.put_nowait(("end", None))
+
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, _worker)
+
+    full_reply = ""
+    token_meta = {}
+    while True:
+        kind, val = await queue.get()
+        if kind == "chunk":
+            if val:
+                full_reply += val
+        elif kind == "meta":
+            token_meta = val
+        elif kind == "error":
+            if not full_reply:
+                full_reply = f"(errore {provider_id}: {val})"
+        elif kind == "end":
+            break
+
+    chat_history.append({"role": "assistant", "content": full_reply})
+    db_save_chat_message(provider_id, channel, "assistant", full_reply)
+    if len(chat_history) > 100:
+        chat_history[:] = chat_history[-60:]
+    elapsed = int((time.time() - start_time) * 1000)
+    log_token_usage(
+        token_meta.get("input_tokens", 0),
+        token_meta.get("output_tokens", 0),
+        model,
+        provider=provider_id,
+    )
+    return full_reply
 
 def chat_with_nanobot(message: str) -> str:
     try:
@@ -519,33 +682,13 @@ def check_bridge_health() -> dict:
         return {"status": "offline"}
 
 def get_claude_tasks(n: int = 10) -> list[dict]:
-    """Legge gli ultimi N task dal log JSONL."""
-    if not CLAUDE_TASKS_LOG.exists():
-        return []
-    tasks = []
-    for line in CLAUDE_TASKS_LOG.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            tasks.append(json.loads(line))
-        except Exception:
-            continue
-    return tasks[-n:]
+    """Legge gli ultimi N task da SQLite."""
+    return db_get_claude_tasks(n)
 
 def log_claude_task(prompt: str, status: str, exit_code: int = 0,
                     duration_ms: int = 0, output_preview: str = ""):
-    """Logga un task Claude nel file JSONL."""
-    entry = json.dumps({
-        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "prompt": prompt[:200],
-        "status": status,
-        "exit_code": exit_code,
-        "duration_ms": duration_ms,
-        "output_preview": output_preview[:200],
-    }, ensure_ascii=False)
-    with open(CLAUDE_TASKS_LOG, "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
+    """Logga un task Claude in SQLite."""
+    db_log_claude_task(prompt, status, exit_code, duration_ms, output_preview)
 
 async def run_claude_task_stream(websocket: WebSocket, prompt: str, use_loop: bool = False):
     """Esegue un task via Claude Bridge con streaming output via WS."""

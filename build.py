@@ -44,6 +44,7 @@ def build():
     backend_files = [
         "imports.py",
         "config.py",
+        "database.py",
         "providers.py",
         "services.py",
         "routes.py",

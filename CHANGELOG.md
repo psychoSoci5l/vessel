@@ -5,6 +5,112 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-22] Fase 16 Blocco B — Context Pruning, Widget Ricerca, Self-evolving, Knowledge Graph
+
+> Completamento Fase 16. Il sistema diventa intelligente nella gestione della memoria.
+
+### Context Pruning (`services.py`)
+- **`estimate_tokens()`** — stima approssimativa token (len/3.5, zero dipendenze)
+- **`build_context()`** — seleziona messaggi recenti fino a riempire il budget del provider
+- **`CONTEXT_BUDGETS`** per provider: Ollama Pi 3K, Anthropic 6K, OpenRouter 8K, PC 6K
+- Sostituisce `chat_history[-20:]` cieco in `_stream_chat()` e `_chat_response()`
+- Log `[Context]` quando il pruning taglia messaggi (visibile nei log tmux)
+- Minimo 4 messaggi garantiti anche a budget esaurito
+
+### Widget Memory — Tab "Cerca" (`database.py`, `routes.py`, `index.html`, `main.js`)
+- **`db_search_chat()`** — ricerca in `chat_messages` per keyword (LIKE), provider, range date
+- Handler WS `search_memory` → `memory_search` con risultati JSON
+- 4° tab "Cerca" nel widget Memoria: input keyword + date picker + bottone
+- Risultati con timestamp, provider, role, snippet con keyword evidenziata
+- Enter su input = cerca
+
+### Self-evolving (`self_evolve.py`, `database.py`)
+- **Nuovo script**: `self_evolve.py` — cron standalone (come briefing.py)
+- **Tabella `chat_messages_archive`** — stessa struttura di `chat_messages`
+- `archive_old_chats(90)` — sposta chat > 90gg in archive (INSERT OR IGNORE + DELETE)
+- `cleanup_old_usage(180)` — elimina usage > 180gg
+- `compute_stats()` — conteggio per provider e per mese
+- `db_archive_old_chats()` e `db_archive_old_usage()` disponibili anche dalla dashboard
+- Cron suggerito: `0 3 * * 0` (domenica alle 3)
+
+### Knowledge Graph (`database.py`, `routes.py`)
+- **Tabella `entities`**: type, name (UNIQUE), description, first_seen, last_seen, frequency
+- **Tabella `relations`**: entity_a, entity_b, relation, frequency, ts (con FK)
+- **`db_upsert_entity()`** — INSERT o UPDATE con frequency++
+- **`db_add_relation()`** — INSERT o UPDATE con frequency++
+- **`db_get_entities()`** / **`db_get_relations()`** — query con JOIN nomi
+- Handler WS `get_entities` → `knowledge_graph` (pronto per widget futuro)
+- Indice `idx_entities_type` per query filtrate per tipo
+
+### Schema DB
+- `SCHEMA_VERSION` resta 1 (tabelle aggiunte con `CREATE IF NOT EXISTS`, nessuna migrazione breaking)
+- 3 nuove tabelle: `chat_messages_archive`, `entities`, `relations`
+
+---
+
+## [2026-02-22] Fase 16 Blocco A — SQLite Memory
+
+> Migrazione da JSONL a SQLite. Chat history persistente. Base per Telegram multi-channel.
+
+### Nuovo modulo: `src/backend/database.py`
+- **`vessel.db`** (`~/.nanobot/vessel.db`) — singolo file SQLite, tutte le tabelle
+- Schema con versioning (`schema_version`) per future migrazioni
+- 5 tabelle: `usage`, `briefings`, `claude_tasks`, `chat_messages`, `schema_version`
+- `PRAGMA journal_mode=WAL` per performance concorrente
+- Pattern connessione breve: `with sqlite3.connect() as conn:` per ogni operazione
+
+### Migrazione automatica JSONL
+- `init_db()` al primo avvio: crea tabelle + migra dati da JSONL esistenti
+- 77 record usage + 6 briefings + 10 claude_tasks migrati automaticamente
+- JSONL rinominati in `.jsonl.bak` (safety net, ripristino possibile)
+
+### Chat history persistente (NUOVO)
+- Tabella `chat_messages` con colonne `provider`, `channel`, `role`, `content`
+- Colonna `channel` (default `"dashboard"`) pronta per Telegram (Fase 15)
+- History caricata da DB ad ogni connessione WebSocket (ultimi 40 msg/provider)
+- Conversazioni sopravvivono a restart/crash della dashboard
+- `clear_chat` cancella anche dal DB
+
+### Modifiche a services.py
+- `log_token_usage()` → scrive in SQLite via `db_log_usage()`
+- `get_token_stats()` → fallback locale legge da SQLite (Admin API invariata)
+- `get_briefing_data()` → `db_get_briefing()`
+- `get_claude_tasks()` / `log_claude_task()` → SQLite
+- `_stream_chat()` → salva ogni messaggio user+assistant in `chat_messages`
+
+### briefing.py (cron)
+- `save_to_log()` → `save_to_db()` con INSERT SQLite inline
+- `CREATE TABLE IF NOT EXISTS` incluso per sicurezza (cron prima del dashboard)
+
+### Build
+- `database.py` aggiunto a `build.py` tra `config.py` e `providers.py`
+- `import sqlite3` aggiunto a `imports.py`
+
+---
+
+## [2026-02-22] Fase 14 — Identità & Terminologia
+
+### vessel.py — Nome configurabile
+- **`VESSEL_NAME`** env var (default `"Vessel"`) — rinomina assistente in UI, system prompt, PWA
+- **`VESSEL_USER`** ora usato anche nei system prompt come owner ("assistente personale di {USER}")
+- Regola default-owner: se nessuno si presenta, assume `VESSEL_USER`
+- 13 occorrenze dinamicizzate; tecnici interni (cookie, cache SW) lasciati stabili
+- Commento esplicito nella sezione Config per chi forka
+
+### SOUL.md (Pi)
+- Nuova sezione **"Riconoscimento interlocutore"**: nessuna presentazione → assumi Filippo
+- Audit: SOUL.md e USER.md già coerenti con terminologia Vessel
+
+### README.md
+- Aggiunta sezione **Glossary** (Vessel Pi, Vessel, Nanobot, Dashboard, Bridge)
+- `VESSEL_NAME` aggiunto in tabella Configuration e esempio Quick Start
+- `VESSEL_USER` description aggiornata a "Owner name"
+
+### ROADMAP.md
+- Fase 14 segnata completata, aggiunta in tabella storico
+
+---
+
 ## [2026-02-22] Fase 13 — Fix & Consolidamento
 
 > Audit sistematico del sistema reale. 5 blocchi completati in una sessione.

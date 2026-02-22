@@ -3,6 +3,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 import json
 import os
+import sqlite3
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,28 @@ def fetch_weather():
         print(f"Weather error: {e}")
         return "Meteo non disponibile"
 
+def send_to_telegram(message):
+    """Invia messaggio Telegram se configurato (~/.nanobot/telegram.json)."""
+    cfg_file = Path.home() / ".nanobot" / "telegram.json"
+    if not cfg_file.exists():
+        return False
+    try:
+        cfg = json.loads(cfg_file.read_text(encoding="utf-8"))
+        token   = cfg.get("token", "")
+        chat_id = str(cfg.get("chat_id", ""))
+        if not token or not chat_id:
+            return False
+        url  = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = json.dumps({"chat_id": chat_id, "text": message[:4096]}).encode("utf-8")
+        req  = urllib.request.Request(url, data=data,
+                                      headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+        print("✅ Inviato su Telegram!")
+        return True
+    except Exception as e:
+        print(f"Telegram error: {e}")
+        return False
+
 def send_to_discord(message):
     try:
         data = json.dumps({"content": message[:2000]}).encode('utf-8')
@@ -50,6 +73,7 @@ def send_to_discord(message):
         print(f"Discord error: {e}")
 
 BRIEFING_LOG = Path.home() / ".nanobot" / "briefing_log.jsonl"
+DB_PATH = Path.home() / ".nanobot" / "vessel.db"
 GOOGLE_HELPER = Path.home() / "scripts" / "google_helper.py"
 GOOGLE_PYTHON = Path.home() / ".local" / "share" / "google-workspace-mcp" / "bin" / "python"
 
@@ -72,17 +96,22 @@ def fetch_calendar_events(period="today"):
         print(f"Calendar parse error: {e}")
         return []
 
-def save_to_log(briefing_text, weather, stories, events_today=None, events_tomorrow=None):
-    entry = json.dumps({
-        "ts": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
-        "weather": weather,
-        "stories": stories,
-        "calendar_today": events_today or [],
-        "calendar_tomorrow": events_tomorrow or [],
-        "text": briefing_text,
-    }, ensure_ascii=False)
-    with open(BRIEFING_LOG, "a") as f:
-        f.write(entry + "\n")
+def save_to_db(briefing_text, weather, stories, events_today=None, events_tomorrow=None):
+    """Salva briefing in SQLite. CREATE TABLE IF NOT EXISTS per sicurezza (cron potrebbe partire prima del dashboard)."""
+    with sqlite3.connect(str(DB_PATH)) as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS briefings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
+            weather TEXT DEFAULT '', stories TEXT DEFAULT '[]',
+            calendar_today TEXT DEFAULT '[]', calendar_tomorrow TEXT DEFAULT '[]',
+            text TEXT DEFAULT '')""")
+        conn.execute(
+            "INSERT INTO briefings (ts, weather, stories, calendar_today, calendar_tomorrow, text) VALUES (?, ?, ?, ?, ?, ?)",
+            (datetime.now().strftime("%Y-%m-%dT%H:%M:%S"), weather,
+             json.dumps(stories, ensure_ascii=False),
+             json.dumps(events_today or [], ensure_ascii=False),
+             json.dumps(events_tomorrow or [], ensure_ascii=False),
+             briefing_text)
+        )
 
 def main():
     print("⏳ Generating morning briefing...")
@@ -115,8 +144,9 @@ def main():
     lines.append("\nHave a great day! 🚀")
     briefing = "\n".join(lines)
     print(briefing)
-    save_to_log(briefing, weather, stories, events_today, events_tomorrow)
-    send_to_discord(briefing)
+    save_to_db(briefing, weather, stories, events_today, events_tomorrow)
+    if not send_to_telegram(briefing):
+        send_to_discord(briefing)
 
 if __name__ == "__main__":
     main()

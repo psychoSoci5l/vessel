@@ -6,7 +6,7 @@
 
 ---
 
-## Storico completato — Fasi 1–13
+## Storico completato — Fasi 1–14, 16A
 
 | Fase | Titolo | Completata |
 |------|--------|------------|
@@ -25,10 +25,15 @@
 | 11 | Rifondazione architettonica (`src/` + `build.py`, Strategy pattern providers) | ✅ |
 | 12 | UI Dashboard — 4 stats cards, grid mobile, sidebar desktop | ✅ |
 | 13 | Fix & Consolidamento (audit sistema, bridge fix, provider LAN, Remote Code UX, AI Monitor) | ✅ |
+| 14 | Identità & Terminologia (VESSEL_NAME configurabile, glossario, audit SOUL.md) | ✅ |
+| 15 | Telegram — bot @vessel_pi_bot, long polling, OpenRouter default | ✅ |
+| 16A | SQLite Memory — Blocco A (migrazione JSONL, chat history persistente) | ✅ |
+| 16B | SQLite Memory — Blocco B (context pruning, widget ricerca, self-evolving, knowledge graph) | ✅ |
 
-**Stack attuale:** FastAPI + uvicorn + WebSocket, Python 3.13, Raspberry Pi 5, SSD 91GB, 8GB RAM.
+**Stack attuale:** FastAPI + uvicorn + WebSocket + SQLite, Python 3.13, Raspberry Pi 5, SSD 91GB, 8GB RAM.
 **Provider LLM attivi:** Haiku (cloud), Gemma3:4b (Pi locale), qwen2.5-coder:14b + deepseek-r1:8b (PC LAN), DeepSeek V3 (OpenRouter).
-**Canali:** Dashboard web (PWA), Discord (nanobot + DeepSeek V3), Bridge Windows (Remote Code).
+**Canali:** Dashboard web (PWA), Discord (nanobot + DeepSeek V3), Telegram (@vessel_pi_bot), Bridge Windows (Remote Code).
+**Storage:** `~/.nanobot/vessel.db` (SQLite WAL, chat history persistente, usage, briefings, tasks).
 
 ---
 
@@ -44,7 +49,7 @@
 
 ---
 
-## Fase 14 — Identità & Terminologia
+## Fase 14 — Identità & Terminologia ✅ (2026-02-22)
 
 > Prerequisito per crescita community. Da fare prima di pubblicizzare ulteriormente.
 > Il progetto è cresciuto accumulando termini (nanobot, vessel, dashboard, bridge, ralph):
@@ -59,32 +64,24 @@
 - **Ralph Loop** — meccanismo retry automatico del bridge (da rivalutare)
 
 **Task:**
-- [ ] Rendere il nome dell'assistente configurabile (`vessel.name` in config) — default `"Vessel"`
-- [ ] SOUL.md, USER.md e file bootstrap: usare "Vessel" coerentemente
-- [ ] README e docs pubblici: aggiornare con glossario canonico
-- [ ] `vessel.py` pubblico: commenti per chi vuole forkare
+- [x] Rendere il nome dell'assistente configurabile (`VESSEL_NAME` env var) — default `"Vessel"`
+- [x] SOUL.md, USER.md e file bootstrap: verificati, già coerenti
+- [x] README e docs pubblici: aggiornare con glossario canonico
+- [x] `vessel.py` pubblico: commenti per chi vuole forkare
 
 ---
 
-## Fase 15 — Telegram + Multi-Channel
+## Fase 15 — Telegram ✅ (2026-02-22)
 
-> Telegram ripristinato. Architettura multi-canale: Discord + Telegram → stesso cervello Vessel.
-> **Importante**: progettare il router PRIMA di implementare Telegram, per non creare un bot clone.
+> Bot @vessel_pi_bot integrato nella dashboard. Long polling urllib puro (zero dipendenze).
+> Chat history condivisa con dashboard (SQLite, colonna `channel`).
 
-**Architettura target — Multi-Channel Router:**
-- Un'unica istanza nanobot ascolta più canali (Discord, Telegram)
-- Il router normalizza i messaggi in entrata (mittente, testo, canale)
-- La risposta viene inviata al canale corretto
-- Memoria e personalità condivise tra canali
-
-**Task — in ordine:**
-- [ ] Definire requisiti: solo notifiche push (briefing, alert) o chat bidirezionale completa?
-- [ ] Progettare architettura router channel-agnostic
-- [ ] Bot Telegram base via `python-telegram-bot` (async, ben mantenuta)
-- [ ] Nanobot channel Telegram: stessa personalità di Discord, prefissi routing (`@pc`, `@deep`)
-- [ ] Notifiche push Telegram: briefing mattutino, alert temperatura, task completato
-- [ ] Evening Recap: cron ~21:30 — cosa è successo oggi, task aperti, alert del giorno
-- [ ] Voice Messages: vocale → Whisper STT → testo → Vessel risponde (collegato a Fase 17)
+**Implementato:**
+- [x] Bot Telegram bidirezionale: long polling nel main event loop
+- [x] OpenRouter (DeepSeek V3) come provider default Telegram
+- [x] Prefissi routing: `@local` (Gemma3 Pi), `@coder` (PC), `@deep` (PC Deep)
+- [x] Comandi: `/status`, `/help`
+- [x] Chat history persistente per canale (dashboard / telegram indipendenti)
 
 ---
 
@@ -112,15 +109,20 @@
 | `MEMORY.md` | `memory` | testo, tag, priorità, data_modifica |
 | `HISTORY.md` | `history` | conversazioni archiviate |
 
-**Task:**
-- [ ] Schema DB: `~/.nanobot/vessel.db` (singolo file, migration-ready)
-- [ ] Migrazione `briefing_log.jsonl` → tabella `briefings`
-- [ ] Migrazione `claude_tasks.jsonl` → tabella `tasks`
-- [ ] Migrazione `usage_dashboard.jsonl` → tabella `usage`
-- [ ] Widget Memory: ricerca per keyword/data invece di scroll lineare
-- [ ] Self-evolving: job cron settimanale — archivia record > 90gg, rafforza quelli frequenti
-- [ ] Knowledge graph base: tabella `entities` (persone, luoghi, concetti) + `relations`
-- [ ] Context Pruning: quando conversazione > N turni, riassume i vecchi in memoria strutturata
+**Blocco A — Essenziale** ✅ (2026-02-22):
+- [x] Schema DB: `~/.nanobot/vessel.db` (singolo file, WAL, schema_version)
+- [x] Migrazione `briefing_log.jsonl` → tabella `briefings` (6 record)
+- [x] Migrazione `claude_tasks.jsonl` → tabella `claude_tasks` (10 record)
+- [x] Migrazione `usage_dashboard.jsonl` → tabella `usage` (77 record)
+- [x] Chat history persistente: tabella `chat_messages` (provider, channel, role, content)
+- [x] History caricata da DB ad ogni connessione WebSocket
+- [x] `briefing.py` aggiornato per scrivere in SQLite
+
+**Blocco B** ✅ (2026-02-22):
+- [x] Context Pruning: budget token per provider, `build_context()` intelligente
+- [x] Widget Memory: tab "Cerca" — ricerca chat per keyword/data/provider (SQLite full search)
+- [x] Self-evolving: `self_evolve.py` cron settimanale — archivia chat > 90gg, cleanup usage > 180gg
+- [x] Knowledge graph base: tabelle `entities` + `relations`, CRUD con upsert + frequency tracking
 
 ---
 
