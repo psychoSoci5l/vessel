@@ -31,7 +31,30 @@
 | CPU Governor         | ondemand      | performance        | Latenza costante           |
 | Swappiness           | 60            | 10                 | Meno pressione su SSD      |
 
-\* *Il valore 5.05 tok/s del test era viziato da sessioni Ollama non riavviate — ritest a freddo consigliato.*
+\* *Il benchmark canonico (gemma3:4b, singolo modello, a freddo) è da effettuare dopo riavvio pulito — vedere sezione Benchmark dettagliati.*
+
+---
+
+## Benchmark dettagliati — sessione di test
+
+Tutti i test effettuati con lo stesso prompt: *"Spiegami cos'è un buco nero in tre paragrafi dettagliati"*.
+
+| Test | Modello | Condizione | Eval rate | Prompt eval | Temp |
+|---|---|---|---|---|---|
+| **Baseline stock** | gemma3:4b | Solo modello, a freddo | **5.50 tok/s** | n.d. | n.d. |
+| Post-ottimizzazione #1 | llama3.2:3b | Solo modello, a freddo | 4.92 tok/s | 10.17 tok/s | n.d. |
+| Post-ottimizzazione #2 | gemma3:4b | Due modelli in RAM (6GB totali), ZRAM attivo | 3.63 tok/s | 8.35 tok/s | 66°C |
+| Post-ottimizzazione #3 | gemma3:4b | Due modelli in RAM, modello warm in cache | 3.59 tok/s | **37.12 tok/s** | 66°C |
+| **Canonico da fare** | gemma3:4b | Solo modello, a freddo | stimato ~5.5 tok/s | — | — |
+
+### Note metodologiche
+
+- **Eval rate**: token generati al secondo — il numero rilevante per l'esperienza utente
+- **Prompt eval rate**: velocità di elaborazione del prompt in input — dipende molto dalla cache
+- I test #2 e #3 erano con `llama3.2:3b` ancora in RAM (keep_alive non scaduto) → pressione memoria reale
+- Con 6GB di modelli in RAM su 8GB, **ZRAM ha lavorato**: senza di esso lo swap su SSD avrebbe portato l'eval rate a 1-2 tok/s
+- Il **prompt eval anomalo di 37.12 tok/s** nel test #3 è dovuto al modello warm in cache — non replicabile a freddo
+- Il benchmark canonico va effettuato dopo `ollama stop <modello>` o riavvio del sistema
 
 ---
 
