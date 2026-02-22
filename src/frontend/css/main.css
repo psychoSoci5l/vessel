@@ -900,6 +900,22 @@ button {
   padding: 2px 0;
 }
 
+.claude-tool-use {
+  color: var(--cyan);
+  font-size: 11px;
+  padding: 2px 0;
+  border-left: 2px solid var(--cyan);
+  padding-left: 8px;
+  margin: 2px 0;
+}
+
+.claude-tool-info {
+  color: var(--text2);
+  font-size: 11px;
+  padding: 1px 0;
+  opacity: 0.8;
+}
+
 /* ── Tabs ── */
 .tab-row {
   display: flex;
@@ -1676,8 +1692,23 @@ button {
     z-index: auto !important;
     display: none;
     flex: 0 0 380px;
-    transition: none !important;
+    transition: flex .25s ease !important;
     border-left: 1px solid var(--border2);
+  }
+
+  /* Remote Code: drawer wide su desktop */
+  .drawer-overlay.drawer-wide {
+    flex: 0 0 700px;
+  }
+  .drawer-overlay.drawer-wide .claude-output {
+    max-height: calc(100vh - 230px);
+    font-size: 12px;
+  }
+  .drawer-overlay.drawer-wide .output-fs-content {
+    max-height: calc(100vh - 100px);
+  }
+  .drawer-overlay.drawer-wide #claude-prompt {
+    min-height: 80px;
   }
 
   .drawer-overlay.show {

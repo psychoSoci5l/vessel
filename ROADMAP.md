@@ -1,247 +1,171 @@
-# Roadmap — picoclaw / Vessel Dashboard
+# Roadmap — Vessel Pi
 
-> Obiettivo: trasformare il Pi in un assistente personale completo,
-> controllabile da dashboard web, iPhone e Discord.
+> **Vessel Pi** è il progetto open source che trasforma un Raspberry Pi in un assistente virtuale personale.
+> **Vessel** è il nome dell'assistente di default (rinominabile). **Nanobot** è il runtime sottostante.
+> Controllabile da dashboard web, iPhone (PWA), Discord, Telegram.
 
 ---
 
-## Fase 1 — Stabilizzazione ✅ COMPLETATA
-- [x] Dashboard v2 funzionante sul Pi
-- [x] Fix SyntaxError JS + SyntaxWarning regex
-- [x] Ottimizzazione icona (202KB → 38KB)
-- [x] Migrare `@app.on_event("startup")` → lifespan (fix DeprecationWarning)
-- [x] Aggiungere favicon inline (elimina errore 404 in console)
-- [x] Review codice widget on-demand (Token, Log, Cron) e chat
-- [x] Test live sul Pi + deploy su porta 8090 come dashboard principale
+## Storico completato — Fasi 1–13
 
-## Fase 2 — Dashboard enhancements ✅ COMPLETATA
-- [x] Uptime formattato ("12h 19m" invece di "up 12 hours, 19 minutes")
-- [x] Indicatore salute: semaforo verde/giallo/rosso basato su temp + CPU + RAM
-- [x] Grafico CPU/temp nel tempo (ultimi 60 campioni, canvas inline)
-- [x] PWA completa: manifest.json + service worker per offline
-- [x] Token widget: chat via API Anthropic diretta con logging token su jsonl
-- [x] SSH senza password (chiave ed25519) per deploy diretto da Claude Code
+| Fase | Titolo | Completata |
+|------|--------|------------|
+| 1 | Stabilizzazione dashboard | ✅ |
+| 2 | Dashboard enhancements (uptime, health, chart, PWA, token) | ✅ |
+| 3 | Automazioni e intelligence (reboot, briefing, crypto, cron, log) | ✅ |
+| 4 | Sicurezza (PIN pbkdf2, WS auth, rate limiting, security headers) | ✅ |
+| 4.5 | Polish e consolidamento (widget collapsibili, icona Vessel, code review P1-P6) | ✅ |
+| 5 | Routine intelligenti (briefing con Google Calendar, Ollama locale Gemma3) | ✅ |
+| 6 | Pubblicazione open source (vessel.py pulito, README, repo pubblica) | ✅ |
+| 7 | Remote Claude Code (Bridge Windows, widget >_, streaming, cronologia) | ✅ |
+| 8 | Ralph Loop (retry automatico, supervisore Ollama PC, backup/rollback) | ✅ |
+| 9 | Hardening e qualità (XSS fix, pbkdf2 PIN, streaming cloud, DeepSeek) | ✅ |
+| 9.5 | Ollama PC via LAN + Nanobot Discord upgrade + Power Off | ✅ |
+| 10 | Robustezza e polish (refactoring, UX redesign mobile-first, 3-zone layout) | ✅ |
+| 11 | Rifondazione architettonica (`src/` + `build.py`, Strategy pattern providers) | ✅ |
+| 12 | UI Dashboard — 4 stats cards, grid mobile, sidebar desktop | ✅ |
+| 13 | Fix & Consolidamento (audit sistema, bridge fix, provider LAN, Remote Code UX, AI Monitor) | ✅ |
 
-## Fase 3 — Automazioni e intelligence ✅ COMPLETATA
-- [x] Pulsante Reboot Pi nel widget Pi Stats (modale conferma + auto-reconnect)
-- [x] Dashboard widget: prossimo briefing schedulato + ultimo briefing (cron 7:30 + jsonl log)
-- [x] Widget crypto: prezzo BTC/ETH live (CoinGecko API, USD/EUR + 24h change)
-- [x] Schedulatore task dalla dashboard (crea/elimina cron dal browser)
-- [x] Logs strutturati: filtra per data, cerca testo, evidenziazione risultati
+**Stack attuale:** FastAPI + uvicorn + WebSocket, Python 3.13, Raspberry Pi 5, SSD 91GB, 8GB RAM.
+**Provider LLM attivi:** Haiku (cloud), Gemma3:4b (Pi locale), qwen2.5-coder:14b + deepseek-r1:8b (PC LAN), DeepSeek V3 (OpenRouter).
+**Canali:** Dashboard web (PWA), Discord (nanobot + DeepSeek V3), Bridge Windows (Remote Code).
 
-## Fase 4 — Sicurezza e accesso ✅ COMPLETATA
-- [x] Autenticazione PIN 4-6 cifre (SHA-256 hash, sessioni 7gg, setup via browser)
-- [x] WebSocket protetto (cookie auth prima di accept, codice 4001 per redirect)
-- [x] `/api/file` protetto: auth + whitelist percorsi + `Path.resolve()` anti-traversal
-- [x] Shell injection fix: chat CLI usa subprocess array (no shell=True con input utente)
-- [x] tmux_kill: exact match contro sessioni attive + subprocess array
-- [x] gateway_restart: subprocess array (no shell)
-- [x] Cron sanitizzazione: whitelist regex `^[a-zA-Z0-9\s/\-._~:=]+$` + blocco comandi pericolosi
-- [x] Rate limiting: auth (5/5min), chat (20/min), cron (10/min), reboot (1/5min), file (30/min)
-- [x] Security headers middleware: CSP, X-Frame-Options DENY, nosniff, Referrer-Policy, Permissions-Policy
-- [x] Pulizia periodica rate limits e sessioni scadute (ogni 5 min)
-## Fase 4.5 — Polish e consolidamento ✅ COMPLETATA
-> Solidificazione del codebase prima di nuove feature.
+---
 
-### UX / Estetica
-- [x] Widget collassabili (tendine apri/chiudi) per navigazione iPhone più pulita
-- [x] Nuova icona Vessel: maschera con sfondo tema scuro, 64px + 192px inline JPEG
-- [x] apple-touch-icon + favicon + manifest aggiornati con nuova icona
-- [x] Pass estetico mobile: touch target 44px, padding compatti, layout ottimizzato
-- [x] Pass estetico desktop: max-width 1200px per schermi grandi
+## Fase 13 — Fix & Consolidamento ✅ (2026-02-22)
 
-### Code review e fix (2026-02-20)
-- [x] P1: file whitelist da set statico a funzione `_is_allowed_path()` (bug: file creati dopo il boot non accessibili)
-- [x] P2: `run()` — docstring safety, timeout 30s, gestione esplicita `TimeoutExpired`
-- [x] P3: `tmux_kill` — messaggi errore distinti (sessione non trovata vs non permessa)
-- [x] P4: `asyncio.get_event_loop()` → `asyncio.get_running_loop()` via helper `bg()` (9 occorrenze)
-- [x] P5: validazione lunghezza messaggio chat (max 4000 char prima di API call)
-- [x] P6: `QUICKREF_FILE` spostato sotto `~/.nanobot/workspace/memory/` (coerente con MEMORY/HISTORY)
+> Audit sistematico del sistema reale. 5 blocchi completati in una sessione.
 
-### Miglioramenti
-- [x] M1: helper `async def bg()` — elimina boilerplate `loop.run_in_executor` nel WS handler
-- [x] M2: storico chart CPU/temp da 5min a 15min (MAX_SAMPLES 60→180)
-- [x] M3: tab QuickRef via WebSocket (era HTTP fetch, ora coerente con Memory/History)
-- [x] M4: toast timer proporzionale alla lunghezza del messaggio (2.5s–6s)
+**BLOCCO A** — bridge.json creato, cron 7:00, TASK_TIMEOUT 600s, drawer-wide 700px
+**BLOCCO B** — `num_predict: 2048` per provider LAN (anti-loop GPU), 1024 per Pi locale
+**BLOCCO C** — SOUL.md: regole exec() obbligatorie, gateway log persistente (`tee gateway.log`)
+**BLOCCO D** — Prompt template dropdown, Ralph Loop toggle on/off, autostart bridge .bat, tool use highlighting cyan
+**BLOCCO E** — `ai_monitor.py` (HN AI, r/LocalLLaMA, Ollama releases, nanobot PyPI check), cron 6:30
 
-## Fase 5 — Routine e automazioni intelligenti
-> Il Pi diventa proattivo: non aspetta comandi, agisce su schedule.
+---
 
-- [x] Briefing mattutino con dati calendario Google (google_helper --json + subprocess)
-- [x] Integrazione Ollama: chat locale Gemma 3 4B con streaming + switch cloud/locale
-- [ ] Reminder task Google → notifica dashboard/Discord
+## Fase 14 — Identità & Terminologia
+
+> Prerequisito per crescita community. Da fare prima di pubblicizzare ulteriormente.
+> Il progetto è cresciuto accumulando termini (nanobot, vessel, dashboard, bridge, ralph):
+> serve un glossario canonico stabile per chi vuole installare il proprio Vessel Pi.
+
+**Glossario canonico:**
+- **Vessel Pi** — il progetto open source (Raspberry Pi → assistente virtuale personale)
+- **Vessel** — l'assistente di default, il "personaggio". Rinominabile liberamente in config
+- **Nanobot** — il runtime agent sottostante (motore, non il personaggio)
+- **Dashboard** — interfaccia web di Vessel (FastAPI, porta 8090, PWA)
+- **Bridge** — componente opzionale PC Windows per invocare Claude Code via LAN
+- **Ralph Loop** — meccanismo retry automatico del bridge (da rivalutare)
+
+**Task:**
+- [ ] Rendere il nome dell'assistente configurabile (`vessel.name` in config) — default `"Vessel"`
+- [ ] SOUL.md, USER.md e file bootstrap: usare "Vessel" coerentemente
+- [ ] README e docs pubblici: aggiornare con glossario canonico
+- [ ] `vessel.py` pubblico: commenti per chi vuole forkare
+
+---
+
+## Fase 15 — Telegram + Multi-Channel
+
+> Telegram ripristinato. Architettura multi-canale: Discord + Telegram → stesso cervello Vessel.
+> **Importante**: progettare il router PRIMA di implementare Telegram, per non creare un bot clone.
+
+**Architettura target — Multi-Channel Router:**
+- Un'unica istanza nanobot ascolta più canali (Discord, Telegram)
+- Il router normalizza i messaggi in entrata (mittente, testo, canale)
+- La risposta viene inviata al canale corretto
+- Memoria e personalità condivise tra canali
+
+**Task — in ordine:**
+- [ ] Definire requisiti: solo notifiche push (briefing, alert) o chat bidirezionale completa?
+- [ ] Progettare architettura router channel-agnostic
+- [ ] Bot Telegram base via `python-telegram-bot` (async, ben mantenuta)
+- [ ] Nanobot channel Telegram: stessa personalità di Discord, prefissi routing (`@pc`, `@deep`)
+- [ ] Notifiche push Telegram: briefing mattutino, alert temperatura, task completato
+- [ ] Evening Recap: cron ~21:30 — cosa è successo oggi, task aperti, alert del giorno
+- [ ] Voice Messages: vocale → Whisper STT → testo → Vessel risponde (collegato a Fase 17)
+
+---
+
+## Fase 16 — SQLite Memory
+
+> Infrastruttura dati strutturata. Sostituisce `.jsonl` e `.md` sparsi con un DB locale sul Pi.
+> Prerequisito per self-evolving memory, knowledge graph, ricerche temporali, Evening Recap.
+> **Nota per l'utente**: SQLite è una libreria inclusa in Python — nessuna installazione esterna.
+>  Un singolo file `.db` sul Pi contiene tutto. Si può leggere con qualsiasi tool SQLite standard.
+
+**Perché SQLite (vs JSONL/MD attuali):**
+- Query strutturate: `SELECT * FROM tasks WHERE due < '2026-03-01'`
+- Ricerca per keyword, data, tipo — deterministica, non dipende dall'LLM
+- Self-evolving: pulizia automatica vecchi record, rafforzamento di quelli frequenti
+- Knowledge graph leggero: relazioni tra concetti, persone, eventi
+- Fondamenta per "ricordami fra 3 giorni" come feature reale
+
+**Migrazione graduale (non big bang):**
+
+| File attuale | Tabella SQLite | Note |
+|-------------|---------------|------|
+| `briefing_log.jsonl` | `briefings` | data, testo, fonte |
+| `claude_tasks.jsonl` | `tasks` | data, prompt, output, stato |
+| `usage_dashboard.jsonl` | `usage` | data, modello, token, costo |
+| `MEMORY.md` | `memory` | testo, tag, priorità, data_modifica |
+| `HISTORY.md` | `history` | conversazioni archiviate |
+
+**Task:**
+- [ ] Schema DB: `~/.nanobot/vessel.db` (singolo file, migration-ready)
+- [ ] Migrazione `briefing_log.jsonl` → tabella `briefings`
+- [ ] Migrazione `claude_tasks.jsonl` → tabella `tasks`
+- [ ] Migrazione `usage_dashboard.jsonl` → tabella `usage`
+- [ ] Widget Memory: ricerca per keyword/data invece di scroll lineare
+- [ ] Self-evolving: job cron settimanale — archivia record > 90gg, rafforza quelli frequenti
+- [ ] Knowledge graph base: tabella `entities` (persone, luoghi, concetti) + `relations`
+- [ ] Context Pruning: quando conversazione > N turni, riassume i vecchi in memoria strutturata
+
+---
+
+## Fase 17 — Proactive & Automazioni
+
+> Vessel smette di aspettare comandi: monitora, notifica, agisce su schedule.
+> Dipende da: Fase 15 (Telegram per delivery) e Fase 16 (SQLite per storage).
+
+**Task:**
+- [ ] Heartbeat System: monitoraggio proattivo in background
+  - Temp Pi > 70°C, bridge offline, quota API in esaurimento → avviso Telegram/Discord
+  - Integrare con health dot e status bar esistenti
+- [ ] Reminder task Google: legge Tasks API → notifica X minuti prima su Telegram
 - [ ] Routine "buonanotte": briefing serale, reminder domani, spegni luci Smart Life
-- [ ] Backup automatico config + memoria su cloud (Google Drive o rclone)
-- [ ] Voice control via Whisper (STT sul Pi) — priorità bassa
+- [ ] Model Failover: Haiku down → fallback OpenRouter, Pi offline → fallback PC LAN
+  - Config: `fallback_provider` per ogni provider
+- [ ] Backup automatico: config + memoria → Google Drive o rclone (cron settimanale)
+- [ ] Whisper voice: STT su Pi per messaggi vocali Discord/Telegram → testo (collegato a Fase 15)
 
-## Fase 6 — Pubblicazione e community ✅ COMPLETATA
-> Preparazione per repo pubblica e condivisione.
+---
 
-- [x] Pulizia codice per open source (vessel.py con env-based config)
-- [x] README.md con screenshot, setup guide, architettura
-- [x] Repo GitHub pubblica (`psychoSoci5l/vessel-pi`)
-- [x] PWA funzionale su iPhone — nessun wrapper necessario
+## Visione futura (no timeline)
 
-## Fase 7 — Remote Claude Code ✅ COMPLETATA
-> Orchestrare Claude Code sul PC Windows da remoto via dashboard.
-
-- [x] Claude Bridge: micro-servizio FastAPI su Windows (~100 righe, porta 8095)
-- [x] Streaming ndjson dal bridge al Pi al browser (pattern Ollama)
-- [x] Widget "Remote Code": textarea prompt, Esegui/Stop, output live, cronologia
-- [x] Health check bridge con pallino verde/rosso
-- [x] Config bridge in `~/.nanobot/config.json` (no segreti hardcoded)
-- [x] Sicurezza: auth token condiviso, rate limit 5/ora, timeout 5 min, un task alla volta
-- [x] Cancellazione task in corso via endpoint `/cancel`
-- [x] Log task in `~/.nanobot/claude_tasks.jsonl`
-
-## Fase 8 — Ralph Loop ✅ COMPLETATA
-> Iterazione automatica: Claude Code riprova fino a successo, con supervisore Ollama locale.
-
-- [x] Bridge v2: endpoint `/run-loop` con loop max 3 iterazioni
-- [x] Supervisore Ollama (qwen2.5-coder:14b su PC Windows, RTX 3060 12GB)
-- [x] Completion marker `TASK_COMPLETE` + verifica supervisore
-- [x] Follow-up prompt automatico con contesto errore precedente
-- [x] Backup/rollback file opzionale (protezione da corruzione)
-- [x] Dashboard: streaming iterazioni con marker visivi
-- [x] Backwards compatible: vecchio `/run` ancora disponibile
-- [ ] Gate deploy: conferma utente prima di deployare (futuro)
-- [ ] UI: toggle loop on/off nel widget Remote Code (futuro)
-
-## Fase 9.5 — Ollama PC + Nanobot Discord Upgrade ✅ COMPLETATA (2026-02-21)
-> GPU Windows come cervello remoto. Discord potenziato con DeepSeek + routing modelli.
-
-### Ollama PC (GPU via LAN)
-- [x] 2 nuovi provider dashboard: PC Coder (qwen2.5-coder:14b) e PC Deep (deepseek-r1:8b)
-- [x] Config esterna `~/.nanobot/ollama_pc.json` (host, port, modelli)
-- [x] Backend streaming parametrizzato `chat_with_ollama_pc_stream()`
-- [x] Provider dropdown esteso a 5 opzioni con dot colorati
-- [x] Ollama Windows con `OLLAMA_HOST=0.0.0.0` per LAN
-
-### Nanobot Discord
-- [x] Default model: DeepSeek V3 via OpenRouter (economico, performante)
-- [x] Script `ollama_pc_helper.py` per delegare a GPU Windows
-- [x] Prefissi routing da Discord: `@pc`, `@deep`, `@status`
-- [x] SOUL.md rinnovato: self-knowledge, assertivita, routing prefissi
-- [x] USER.md: info famiglia (Alessio, compleanno 22 ottobre)
-
-### Google Helper
-- [x] `calendar search "termine"` — cerca eventi per nome nell'anno
-- [x] `calendar month N` — eventi di un mese specifico
-
-### Dashboard
-- [x] Bottone Power Off con modale conferma + handler `shutdown`
-- [x] Fix widget Memoria: MEMORY.md e HISTORY.md creati post-migrazione
-
-## Fase 9 — Hardening e qualità ✅ COMPLETATA (2026-02-20)
-> Criticità e miglioramenti identificati dall'autoanalisi del codebase via Remote Code.
-
-### Sicurezza (priorità alta)
-- [x] Fix XSS: `esc()` centralizzata per `renderLogs()`, `updateSessions()`, `renderClaudeTasks()`, `renderBriefing()`, `renderTokens()`, `renderCrypto()`
-- [x] Hardening PIN: da SHA-256 puro a `pbkdf2_hmac` con salt random (600k iter, auto-migrazione)
-- [x] Streaming per chat Anthropic cloud (parità con Ollama)
-- [x] Chat history cloud multi-turno (come già fatto per Ollama)
-- [x] Terzo provider: DeepSeek V3 via OpenRouter (ModelRun, 43 tok/s, ~$0.0002/msg)
-- [x] PIN semplificato: 4 cifre, auto-submit, pulsante SBLOCCA
-
-## Fase 10 — Robustezza e polish ✅ COMPLETATA (2026-02-21)
-> Punti convergenti tra autoanalisi Claude Code (Fase 9) e DeepSeek V3 via Ralph.
-> Due LLM indipendenti hanno analizzato il codebase e concordano su queste priorità.
-
-### P0 — Quick wins ✅ COMPLETATI
-- [x] `stats_broadcaster()`: wrappare `get_pi_stats()` e `get_tmux_sessions()` in `await bg()`
-- [x] Spostare `TASK_TIMEOUT = 300` prima del suo primo uso
-- [x] Import `datetime` al top-level
-
-### Stabilità e Build (2026-02-22) ✅ COMPLETATA
-- [x] Fix UnicodeEncodeError (FastAPI 500 Error): corretto il builder `build.py` utilizzando `json.dumps(..., ensure_ascii=False)` così che le emoji mantengano la formattazione UTF-8 cruda invece di surrogati UTF-16.
-- [x] Fix JS Injection: racchiuso correttamente il blocco JS iniettato dentro i tag `<script>`, prevenendo Syntax Errors e rotture del grid CSS dovuti al codice raw renderizzato nel browser come DOM nodes.
-- [x] Refactor `build.py`: rimosso l'uso di f-string a favore di JSON, prevenendo gli errori di parsing originati dalle graffe `{ }` mischiate nel CSS/JS.
-- [x] Recovery source: recupero file frontend troncati dai processi in memoria (porta 8091)
-- [x] Fix `.bashrc` Pi: rimosso errore di sintassi "unexpected token '('" dovuto a export PATH corrotto
-
-### UX Fruibilità ✅ COMPLETATA (2026-02-21)
-- [x] Infrastruttura copia: `copyToClipboard()` con fallback, CSS `.copy-btn`/`.copy-wrap`
-- [x] Bottone 📋 copia su messaggi chat bot (hover desktop, visibile su mobile)
-- [x] Chat espandibile ⤢: toggle 260px ↔ calc(100vh - 200px) con transizione
-- [x] Chat fullscreen ⛶: overlay dedicato z-index 250 con DOM relocation (zero duplicazione JS)
-- [x] Remote Code output: max-height da 300px a 500px + header con Copia/Espandi
-- [x] Remote Code fullscreen: modale output espandibile a 90vh
-- [x] Bottoni 📋 copia su Briefing, Log, Token, Memoria
-- [x] Escape key chiude overlay chat e output
-
-### UX Redesign Mobile-First ✅ COMPLETATA (2026-02-21)
-> Dashboard trasformata da desktop-first a mobile-first app layout con 3 zone.
-- [x] Status bar compatta: logo + health + stats inline, espandibile in dashboard completa
-- [x] Chat area flex:1: occupa tutto lo spazio disponibile (no più 260px fissi)
-- [x] Tab bar bottom: 7 icone monochrome Unicode (▤ ₿ ¤ ≡ ◇ >_ ◎) con drawer/panel
-- [x] Desktop two-column: chat + widget panel laterale 380px (>=768px)
-- [x] Drawer bottom sheet (mobile): swipe-down to close, overlay, handle
-- [x] Model buttons leggibili: "☁ Cloud", "⌂ Local", "⚡ Deep" con label testuali
-- [x] Status bar affordance: bordo, toggle ▼ 14px, label "STATS", .expanded
-- [x] Tab toggle: stesso tab chiude il pannello + dot indicator attivo
-- [x] PWA fix: tab bar height calc() per safe-area-inset-bottom con border-box
-- [x] Login PIN ingrandita: box 380px, bottoni 24px/58px, anti-resize iOS
-
-### P1 — Sicurezza e robustezza
-- [x] Cap chat history per connessione (es. max 100 messaggi, trim a 60) — previene memory leak su sessioni PWA lunghe
-- [x] Limite connessioni WebSocket in `Manager.connect()` (es. max 10) — protezione DoS base
-- [x] Audit `run()` shell=True: verificare che nessuna variabile utente entri nei comandi
-- [x] Cookie di sessione: aggiungere flag `secure=True` condizionale (se HTTPS)
-
-### P2 — Performance e UX
-- [x] Persistenza sessioni su file (`~/.nanobot/sessions.json`) — no ri-login dopo deploy
-- [x] Parallelizzare `get_pi_stats()`: 5 subprocess via `asyncio.gather` + `bg()` invece di sequenziali
-- [x] `/api/health` endpoint: status aggregato di tutti i servizi (Ollama, bridge, Pi)
-- [x] Auto-refresh widget on-demand configurabile (crypto ogni 5min, token ogni 10min)
-
-### P3 — Refactoring (convergenti tra i due report)
-- [x] Fattorizzare le 3 funzioni di chat streaming in `_stream_chat()` generica (~300 righe → ~120)
-- [x] Dispatch dict per WebSocket handler (sostituire if/elif 20+ branch)
-- [x] Unificare `_get_nanobot_config()` e `_get_bridge_config()` in `_get_config()` cached
-- [x] Unificare `_rate_limit()` e `_check_auth_rate()` in un unico pattern
-- [x] Separare cleanup dal broadcaster in funzione dedicata `_cleanup_expired()`
-
-### P4 — Nuove feature
-- [x] Notifiche push (Web Push API) per briefing, alert temperatura, task completato
-- [x] Export dati: endpoint ZIP scaricabile (MEMORY, HISTORY, cron, token stats, claude tasks)
-- [x] Temi alternativi (amber-on-black, blue-on-dark) con switch + localStorage
-
-### Visione futura
-- [ ] Sistema plugin/widget esterni da `~/.nanobot/widgets/`
-- [ ] Dashboard multi-host (monitoraggio altri device LAN)
-- [x] Provider chat astratto (`ChatProvider` con strategy pattern per provider)
-- [ ] HTTPS locale con self-signed cert (opzionale)
-
-## Fase 11 — Rifondazione Architettonica (Progetto 0) ✅ COMPLETATA (2026-02-21)
-> Abbandono dello sviluppo "monolitico" per un approccio a componenti isolati, generando alla fine sempre un singolo file `nanobot_dashboard_v2.py`.
-
-### Scomposizione e Build
-- [x] Inizializzazione Ambiente e Script di Build (`build.py`) dedicato
-- [x] Scomposizione Frontend: estrazione in `src/frontend/` (css, js, html separati)
-- [x] Smembramento Backend: astrazione WebSocket e route FastAPI in `src/backend/`
-- [x] Eliminazione completa di hardcodings, commenti residui e "pezze" storiche
-- [x] Implementazione ChatProvider Strategy Pattern (Anthropic, OpenRouter, Ollama, OllamaPC)
-
-## Fase 12 — UI Dashboard Mobile e Desktop ✅ COMPLETATA (2026-02-22)
-> Ottimizzazione estrema del layout per ogni dispositivo.
-- [x] Ristrutturazione Home View: 4 stats cards prominenti (CPU/RAM/Temp/Uptime)
-- [x] Ottimizzazione Mobile: CSS Grid 2x2 per le stats cards, zero overflow orizzontale
-- [x] Rifinitura Desktop: media query `>=1024px` con sidebar sinistra fissa + dashboard a griglia
-- [x] Touch improvements: hitbox pulsanti Tmux e controlli migliorate per iOS
+- Nanobot aggiornamento versione (attuale 0.1.4 — monitorare release)
+- Sistema plugin/widget esterni da `~/.nanobot/widgets/`
+- Dashboard multi-host (monitoraggio altri device LAN)
+- HTTPS locale con self-signed cert
+- ElevenLabs TTS: Vessel risponde con voce realistica
+- iOS & Android companion app nativa
+- Agent Swarms: più agenti specializzati che collaborano
+- ESP32/MicroPi: heartbeat hardware fisico
 
 ---
 
 ## Note tecniche
-- Lo sviluppo ora avviene nei frammenti in `src/`.
-- Il comando `python build.py` genera il target **single-file Python** (`nanobot_dashboard_v2.py`)
-- **Safety**: `build.py` non usa f-strings per i template per evitare errori di collisione con le parentesi graffe di JS/CSS.
-- Ogni feature nuova viene compilata, testata su 8096, poi deployata su 8090
-- Widget pesanti (crypto, briefing, token) sono sempre **on-demand** con placeholder
-- Il Pi ha 8GB RAM e disco da 91GB — risorse abbondanti per tutto questo
-- Google Workspace integrato via script helper (`~/scripts/google_helper.py`) — NO MCP server
-- PC Windows: AMD Ryzen 5 5600X, 16GB RAM, RTX 3060 12GB — Ollama supervisor per Ralph Loop + provider LAN
-- Ollama PC modelli: qwen2.5-coder:14b (coding, ~9GB) + deepseek-r1:8b (reasoning, ~5GB)
-- Ralph Loop: Claude Code + Ollama eseguono sequenzialmente (non in parallelo) per evitare contesa VRAM
-- Nanobot Discord default: DeepSeek V3 via OpenRouter (LiteLLM routing, ~$0.0002/msg)
-- **Doppia autoanalisi** (2026-02-21): Claude Code + DeepSeek V3 hanno analizzato indipendentemente il codebase. I punti convergenti formano la Fase 10
-- Report salvati: `analysis-report.md` (Claude Code) + report DeepSeek inline nel CHANGELOG
+
+- **Build workflow**: modificare in `src/` → `python build.py` → `nanobot_dashboard_v2.py`
+- **`nanobot_dashboard_v2.py` è un ARTEFATTO** — mai editare direttamente
+- `build.py` usa JSON (non f-string) per evitare collisioni con graffe JS/CSS
+- Test su porta 8091, deploy su porta 8090
+- Widget pesanti (crypto, briefing, token) sempre **on-demand** con placeholder
+- Google Workspace: via `~/scripts/google_helper.py` (exec) — NO MCP server (25k token/chiamata)
+- Ralph Loop: Claude Code + Ollama sequenziali (non paralleli) per evitare contesa VRAM
+- Costi Discord: DeepSeek V3 via OpenRouter, ~$0.004/scambio, SOUL.md ~11k token dominano
+- **Bridge config**: `~/.nanobot/bridge.json` primario; fallback `config.json → bridge`
+- **Regola provider LAN**: PC Coder solo per codegen con contesto esplicito; PC Deep per ragionamento ma con max_tokens
+- Pi ottimizzato: ZRAM 4GB zstd, swap SSD 8GB, swappiness=10, gpu_mem=16, governor=performance
+- Benchmark Ollama Pi: gemma3:4b → 3.85 tok/s eval, 8.69 tok/s prompt (condizioni canoniche)

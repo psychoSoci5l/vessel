@@ -547,10 +547,11 @@ def log_claude_task(prompt: str, status: str, exit_code: int = 0,
     with open(CLAUDE_TASKS_LOG, "a", encoding="utf-8") as f:
         f.write(entry + "\n")
 
-async def run_claude_task_stream(websocket: WebSocket, prompt: str):
+async def run_claude_task_stream(websocket: WebSocket, prompt: str, use_loop: bool = False):
     """Esegue un task via Claude Bridge con streaming output via WS."""
     queue: asyncio.Queue = asyncio.Queue()
     start_time = time.time()
+    endpoint = "/run-loop" if use_loop else "/run"
 
     def _bridge_worker():
         try:
@@ -566,7 +567,7 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str):
                 "prompt": prompt,
                 "token": CLAUDE_BRIDGE_TOKEN,
             })
-            conn.request("POST", "/run-loop", body=payload,
+            conn.request("POST", endpoint, body=payload,
                          headers={"Content-Type": "application/json"})
             resp = conn.getresponse()
             if resp.status != 200:

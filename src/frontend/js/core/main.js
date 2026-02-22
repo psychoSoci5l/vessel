@@ -63,6 +63,7 @@ let ws = null;
     else if (msg.type === 'reboot_ack') { startRebootWait(); }
     else if (msg.type === 'shutdown_ack') { document.getElementById('reboot-overlay').classList.add('show'); document.getElementById('reboot-status').textContent = 'Il Pi si sta spegnendo…'; document.querySelector('.reboot-text').textContent = 'Spegnimento in corso…'; }
     else if (msg.type === 'claude_thinking') {
+      _claudeLineBuf = '';
       const wrap = document.getElementById('claude-output-wrap');
       if (wrap) wrap.style.display = 'block';
       const out = document.getElementById('claude-output');
@@ -70,7 +71,7 @@ let ws = null;
     }
     else if (msg.type === 'claude_chunk') {
       const out = document.getElementById('claude-output');
-      if (out) { out.appendChild(document.createTextNode(msg.text)); out.scrollTop = out.scrollHeight; }
+      if (out) { appendClaudeChunk(out, msg.text); out.scrollTop = out.scrollHeight; }
     }
     else if (msg.type === 'claude_iteration') {
       const out = document.getElementById('claude-output');
@@ -450,14 +451,19 @@ let ws = null;
     // Show overlay + enable two-column on desktop
     document.getElementById('drawer-overlay').classList.add('show');
     document.querySelector('.app-content').classList.add('has-drawer');
+    // Drawer wide solo per Remote Code
+    const dOverlay = document.getElementById('drawer-overlay');
+    if (widgetId === 'claude') dOverlay.classList.add('drawer-wide');
+    else dOverlay.classList.remove('drawer-wide');
     // Tab bar highlight
     document.querySelectorAll('.tab-bar-btn').forEach(b =>
       b.classList.toggle('active', b.dataset.widget === widgetId));
     activeDrawer = widgetId;
   }
   function closeDrawer() {
-    document.getElementById('drawer-overlay').classList.remove('show');
+    document.getElementById('drawer-overlay').classList.remove('show', 'drawer-wide');
     document.querySelector('.app-content').classList.remove('has-drawer');
+    document.getElementById('drawer-overlay').classList.remove('drawer-wide');
     document.querySelectorAll('.tab-bar-btn').forEach(b => b.classList.remove('active'));
     activeDrawer = null;
   }
@@ -690,11 +696,26 @@ let ws = null;
 
   // ── Remote Code ──
   let claudeRunning = false;
+  const promptTemplates = [
+    { label: '— Template —', value: '' },
+    { label: 'Build + Deploy', value: 'Esegui build.py nella cartella Pi Nanobot, copia il file generato sul Pi via SCP e riavvia il servizio in tmux.' },
+    { label: 'Fix bug', value: 'Analizza il seguente errore e correggi il codice sorgente in src/:\n\n' },
+    { label: 'Git status + diff', value: 'Mostra git status e git diff nella cartella Pi Nanobot. Non fare commit, solo mostra lo stato.' },
+    { label: 'Test dashboard', value: 'Verifica che la dashboard Vessel risponda correttamente: curl http://picoclaw.local:8090/ e riporta il risultato.' },
+    { label: 'Log Pi', value: 'Connettiti via SSH a picoclaw.local e mostra le ultime 50 righe del log del gateway nanobot: tail -50 ~/.nanobot/gateway.log' },
+  ];
 
   function loadBridge(btn) {
     if (btn) btn.textContent = '...';
     send({ action: 'check_bridge' });
     send({ action: 'get_claude_tasks' });
+  }
+
+  function applyTemplate(sel) {
+    if (!sel.value) return;
+    const ta = document.getElementById('claude-prompt');
+    if (ta) { ta.value = sel.value; ta.focus(); }
+    sel.selectedIndex = 0;
   }
 
   function runClaudeTask() {
@@ -709,7 +730,8 @@ let ws = null;
     if (wrap) wrap.style.display = 'block';
     const out = document.getElementById('claude-output');
     if (out) out.innerHTML = '';
-    send({ action: 'claude_task', prompt: prompt });
+    const useLoop = document.getElementById('ralph-toggle')?.checked || false;
+    send({ action: 'claude_task', prompt: prompt, use_loop: useLoop });
   }
 
   function cancelClaudeTask() {
@@ -749,18 +771,26 @@ let ws = null;
   function renderClaudeUI(isOnline) {
     const body = document.getElementById('claude-body');
     if (!body) return;
+    const opts = promptTemplates.map(t => `<option value="${t.value.replace(/"/g,'&quot;')}">${t.label}</option>`).join('');
     body.innerHTML = `
       <div style="margin-bottom:10px;">
+        <select onchange="applyTemplate(this)" style="width:100%;margin-bottom:6px;background:var(--bg2);
+          border:1px solid var(--border);border-radius:4px;color:var(--text2);padding:6px 8px;
+          font-family:var(--font);font-size:11px;outline:none;cursor:pointer;">${opts}</select>
         <textarea id="claude-prompt" rows="3" placeholder="Descrivi il task per Claude Code..." tabindex="-1"
           style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;
           color:var(--green);padding:9px 12px;font-family:var(--font);font-size:13px;
           outline:none;resize:vertical;caret-color:var(--green);min-height:60px;box-sizing:border-box;"></textarea>
-        <div style="display:flex;gap:6px;margin-top:6px;">
+        <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
           <button class="btn-green" id="claude-run-btn" onclick="runClaudeTask()"
             ${!isOnline ? 'disabled title="Bridge offline"' : ''}>▶ Esegui</button>
           <button class="btn-red" id="claude-cancel-btn" onclick="cancelClaudeTask()"
             style="display:none;">■ Stop</button>
-          <button class="btn-ghost" onclick="loadBridge()">↻ Stato</button>
+          <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-left:auto;cursor:pointer;">
+            <input type="checkbox" id="ralph-toggle" style="accent-color:var(--green);cursor:pointer;">
+            Ralph Loop
+          </label>
+          <button class="btn-ghost" onclick="loadBridge()">↻</button>
         </div>
       </div>
       <div id="claude-output-wrap" style="display:none;margin-bottom:10px;">
@@ -907,6 +937,35 @@ let ws = null;
   }
 
   // ── Remote Code output helpers ──
+  let _claudeLineBuf = '';
+  const _toolPattern = /^[⏺●▶►•]\s*(Read|Edit|Write|Bash|Glob|Grep|Task|Search|WebFetch|WebSearch|NotebookEdit)\b/;
+  const _toolStartPattern = /^[⏺●▶►•]\s/;
+
+  function appendClaudeChunk(out, text) {
+    _claudeLineBuf += text;
+    const lines = _claudeLineBuf.split('\n');
+    _claudeLineBuf = lines.pop();
+    for (const line of lines) {
+      if (_toolPattern.test(line)) {
+        const el = document.createElement('div');
+        el.className = 'claude-tool-use';
+        el.textContent = line;
+        out.appendChild(el);
+      } else if (_toolStartPattern.test(line) && line.length < 200) {
+        const el = document.createElement('div');
+        el.className = 'claude-tool-info';
+        el.textContent = line;
+        out.appendChild(el);
+      } else {
+        out.appendChild(document.createTextNode(line + '\n'));
+      }
+    }
+    if (_claudeLineBuf) {
+      out.appendChild(document.createTextNode(_claudeLineBuf));
+      _claudeLineBuf = '';
+    }
+  }
+
   function copyClaudeOutput() {
     const out = document.getElementById('claude-output');
     if (out) copyToClipboard(out.textContent);

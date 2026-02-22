@@ -57,6 +57,7 @@ OLLAMA_PC_TIMEOUT = 60  # GPU è veloce
 _pc_models = _pc_cfg.get("models", {})
 OLLAMA_PC_CODER_MODEL = _pc_models.get("coder", "qwen2.5-coder:14b")
 OLLAMA_PC_DEEP_MODEL = _pc_models.get("deep", "deepseek-r1:8b")
+OLLAMA_PC_NUM_PREDICT = _pc_cfg.get("num_predict", 2048)  # limita generazione (anti-loop)
 OLLAMA_PC_CODER_SYSTEM = (
     "Sei Vessel, assistente personale di psychoSocial (Filippo). "
     "Giri su un PC Windows con GPU NVIDIA RTX 3060. Rispondi in italiano, breve e diretto. "
@@ -93,7 +94,7 @@ if not _bridge_cfg:
 CLAUDE_BRIDGE_URL = os.environ.get("CLAUDE_BRIDGE_URL", _bridge_cfg.get("url", "http://localhost:8095"))
 CLAUDE_BRIDGE_TOKEN = os.environ.get("CLAUDE_BRIDGE_TOKEN", _bridge_cfg.get("token", ""))
 CLAUDE_TASKS_LOG = Path.home() / ".nanobot" / "claude_tasks.jsonl"
-TASK_TIMEOUT = 300  # 5 min max per task Claude Bridge
+TASK_TIMEOUT = 600  # 10 min max per task Claude Bridge
 
 # ─── OpenRouter (DeepSeek V3) ────────────────────────────────────────────────
 _or_cfg = _get_config("openrouter.json")

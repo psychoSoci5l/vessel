@@ -5,6 +5,38 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-22] Fase 13 — Fix & Consolidamento
+
+> Audit sistematico del sistema reale. 5 blocchi completati in una sessione.
+
+### Blocco A — Bridge & Cron
+- **bridge.json creato** su Pi (`~/.nanobot/bridge.json`): URL + token, chmod 600 — era vuoto `{}`
+- **Cron briefing** da `30 7` a `0 7` (7:00 preciso)
+- TASK_TIMEOUT 600s e drawer-wide 700px già in staging, build + deploy
+
+### Blocco B — Anti-loop Ollama
+- **`num_predict: 2048`** per OllamaPCProvider (anti-loop GPU su qwen/deepseek)
+- **`num_predict: 1024`** per OllamaProvider (Pi locale)
+- Config esterna: `ollama_pc.json` → `"num_predict": 2048` (configurabile)
+
+### Blocco C — SOUL.md & Gateway Logging
+- **SOUL.md**: sezione "Regole exec() — OBBLIGATORIE" (5 regole per prevenire allucinazioni DeepSeek V3)
+- **Gateway logging persistente**: nanobot gateway riavviato con `tee -a ~/.nanobot/gateway.log`
+
+### Blocco D — Remote Code UX
+- **Prompt template dropdown**: 5 template predefiniti (Build+Deploy, Fix bug, Git status, Test dashboard, Log Pi)
+- **Ralph Loop toggle**: checkbox on/off nella UI, endpoint `/run` (default) vs `/run-loop`
+- **Tool use highlighting**: pattern detection per tool Claude Code, styling cyan con bordo sinistro
+- **start_bridge.bat**: script autostart per bridge Windows, copiato in shell:startup
+
+### Blocco E — AI Monitor
+- **`ai_monitor.py`** creato e deployato su Pi: digest giornaliero AI news su Discord
+  - Fonti: HN filtro AI (8 articoli), r/LocalLLaMA (5 hot), Ollama GitHub releases (ultimi 7gg), nanobot PyPI version check
+  - Output: Discord webhook, log JSONL
+  - Cron: `30 6 * * *` (6:30, 30min prima del briefing)
+
+---
+
 ## [2026-02-22] Pi System Optimizations & Performance Benchmarking
 
 ### Ottimizzazioni OS Raspberry Pi 5

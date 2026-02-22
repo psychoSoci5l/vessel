@@ -63,7 +63,8 @@ class OllamaPCProvider(BaseChatProvider):
         self.headers = {"Content-Type": "application/json"}
         self.payload = json.dumps({
             "model": self.model, "messages": [{"role": "system", "content": self.system_prompt}] + self.history,
-            "stream": True, "keep_alive": "60m"
+            "stream": True, "keep_alive": "60m",
+            "options": {"num_predict": OLLAMA_PC_NUM_PREDICT}
         })
 
 class OllamaProvider(BaseChatProvider):
@@ -73,7 +74,8 @@ class OllamaProvider(BaseChatProvider):
         self.headers = {"Content-Type": "application/json"}
         self.payload = json.dumps({
             "model": self.model, "messages": [{"role": "system", "content": self.system_prompt}] + self.history,
-            "stream": True, "keep_alive": OLLAMA_KEEP_ALIVE
+            "stream": True, "keep_alive": OLLAMA_KEEP_ALIVE,
+            "options": {"num_predict": 1024}
         })
         self.timeout = OLLAMA_TIMEOUT
 

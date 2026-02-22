@@ -156,6 +156,7 @@ async def handle_shutdown(websocket, msg, ctx):
 
 async def handle_claude_task(websocket, msg, ctx):
     prompt = msg.get("prompt", "").strip()[:10000]
+    use_loop = msg.get("use_loop", False)
     if not prompt:
         await websocket.send_json({"type": "toast", "text": "⚠️ Prompt vuoto"})
         return
@@ -167,7 +168,7 @@ async def handle_claude_task(websocket, msg, ctx):
         await websocket.send_json({"type": "toast", "text": "⚠️ Limite task raggiunto (max 5/ora)"})
         return
     await websocket.send_json({"type": "claude_thinking"})
-    await run_claude_task_stream(websocket, prompt)
+    await run_claude_task_stream(websocket, prompt, use_loop=use_loop)
 
 async def handle_claude_cancel(websocket, msg, ctx):
     try:
