@@ -56,14 +56,39 @@ async def _handle_telegram_message(text: str):
             "  @local - Gemma3 Pi locale\n\n"
             "Comandi:\n"
             "  /status - stats Pi\n"
+            "  /voice <msg> - risposta vocale\n"
             "  /help - questo messaggio"
         )
         telegram_send(reply)
         return
 
+    # /voice <messaggio> → risposta testo + vocale
+    send_voice = False
+    if low.startswith("/voice "):
+        text = text[7:].strip()
+        send_voice = True
+    elif low == "/voice":
+        telegram_send("Uso: /voice <messaggio>")
+        return
+
     history = _tg_history(provider_id)
-    reply = await _chat_response(text, history, provider_id, system, model, channel="telegram")
-    telegram_send(reply)
+    if send_voice:
+        voice_prefix = (
+            "[L'utente ha richiesto risposta vocale — rispondi in modo conciso e naturale, "
+            "come in una conversazione parlata. Niente emoji, asterischi, elenchi, "
+            "formattazione markdown o roleplay. Max 2-3 frasi.] "
+        )
+        reply = await _chat_response(voice_prefix + text, history, provider_id, system, model, channel="telegram")
+        telegram_send(reply)
+        loop = asyncio.get_running_loop()
+        def _tts_send():
+            ogg = text_to_voice(reply)
+            if ogg:
+                telegram_send_voice(ogg)
+        loop.run_in_executor(None, _tts_send)
+    else:
+        reply = await _chat_response(text, history, provider_id, system, model, channel="telegram")
+        telegram_send(reply)
 
 VOICE_MAX_DURATION = 180  # max 3 minuti per vocale (evita muri di testo)
 

@@ -258,6 +258,8 @@
 - [x] Voce: `it-IT-DiegoNeural` (mascolina, naturale), config `TTS_VOICE` + `TTS_MAX_CHARS`
 - [x] **Stile vocale**: prefisso istruisce LLM per risposte concise, naturali, senza emoji/markdown
   - Pipeline completa: vocale → STT → LLM (stile parlato) → testo + TTS → vocale di ritorno
+- [x] **Comando `/voice`**: `/voice <msg>` da testo → risponde con testo + vocale (stile conversazione parlata)
+  - Aggiunto a `/help`, gestione `/voice` senza argomenti
 
 ---
 
