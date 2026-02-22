@@ -7,28 +7,20 @@ def _tg_history(provider_id: str) -> list:
         _tg_histories[provider_id] = db_load_chat_history(provider_id, channel="telegram")
     return _tg_histories[provider_id]
 
-async def _handle_telegram_message(text: str):
-    """Routing prefissi e risposta via Telegram."""
-    provider_id = "openrouter"   # default Telegram: OpenRouter (come Discord)
-    system      = OLLAMA_SYSTEM
-    model       = OPENROUTER_MODEL
-
+def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
+    """Risolve prefisso provider dal testo Telegram. Ritorna (provider_id, system, model, clean_text)."""
     low = text.lower()
     if low.startswith("@coder ") or low.startswith("@pc "):
-        provider_id = "ollama_pc_coder"
-        system      = OLLAMA_PC_CODER_SYSTEM
-        model       = OLLAMA_PC_CODER_MODEL
-        text        = text.split(" ", 1)[1]
-    elif low.startswith("@deep "):
-        provider_id = "ollama_pc_deep"
-        system      = OLLAMA_PC_DEEP_SYSTEM
-        model       = OLLAMA_PC_DEEP_MODEL
-        text        = text.split(" ", 1)[1]
-    elif low.startswith("@local "):
-        provider_id = "ollama"
-        system      = OLLAMA_SYSTEM
-        model       = OLLAMA_MODEL
-        text        = text.split(" ", 1)[1]
+        return "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL, text.split(" ", 1)[1]
+    if low.startswith("@deep "):
+        return "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL, text.split(" ", 1)[1]
+    if low.startswith("@local "):
+        return "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, text.split(" ", 1)[1]
+    return "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, text
+
+async def _handle_telegram_message(text: str):
+    """Routing prefissi e risposta via Telegram."""
+    provider_id, system, model, text = _resolve_telegram_provider(text)
 
     # Comandi speciali
     if text.strip() == "/status":
@@ -121,26 +113,7 @@ async def _handle_telegram_voice(voice: dict):
     # 3) Rispondi con testo + vocale
     print(f"[Telegram] Vocale trascritto ({duration}s): {text[:80]}...")
 
-    # Routing provider (riusa logica standard)
-    provider_id = "openrouter"
-    system = OLLAMA_SYSTEM
-    model = OPENROUTER_MODEL
-    low = text.lower()
-    if low.startswith("@coder ") or low.startswith("@pc "):
-        provider_id = "ollama_pc_coder"
-        system = OLLAMA_PC_CODER_SYSTEM
-        model = OLLAMA_PC_CODER_MODEL
-        text = text.split(" ", 1)[1]
-    elif low.startswith("@deep "):
-        provider_id = "ollama_pc_deep"
-        system = OLLAMA_PC_DEEP_SYSTEM
-        model = OLLAMA_PC_DEEP_MODEL
-        text = text.split(" ", 1)[1]
-    elif low.startswith("@local "):
-        provider_id = "ollama"
-        system = OLLAMA_SYSTEM
-        model = OLLAMA_MODEL
-        text = text.split(" ", 1)[1]
+    provider_id, system, model, text = _resolve_telegram_provider(text)
 
     voice_prefix = (
         "[Messaggio vocale trascritto — rispondi in modo conciso e naturale, "

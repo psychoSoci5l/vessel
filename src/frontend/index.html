@@ -64,8 +64,17 @@
               </div>
             </div>
             <div class="home-card">
+              <div class="hc-label">Disco</div>
+              <div class="hc-value" id="hc-disk-val">--</div>
+              <div class="hc-sub" id="hc-disk-sub"></div>
+              <div class="hc-bar">
+                <div class="hc-bar-fill" id="hc-disk-bar"></div>
+              </div>
+            </div>
+            <div class="home-card">
               <div class="hc-label">Uptime</div>
               <div class="hc-value" id="hc-uptime-val" style="font-size:16px;">--</div>
+              <div class="hc-sub" id="hc-sessions-sub" style="color:var(--muted);font-size:10px;"></div>
             </div>
           </div>
 
@@ -104,7 +113,7 @@
                 <div class="stat-label">RAM</div>
                 <div class="stat-value" id="stat-mem">—</div>
               </div>
-              <div class="stat-item desktop-full">
+              <div class="stat-item desktop-hide">
                 <div class="stat-label">Disco</div>
                 <div class="stat-value" id="stat-disk">—</div>
               </div>
@@ -113,6 +122,22 @@
                 <div class="stat-value" id="stat-uptime">—</div>
               </div>
             </div>
+            <!-- Crypto live -->
+            <div id="home-crypto" style="margin-top:10px;">
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Crypto</div>
+              <div id="home-crypto-data" style="display:flex;gap:12px;font-size:13px;">
+                <span style="color:var(--amber);">₿ <span id="home-btc-price">--</span></span>
+                <span style="color:var(--cyan);">Ξ <span id="home-eth-price">--</span></span>
+              </div>
+            </div>
+            <!-- Meteo live -->
+            <div id="home-weather" style="margin-top:10px;">
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Meteo</div>
+              <div id="home-weather-data" style="font-size:13px;color:var(--text2);">
+                <span id="home-weather-text">--</span>
+              </div>
+            </div>
+            <!-- Sessioni tmux -->
             <div style="margin-top:10px;">
               <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
                 <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Sessioni
@@ -292,8 +317,6 @@
     <nav class="tab-bar">
       <button class="tab-bar-btn" data-widget="briefing"
         onclick="openDrawer('briefing')"><span>&#x25A4;</span><span>Brief</span></button>
-      <button class="tab-bar-btn" data-widget="crypto"
-        onclick="openDrawer('crypto')"><span>&#x20BF;</span><span>Crypto</span></button>
       <button class="tab-bar-btn" data-widget="tokens"
         onclick="openDrawer('tokens')"><span>&#x00A4;</span><span>Token</span></button>
       <button class="tab-bar-btn" data-widget="logs"
@@ -339,8 +362,6 @@
     <div class="reboot-text">Riavvio in corso…</div>
     <div class="reboot-status" id="reboot-status">In attesa che il Pi torni online</div>
   </div>
-
-  <!-- (chat-fs-overlay rimosso — chat-view è la nuova modalità fullscreen) -->
 
   <!-- Overlay output fullscreen -->
   <div class="modal-overlay" id="output-fullscreen" onclick="closeOutputFullscreen()">

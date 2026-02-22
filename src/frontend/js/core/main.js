@@ -11,6 +11,11 @@ let ws = null;
         if (el) el.classList.add('on');
       });
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+      // Auto-fetch dati live per home
+      setTimeout(() => {
+        send({ action: 'get_crypto' });
+        send({ action: 'plugin_weather' });
+      }, 500);
     };
     ws.onclose = (e) => {
       ['home-conn-dot', 'chat-conn-dot'].forEach(id => {
@@ -126,6 +131,18 @@ let ws = null;
     else if (msg.type && msg.type.startsWith('plugin_')) {
       const hName = 'pluginRender_' + msg.type.replace('plugin_', '');
       if (window[hName]) { try { window[hName](msg); } catch(e) { console.error('[Plugin] render:', e); } }
+      // Popola home meteo da plugin weather
+      if (msg.type === 'plugin_weather' && msg.data) {
+        const hw = document.getElementById('home-weather-text');
+        if (hw) {
+          const d = msg.data;
+          const parts = [];
+          if (d.city) parts.push(d.city);
+          if (d.temp != null) parts.push(d.temp + '°C');
+          if (d.condition) parts.push(d.condition);
+          hw.textContent = parts.join(' · ') || '--';
+        }
+      }
     }
   }
 
@@ -167,6 +184,18 @@ let ws = null;
       const tPct = Math.min(100, (tempC / 85) * 100);
       tempBar.style.width = tPct + '%';
       tempBar.style.background = tempC > 70 ? 'var(--red)' : tempC > 55 ? 'var(--amber)' : 'var(--amber)';
+    }
+
+    // ── Disk card ──
+    const diskPct = pi.disk_pct || 0;
+    const hcDisk = document.getElementById('hc-disk-val');
+    if (hcDisk) hcDisk.textContent = diskPct + '%';
+    const hcDiskSub = document.getElementById('hc-disk-sub');
+    if (hcDiskSub) hcDiskSub.textContent = pi.disk || '';
+    const diskBar = document.getElementById('hc-disk-bar');
+    if (diskBar) {
+      diskBar.style.width = diskPct + '%';
+      diskBar.style.background = diskPct > 85 ? 'var(--red)' : diskPct > 70 ? 'var(--amber)' : 'var(--green)';
     }
 
     // ── Stats detail (sezione servizi) ──
@@ -234,14 +263,18 @@ let ws = null;
 
   function updateSessions(sessions) {
     const el = document.getElementById('session-list');
+    const countEl = document.getElementById('hc-sessions-sub');
     if (!sessions || !sessions.length) {
-      el.innerHTML = '<div class="no-items">// nessuna sessione attiva</div>'; return;
+      el.innerHTML = '<div class="no-items">// nessuna sessione attiva</div>';
+      if (countEl) countEl.textContent = '0 sessioni';
+      return;
     }
     el.innerHTML = sessions.map(s => `
       <div class="session-item">
         <div class="session-name"><div class="session-dot"></div><code>${esc(s.name)}</code></div>
         <button class="btn-red" onclick="killSession('${esc(s.name)}')">✕ Kill</button>
       </div>`).join('');
+    if (countEl) countEl.textContent = sessions.length + ' session' + (sessions.length !== 1 ? 'i' : 'e');
   }
 
   // ── Vista corrente + Chat ──
@@ -443,8 +476,6 @@ let ws = null;
     send({ action: 'clear_chat' });
   }
 
-  /* toggleStatusDetail e updateStatusBar rimossi — home cards aggiornate da updateStats */
-
   // ── Drawer (bottom sheet) ──
   let activeDrawer = null;
   const DRAWER_CFG = {
@@ -570,6 +601,11 @@ let ws = null;
     }
     el.innerHTML = coinRow('₿', 'Bitcoin', data.btc) + coinRow('Ξ', 'Ethereum', data.eth) +
       '<div style="margin-top:4px;"><button class="btn-ghost" onclick="loadCrypto()">↻ Aggiorna</button></div>';
+    // Popola anche home crypto compatto
+    const hBtc = document.getElementById('home-btc-price');
+    if (hBtc && data.btc) hBtc.textContent = '$' + data.btc.usd.toLocaleString();
+    const hEth = document.getElementById('home-eth-price');
+    if (hEth && data.eth) hEth.textContent = '$' + data.eth.usd.toLocaleString();
   }
 
   function renderBriefing(data) {
@@ -1122,15 +1158,18 @@ let ws = null;
           dw.innerHTML = '<div id="plugin-' + p.id + '-body"><div class="widget-placeholder"><span class="ph-icon">' + p.icon + '</span><span>Premi Carica per ' + p.title + '</span></div></div>';
           body.appendChild(dw);
         }
-        // Aggiungi tab bar button
-        const tabBar = document.querySelector('.tab-bar');
-        if (tabBar) {
-          const btn = document.createElement('button');
-          btn.className = 'tab-bar-btn';
-          btn.dataset.widget = pid;
-          btn.onclick = function() { openDrawer(pid); };
-          btn.innerHTML = '<span>' + p.icon + '</span><span>' + p.tab_label + '</span>';
-          tabBar.appendChild(btn);
+        // Aggiungi tab bar button (skip plugin promossi in home)
+        const homePromoted = ['weather'];
+        if (!homePromoted.includes(p.id)) {
+          const tabBar = document.querySelector('.tab-bar');
+          if (tabBar) {
+            const btn = document.createElement('button');
+            btn.className = 'tab-bar-btn';
+            btn.dataset.widget = pid;
+            btn.onclick = function() { openDrawer(pid); };
+            btn.innerHTML = '<span>' + p.icon + '</span><span>' + p.tab_label + '</span>';
+            tabBar.appendChild(btn);
+          }
         }
         // Inietta CSS opzionale
         if (p.css) {

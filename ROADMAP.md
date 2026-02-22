@@ -297,6 +297,40 @@
 
 ---
 
+## Fase 22 — Desktop Layout Overhaul
+
+> La dashboard è mobile-first e funzionale su telefono, ma **sottoutilizza gravemente lo spazio desktop**.
+> Su monitor 1920px+ il layout è identico a 768px: stats compresse, widget drawer disallineato,
+> chat mai usata, enormi aree vuote. Questa fase rifonda il layout desktop senza toccare il mobile.
+>
+> **Problemi concreti (da screenshot 2560px):**
+
+**Problemi strutturali:**
+- [ ] **Drawer posizionato male**: click tab a sinistra → contenuto appare all'estrema destra, separato da tutto il contenuto principale
+- [ ] **Input scompare con drawer aperto**: quando si apre un widget, la barra input non è più visibile
+- [ ] **Stats cards 2x2 su widescreen**: 4 card piccole in griglia 2x2 su 2560px di spazio — potrebbe essere 4x1
+- [ ] **Grafico "Ultimi 15 min" enorme e vuoto**: occupa il 60% dell'area visibile per 2 linee di dati
+- [ ] **Chat view mai attivata su desktop**: fullscreen chat esiste solo per mobile, su desktop non si innesca mai
+- [ ] **Nessun breakpoint widescreen** (>1400px): un monitor 2560px riceve lo stesso layout di 768px
+
+**Migliorie desktop:**
+- [ ] Stats 4 colonne su desktop (4x1 orizzontale)
+- [ ] Drawer affiancato al contenuto principale (non estrema destra)
+- [ ] Input sempre visibile, anche con drawer aperto
+- [ ] Grafico ridimensionato proporzionalmente
+- [ ] Breakpoint `@media (min-width: 1400px)` per widescreen
+- [ ] Widget max-height dinamici (`calc(100vh - Xpx)` su desktop)
+- [ ] Rimozione `!important` overrides (refactor con classi state-specific)
+
+**Ispirazione:** layout Claude Code desktop — uso pieno dello schermo, contenuto che respira
+
+**Vincoli:**
+- NON toccare il layout mobile (< 768px) — funziona bene
+- NON rompere il WebSocket
+- CSS-only dove possibile, JS solo se necessario
+
+---
+
 ## Visione futura (no timeline, complessità crescente)
 
 **Medio termine:**

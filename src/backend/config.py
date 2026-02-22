@@ -11,8 +11,8 @@ def _get_config(filename: str) -> dict:
     if cfg_file.exists():
         try:
             return json.loads(cfg_file.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[Config] Errore parsing {filename}: {e}")
     return {}
 
 # ─── Ollama (LLM locale) ─────────────────────────────────────────────────────

@@ -66,9 +66,13 @@ async def get_pi_stats() -> dict:
         health = "yellow"
     else:
         health = "green"
+    # Estrai percentuale disco
+    disk_match = re.search(r'\((\d+)%\)', disk or "")
+    disk_pct = int(disk_match.group(1)) if disk_match else 0
     return {"cpu": cpu or "N/A", "mem": mem, "disk": disk or "N/A",
             "temp": temp_str, "uptime": format_uptime(uptime) if uptime else "N/A",
-            "health": health, "cpu_val": cpu_val, "temp_val": temp_c, "mem_pct": mem_pct}
+            "health": health, "cpu_val": cpu_val, "temp_val": temp_c, "mem_pct": mem_pct,
+            "disk_pct": disk_pct}
 
 def get_tmux_sessions() -> list[dict]:
     out = run("tmux ls 2>/dev/null")
@@ -978,8 +982,6 @@ def text_to_voice(text: str) -> bytes:
             return b""
         with open(ogg_path, "rb") as f:
             ogg_bytes = f.read()
-        # Cleanup temp files
-        import os
         try:
             os.unlink(mp3_path)
         except Exception:
@@ -1267,9 +1269,22 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str, use_loop: bo
         "duration_ms": elapsed,
         "iterations": iterations,
         "completed": completed,
-        "notify": True # Added notify flag
+        "notify": True
     })
     log_claude_task(prompt, status, exit_code, elapsed, full_output[:200])
+
+    # Notifica Telegram al completamento
+    secs = elapsed // 1000
+    icon = "✅" if completed else "❌"
+    summary = full_output.strip()[-500:] if full_output.strip() else "(nessun output)"
+    tg_msg = (
+        f"{icon} Remote Task {'completato' if completed else 'fallito'}\n"
+        f"Prompt: {prompt[:200]}\n"
+        f"Durata: {secs}s | Iterazioni: {iterations}\n"
+        f"---\n{summary}"
+    )
+    loop = asyncio.get_running_loop()
+    loop.run_in_executor(None, telegram_send, tg_msg)
 
 
 def _cleanup_expired():
@@ -1281,9 +1296,6 @@ def _cleanup_expired():
     for token in list(SESSIONS.keys()):
         if now - SESSIONS[token] > SESSION_TIMEOUT:
             del SESSIONS[token]
-
-import io
-import zipfile
 
 @app.get("/api/export")
 async def export_data(request: Request):
