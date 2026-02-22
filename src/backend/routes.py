@@ -460,6 +460,38 @@ WS_DISPATCHER = {
     "delete_entity": handle_delete_entity,
 }
 
+# ─── Plugin Handler Registration ────────────────────────────────────────────
+def _load_plugin_handlers():
+    """Carica handler.py dei plugin e li registra nel WS_DISPATCHER."""
+    for plugin in PLUGINS:
+        plugin_id = plugin["id"]
+        handler_path = Path(plugin["_path"]) / "handler.py"
+        if not handler_path.exists():
+            print(f"[Plugin] {plugin_id}: handler.py non trovato, skip")
+            continue
+        try:
+            plugin_ns = {"__builtins__": __builtins__, "json": json, "asyncio": asyncio,
+                         "time": time, "Path": Path, "bg": bg}
+            code = handler_path.read_text(encoding="utf-8")
+            exec(compile(code, str(handler_path), "exec"), plugin_ns)
+            handler_fn = plugin_ns.get("handle")
+            if handler_fn is None:
+                print(f"[Plugin] {plugin_id}: nessuna funzione handle(), skip")
+                continue
+            action_name = f"plugin_{plugin_id}"
+            async def _safe_handler(ws, msg, ctx, _fn=handler_fn, _pid=plugin_id):
+                try:
+                    await _fn(ws, msg, ctx)
+                except Exception as e:
+                    print(f"[Plugin] {_pid}: errore handler: {e}")
+                    await ws.send_json({"type": "toast", "text": f"Errore plugin {_pid}: {e}"})
+            WS_DISPATCHER[action_name] = _safe_handler
+            print(f"[Plugin] {plugin_id}: handler registrato (action={action_name})")
+        except Exception as e:
+            print(f"[Plugin] {plugin_id}: errore caricamento: {e}")
+
+_load_plugin_handlers()
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     # Auth check via cookie prima di accettare
@@ -554,6 +586,28 @@ async def api_health():
             "pi_mem": pi.get("mem_pct")
         }
     }
+
+# ─── Plugin API ──────────────────────────────────────────────────────────────
+@app.get("/api/plugins")
+async def api_plugins(request: Request):
+    """Ritorna lista plugin con JS/CSS per injection frontend."""
+    token = request.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        return JSONResponse({"error": "Non autenticato"}, status_code=401)
+    result = []
+    for plugin in PLUGINS:
+        p_path = Path(plugin["_path"])
+        entry = {"id": plugin["id"], "title": plugin["title"], "icon": plugin["icon"],
+                 "tab_label": plugin["tab_label"], "actions": plugin.get("actions", "load"),
+                 "wide": plugin.get("wide", False)}
+        js_path = p_path / "widget.js"
+        if js_path.exists():
+            entry["js"] = js_path.read_text(encoding="utf-8")
+        css_path = p_path / "widget.css"
+        if css_path.exists():
+            entry["css"] = css_path.read_text(encoding="utf-8")
+        result.append(entry)
+    return result
 
 @app.get("/auth/check")
 async def auth_check(request: Request):

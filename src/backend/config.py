@@ -118,6 +118,56 @@ GROQ_WHISPER_LANGUAGE = _groq_cfg.get("language", "it")
 TTS_VOICE = "it-IT-DiegoNeural"
 TTS_MAX_CHARS = 2000  # limite caratteri per TTS (evita vocali troppo lunghi)
 
+# ─── HTTPS Locale ────────────────────────────────────────────────────────────
+HTTPS_ENABLED = os.environ.get("HTTPS_ENABLED", "").lower() in ("true", "1", "yes")
+HTTPS_PORT = int(os.environ.get("HTTPS_PORT", 8443))
+CERTS_DIR = Path.home() / ".nanobot" / "certs"
+CERT_FILE = CERTS_DIR / "cert.pem"
+KEY_FILE  = CERTS_DIR / "key.pem"
+CERT_DAYS = 365
+
+def ensure_self_signed_cert() -> bool:
+    """Genera cert+key autofirmati se non esistono o stanno per scadere. Ritorna True se pronti."""
+    if not HTTPS_ENABLED:
+        return False
+    CERTS_DIR.mkdir(parents=True, exist_ok=True)
+    # Controlla se esiste e se è ancora valido (>30 giorni)
+    if CERT_FILE.exists() and KEY_FILE.exists():
+        try:
+            r = subprocess.run(
+                ["openssl", "x509", "-in", str(CERT_FILE), "-checkend", "2592000"],
+                capture_output=True, text=True, timeout=10
+            )
+            if r.returncode == 0:
+                return True
+            print("[HTTPS] Certificato in scadenza, rigenero...")
+        except Exception:
+            pass
+    # Genera nuovo certificato autofirmato
+    try:
+        print("[HTTPS] Generazione certificato autofirmato...")
+        hostname = subprocess.run(
+            ["hostname"], capture_output=True, text=True, timeout=5
+        ).stdout.strip() or "picoclaw.local"
+        subprocess.run([
+            "openssl", "req", "-x509", "-newkey", "rsa:2048",
+            "-keyout", str(KEY_FILE), "-out", str(CERT_FILE),
+            "-days", str(CERT_DAYS), "-nodes",
+            "-subj", f"/CN={hostname}",
+            "-addext", f"subjectAltName=DNS:{hostname},DNS:localhost,IP:127.0.0.1"
+        ], capture_output=True, text=True, timeout=30, check=True)
+        KEY_FILE.chmod(0o600)
+        CERT_FILE.chmod(0o644)
+        print(f"[HTTPS] Certificato generato: {CERT_FILE}")
+        print(f"[HTTPS] Valido per {CERT_DAYS} giorni, hostname: {hostname}")
+        return True
+    except FileNotFoundError:
+        print("[HTTPS] ERRORE: openssl non trovato. Installa con: sudo apt install openssl")
+        return False
+    except subprocess.CalledProcessError as e:
+        print(f"[HTTPS] ERRORE generazione cert: {e.stderr}")
+        return False
+
 # ─── Provider Failover ──────────────────────────────────────────────────────
 PROVIDER_FALLBACKS = {
     "anthropic":       "openrouter",
@@ -131,6 +181,38 @@ PROVIDER_FALLBACKS = {
 HEARTBEAT_INTERVAL = 60       # secondi tra ogni check
 HEARTBEAT_ALERT_COOLDOWN = 1800  # 30 min prima di ri-alertare lo stesso problema
 HEARTBEAT_TEMP_THRESHOLD = 70.0  # °C
+
+# ─── Plugin System ───────────────────────────────────────────────────────────
+PLUGINS_DIR = Path.home() / ".nanobot" / "widgets"
+
+def discover_plugins() -> list[dict]:
+    """Scansiona ~/.nanobot/widgets/ e ritorna i manifest validi."""
+    plugins = []
+    if not PLUGINS_DIR.is_dir():
+        return plugins
+    for d in sorted(PLUGINS_DIR.iterdir()):
+        if not d.is_dir():
+            continue
+        manifest_path = d / "manifest.json"
+        if not manifest_path.exists():
+            continue
+        try:
+            m = json.loads(manifest_path.read_text(encoding="utf-8"))
+            required = ["id", "title", "icon", "tab_label"]
+            if not all(k in m for k in required):
+                print(f"[Plugin] {d.name}: manifest incompleto, skip")
+                continue
+            if m["id"] != d.name:
+                print(f"[Plugin] {d.name}: id mismatch ({m['id']}), skip")
+                continue
+            m["_path"] = str(d)
+            plugins.append(m)
+            print(f"[Plugin] {d.name}: trovato ({m['title']})")
+        except Exception as e:
+            print(f"[Plugin] {d.name}: errore manifest: {e}")
+    return plugins
+
+PLUGINS = discover_plugins()
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 PIN_FILE = Path.home() / ".nanobot" / "dashboard_pin.hash"
@@ -234,7 +316,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'unsafe-inline'; "
+            "script-src 'unsafe-inline' 'unsafe-eval'; "
             "style-src 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src https://fonts.gstatic.com; "
             "img-src 'self' data:; "

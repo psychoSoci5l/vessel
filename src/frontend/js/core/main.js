@@ -123,6 +123,10 @@ let ws = null;
     }
     else if (msg.type === 'bridge_status') { renderBridgeStatus(msg.data); }
     else if (msg.type === 'claude_tasks') { renderClaudeTasks(msg.tasks); }
+    else if (msg.type && msg.type.startsWith('plugin_')) {
+      const hName = 'pluginRender_' + msg.type.replace('plugin_', '');
+      if (window[hName]) { try { window[hName](msg); } catch(e) { console.error('[Plugin] render:', e); } }
+    }
   }
 
   // ── Storico campioni per grafico ──
@@ -468,9 +472,10 @@ let ws = null;
     // Show overlay + enable two-column on desktop
     document.getElementById('drawer-overlay').classList.add('show');
     document.querySelector('.app-content').classList.add('has-drawer');
-    // Drawer wide solo per Remote Code
+    // Drawer wide per Remote Code e plugin con wide=true
     const dOverlay = document.getElementById('drawer-overlay');
-    if (widgetId === 'claude') dOverlay.classList.add('drawer-wide');
+    const isWide = widgetId === 'claude' || (cfg && cfg.wide);
+    if (isWide) dOverlay.classList.add('drawer-wide');
     else dOverlay.classList.remove('drawer-wide');
     // Tab bar highlight
     document.querySelectorAll('.tab-bar-btn').forEach(b =>
@@ -1093,3 +1098,60 @@ let ws = null;
   }
 
   connect();
+
+  // ── Plugin System ──
+  async function loadPlugins() {
+    try {
+      const resp = await fetch('/api/plugins');
+      if (!resp.ok) return;
+      const plugins = await resp.json();
+      if (!plugins.length) return;
+      plugins.forEach(p => {
+        const pid = 'plugin_' + p.id;
+        // Registra in DRAWER_CFG
+        const actHtml = p.actions === 'load'
+          ? '<button class="btn-ghost" onclick="pluginLoad_' + p.id + '(this)">Carica</button>'
+          : '';
+        DRAWER_CFG[pid] = { title: p.icon + ' ' + p.title, actions: actHtml, wide: p.wide || false };
+        // Crea drawer widget container
+        const body = document.querySelector('.drawer-body');
+        if (body) {
+          const dw = document.createElement('div');
+          dw.className = 'drawer-widget';
+          dw.id = 'dw-' + pid;
+          dw.innerHTML = '<div id="plugin-' + p.id + '-body"><div class="widget-placeholder"><span class="ph-icon">' + p.icon + '</span><span>Premi Carica per ' + p.title + '</span></div></div>';
+          body.appendChild(dw);
+        }
+        // Aggiungi tab bar button
+        const tabBar = document.querySelector('.tab-bar');
+        if (tabBar) {
+          const btn = document.createElement('button');
+          btn.className = 'tab-bar-btn';
+          btn.dataset.widget = pid;
+          btn.onclick = function() { openDrawer(pid); };
+          btn.innerHTML = '<span>' + p.icon + '</span><span>' + p.tab_label + '</span>';
+          tabBar.appendChild(btn);
+        }
+        // Inietta CSS opzionale
+        if (p.css) {
+          const st = document.createElement('style');
+          st.textContent = p.css;
+          document.head.appendChild(st);
+        }
+        // Esegui JS del plugin
+        if (p.js) {
+          try { (new Function(p.js))(); }
+          catch(e) { console.error('[Plugin] ' + p.id + ' JS:', e); }
+        }
+        // Funzione load di default
+        if (p.actions === 'load' && !window['pluginLoad_' + p.id]) {
+          window['pluginLoad_' + p.id] = function(btn) {
+            if (btn) btn.textContent = '\u2026';
+            send({ action: pid });
+          };
+        }
+      });
+      console.log('[Plugins] Caricati:', plugins.length);
+    } catch(e) { console.error('[Plugins] Load failed:', e); }
+  }
+  setTimeout(loadPlugins, 500);

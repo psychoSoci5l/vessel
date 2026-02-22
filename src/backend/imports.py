@@ -20,6 +20,7 @@ import subprocess
 import time
 import urllib.request
 import shlex
+import ssl
 import sqlite3
 from datetime import datetime as _dt
 from contextlib import asynccontextmanager

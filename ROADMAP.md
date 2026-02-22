@@ -263,6 +263,40 @@
 
 ---
 
+## Fase 21 — Sistema Plugin + HTTPS Locale
+
+> Dashboard estensibile via plugin esterni + HTTPS opt-in per LAN sicura.
+
+**Blocco A — HTTPS Locale** ✅ (2026-02-22):
+- [x] `ensure_self_signed_cert()`: genera cert+key autofirmati in `~/.nanobot/certs/`
+- [x] Verifica scadenza (rigenera se <30 giorni) via `openssl x509 -checkend`
+- [x] SAN: hostname + localhost + 127.0.0.1
+- [x] Uvicorn SSL condizionale: HTTPS su `HTTPS_PORT` (8443) se abilitato, HTTP su `PORT` come fallback
+- [x] Opt-in: `HTTPS_ENABLED=true` env var (default off — PWA iPhone non supporta self-signed)
+
+**Blocco B — Sistema Plugin** ✅ (2026-02-22):
+- [x] `discover_plugins()`: scansiona `~/.nanobot/widgets/*/manifest.json` al boot
+  - Validazione: campi obbligatori (id, title, icon, tab_label), id = nome cartella
+- [x] `_load_plugin_handlers()`: exec handler.py in namespace controllato, wrappato in try/except
+  - Registrazione nel `WS_DISPATCHER` con action `plugin_{id}`
+  - Isolamento errori: se un plugin crasha, toast di errore ma dashboard continua
+- [x] `GET /api/plugins`: endpoint REST che serve manifest + JS + CSS dei plugin
+- [x] `loadPlugins()` frontend: injection dinamica tab bar + drawer + JS/CSS
+  - `DRAWER_CFG` esteso a runtime, placeholder on-demand standard
+  - `handleMessage()` con fallback generico per `plugin_*` types
+  - `openDrawer()` supporta `wide: true` da manifest
+
+**Struttura plugin:**
+```
+~/.nanobot/widgets/{name}/
+  manifest.json   # { id, title, icon, tab_label, version?, actions?, wide? }
+  handler.py      # async def handle(websocket, msg, ctx)
+  widget.js       # registra window.pluginRender_{id}(msg)
+  widget.css      # (opzionale)
+```
+
+---
+
 ## Visione futura (no timeline, complessità crescente)
 
 **Medio termine:**
@@ -270,7 +304,6 @@
 - Smart Home integration (Tuya/Smart Life): sensori fumo, automazioni domotiche via Pi
 
 **Lungo termine:**
-- Sistema plugin/widget esterni da `~/.nanobot/widgets/`
 - Dashboard multi-host (monitoraggio altri device LAN)
 - iOS & Android companion app nativa
 
