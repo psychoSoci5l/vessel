@@ -145,6 +145,20 @@ _tg_cfg = _get_config("telegram.json")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   _tg_cfg.get("token", ""))
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", str(_tg_cfg.get("chat_id", "")))
 
+# ─── Provider Failover ──────────────────────────────────────────────────────
+PROVIDER_FALLBACKS = {
+    "anthropic":       "openrouter",
+    "openrouter":      "anthropic",
+    "ollama":          "ollama_pc_coder",
+    "ollama_pc_coder": "ollama",
+    "ollama_pc_deep":  "openrouter",
+}
+
+# ─── Heartbeat Monitor ──────────────────────────────────────────────────────
+HEARTBEAT_INTERVAL = 60       # secondi tra ogni check
+HEARTBEAT_ALERT_COOLDOWN = 1800  # 30 min prima di ri-alertare lo stesso problema
+HEARTBEAT_TEMP_THRESHOLD = 70.0  # °C
+
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 PIN_FILE = Path.home() / ".nanobot" / "dashboard_pin.hash"
 SESSION_FILE = Path.home() / ".nanobot" / "sessions.json"
@@ -229,6 +243,7 @@ async def lifespan(app):
     asyncio.create_task(stats_broadcaster())
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         asyncio.create_task(telegram_polling_task())
+        asyncio.create_task(heartbeat_task())
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, warmup_ollama)
     yield
@@ -1186,6 +1201,76 @@ def _resolve_model(raw: str) -> str:
     name = raw.split("/")[-1] if "/" in raw else raw
     return MODEL_MAP.get(name, name)
 
+def _provider_defaults(provider_id: str) -> tuple:
+    """Ritorna (model, system_prompt) di default per un provider_id."""
+    if provider_id == "anthropic":
+        raw = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
+        return _resolve_model(raw), _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM)
+    if provider_id == "openrouter":
+        return OPENROUTER_MODEL, OLLAMA_SYSTEM
+    if provider_id == "ollama":
+        return OLLAMA_MODEL, OLLAMA_SYSTEM
+    if provider_id == "ollama_pc_coder":
+        return OLLAMA_PC_CODER_MODEL, OLLAMA_PC_CODER_SYSTEM
+    if provider_id == "ollama_pc_deep":
+        return OLLAMA_PC_DEEP_MODEL, OLLAMA_PC_DEEP_SYSTEM
+    return OLLAMA_MODEL, OLLAMA_SYSTEM
+
+# ─── Heartbeat Monitor (Fase 17B) ────────────────────────────────────────────
+_heartbeat_last_alert: dict[str, float] = {}
+
+async def heartbeat_task():
+    """Loop background: controlla salute del sistema ogni HEARTBEAT_INTERVAL secondi.
+    Alert via Telegram con cooldown per evitare spam."""
+    print("[Heartbeat] Monitor avviato")
+    await asyncio.sleep(30)  # attendi stabilizzazione post-boot
+    while True:
+        try:
+            alerts = []
+            now = time.time()
+
+            # 1) Temperatura Pi
+            pi = await get_pi_stats()
+            temp = pi.get("temp_val", 0)
+            if temp > HEARTBEAT_TEMP_THRESHOLD:
+                alerts.append(("temp_high", f"🌡️ Temperatura Pi: {temp:.1f}°C (soglia: {HEARTBEAT_TEMP_THRESHOLD}°C)"))
+
+            # 2) RAM critica (> 90%)
+            mem_pct = pi.get("mem_pct", 0)
+            if mem_pct > 90:
+                alerts.append(("mem_high", f"💾 RAM Pi: {mem_pct}% (critica)"))
+
+            # 3) Ollama locale
+            ollama_ok = await bg(check_ollama_health)
+            if not ollama_ok:
+                alerts.append(("ollama_down", "🔴 Ollama locale non raggiungibile"))
+
+            # 4) Bridge (solo se configurato)
+            if CLAUDE_BRIDGE_TOKEN:
+                bridge = await bg(check_bridge_health)
+                if bridge.get("status") == "offline":
+                    alerts.append(("bridge_down", "🔴 Claude Bridge offline"))
+
+            # Invia alert con cooldown
+            for alert_key, alert_msg in alerts:
+                last = _heartbeat_last_alert.get(alert_key, 0)
+                if now - last >= HEARTBEAT_ALERT_COOLDOWN:
+                    _heartbeat_last_alert[alert_key] = now
+                    telegram_send(f"[Heartbeat] {alert_msg}")
+                    db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
+                    print(f"[Heartbeat] ALERT: {alert_msg}")
+
+            # Pulisci alert risolti (per ri-alertare se il problema ritorna)
+            active_keys = {k for k, _ in alerts}
+            for key in list(_heartbeat_last_alert.keys()):
+                if key not in active_keys:
+                    del _heartbeat_last_alert[key]
+
+        except Exception as e:
+            print(f"[Heartbeat] Error: {e}")
+        await asyncio.sleep(HEARTBEAT_INTERVAL)
+
+
 def check_ollama_health() -> bool:
     """Verifica se Ollama è raggiungibile."""
     try:
@@ -1351,12 +1436,92 @@ def build_context(chat_history: list, provider_id: str, system_prompt: str) -> l
         print(f"[Context] {provider_id}: {len(selected)}/{len(chat_history)} msg, ~{used}/{budget} tok")
     return selected
 
+def _provider_worker(provider, queue):
+    """Worker thread: HTTP request a un provider, streamma chunk via queue.
+    Protocollo queue: ("chunk", text), ("meta", dict), ("error", str), ("end", None)."""
+    input_tokens = output_tokens = 0
+    try:
+        conn_class = http.client.HTTPSConnection if provider.use_https else http.client.HTTPConnection
+        conn = conn_class(provider.host, provider.port, timeout=provider.timeout)
+        conn.request("POST", provider.path, body=provider.payload, headers=provider.headers)
+        resp = conn.getresponse()
+        if resp.status != 200:
+            body = resp.read().decode("utf-8", errors="replace")
+            queue.put_nowait(("error", f"HTTP {resp.status}: {body[:200]}"))
+            return
+        buf = ""
+        while True:
+            raw = resp.read(512)
+            if not raw:
+                break
+            buf += raw.decode("utf-8", errors="replace")
+            while "\n" in buf:
+                line, buf = buf.split("\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
+                if provider.parser_type == "json_lines":
+                    try:
+                        data = json.loads(line)
+                        token = data.get("message", {}).get("content", "")
+                        if token:
+                            queue.put_nowait(("chunk", token))
+                        if data.get("done"):
+                            t_eval = data.get("eval_count", 0)
+                            queue.put_nowait(("meta", {"output_tokens": t_eval}))
+                            conn.close()
+                            return
+                    except Exception:
+                        pass
+                elif provider.parser_type == "sse_anthropic":
+                    if line.startswith("event:"):
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            dtype = data.get("type", "")
+                            if dtype == "content_block_delta":
+                                queue.put_nowait(("chunk", data.get("delta", {}).get("text", "")))
+                            elif dtype == "message_start":
+                                input_tokens = data.get("message", {}).get("usage", {}).get("input_tokens", 0)
+                            elif dtype == "message_delta":
+                                output_tokens = data.get("usage", {}).get("output_tokens", 0)
+                        except Exception:
+                            pass
+                elif provider.parser_type == "sse_openai":
+                    if line.startswith("event:") or line.startswith(":"):
+                        continue
+                    if line.startswith("data: "):
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            data = json.loads(data_str)
+                            choices = data.get("choices", [])
+                            if choices:
+                                queue.put_nowait(("chunk", choices[0].get("delta", {}).get("content", "")))
+                            usage = data.get("usage")
+                            if usage:
+                                input_tokens = usage.get("prompt_tokens", 0)
+                                output_tokens = usage.get("completion_tokens", 0)
+                        except Exception:
+                            pass
+        conn.close()
+    except Exception as e:
+        queue.put_nowait(("error", str(e)))
+    finally:
+        queue.put_nowait(("meta", {"input_tokens": input_tokens, "output_tokens": output_tokens}))
+        queue.put_nowait(("end", None))
+
+
 async def _stream_chat(
     websocket: WebSocket, message: str, chat_history: list,
     provider_id: str, system_prompt: str, model: str
 ):
-    """Chat generica unificata per API e Ollama (SSE e JSON-lines) tramite Provider astratto."""
-    queue: asyncio.Queue = asyncio.Queue()
+    """Chat streaming unificata con failover automatico."""
     start_time = time.time()
 
     friends_ctx = _load_friends()
@@ -1368,119 +1533,78 @@ async def _stream_chat(
     db_save_chat_message(provider_id, "dashboard", "user", message)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
-    trimmed = build_context(chat_history, provider_id, system_with_friends)
 
-    provider = get_provider(provider_id, model, system_with_friends, trimmed)
-    if not provider.is_valid:
-        await websocket.send_json({"type": "chat_chunk", "text": provider.error_msg})
-        await websocket.send_json({"type": "chat_done", "provider": provider_id})
-        return
-
-    def _stream_worker():
-        input_tokens = output_tokens = 0
-        try:
-            conn_class = http.client.HTTPSConnection if provider.use_https else http.client.HTTPConnection
-            conn = conn_class(provider.host, provider.port, timeout=provider.timeout)
-            conn.request("POST", provider.path, body=provider.payload, headers=provider.headers)
-            resp = conn.getresponse()
-            if resp.status != 200:
-                body = resp.read().decode("utf-8", errors="replace")
-                queue.put_nowait(("error", f"HTTP {resp.status}: {body[:200]}"))
-                return
-            buf = ""
-            while True:
-                raw = resp.read(512)
-                if not raw: break
-                buf += raw.decode("utf-8", errors="replace")
-                while "\n" in buf:
-                    line, buf = buf.split("\n", 1)
-                    line = line.strip()
-                    if not line: continue
-                    
-                    if provider.parser_type == "json_lines":
-                        try:
-                            data = json.loads(line)
-                            token = data.get("message", {}).get("content", "")
-                            if token: queue.put_nowait(("chunk", token))
-                            if data.get("done"):
-                                t_eval = data.get("eval_count", 0)
-                                queue.put_nowait(("meta", {"output_tokens": t_eval}))
-                                conn.close()
-                                return
-                        except Exception: pass
-                        
-                    elif provider.parser_type == "sse_anthropic":
-                        if line.startswith("event:"): continue
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str == "[DONE]": break
-                            try:
-                                data = json.loads(data_str)
-                                dtype = data.get("type", "")
-                                if dtype == "content_block_delta":
-                                    queue.put_nowait(("chunk", data.get("delta", {}).get("text", "")))
-                                elif dtype == "message_start":
-                                    input_tokens = data.get("message", {}).get("usage", {}).get("input_tokens", 0)
-                                elif dtype == "message_delta":
-                                    output_tokens = data.get("usage", {}).get("output_tokens", 0)
-                            except Exception: pass
-                                
-                    elif provider.parser_type == "sse_openai":
-                        if line.startswith("event:") or line.startswith(":"): continue
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str == "[DONE]": break
-                            try:
-                                data = json.loads(data_str)
-                                choices = data.get("choices", [])
-                                if choices:
-                                    queue.put_nowait(("chunk", choices[0].get("delta", {}).get("content", "")))
-                                usage = data.get("usage")
-                                if usage:
-                                    input_tokens = usage.get("prompt_tokens", 0)
-                                    output_tokens = usage.get("completion_tokens", 0)
-                            except Exception: pass
-            conn.close()
-        except Exception as e:
-            queue.put_nowait(("error", str(e)))
-        finally:
-            queue.put_nowait(("meta", {"input_tokens": input_tokens, "output_tokens": output_tokens}))
-            queue.put_nowait(("end", None))
-
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _stream_worker)
+    # Chain: provider primario + eventuale fallback
+    providers_chain = [(provider_id, model)]
+    fb_id = PROVIDER_FALLBACKS.get(provider_id)
+    if fb_id:
+        fb_model, _ = _provider_defaults(fb_id)
+        providers_chain.append((fb_id, fb_model))
 
     full_reply = ""
     token_meta = {}
+    actual_pid = provider_id
+    actual_model = model
+    last_error = ""
+    loop = asyncio.get_running_loop()
 
-    while True:
-        kind, val = await queue.get()
-        if kind == "chunk":
-            if val:
-                full_reply += val
-                await websocket.send_json({"type": "chat_chunk", "text": val})
-        elif kind == "meta":
-            token_meta = val
-        elif kind == "error":
-            if not full_reply:
-                await websocket.send_json({"type": "chat_chunk", "text": f"(errore {provider_id}: {val})"})
-        elif kind == "end":
+    for attempt, (try_pid, try_model) in enumerate(providers_chain):
+        trimmed = build_context(chat_history, try_pid, system_with_friends)
+        provider = get_provider(try_pid, try_model, system_with_friends, trimmed)
+        if not provider.is_valid:
+            last_error = provider.error_msg
+            if attempt < len(providers_chain) - 1:
+                continue
+            await websocket.send_json({"type": "chat_chunk", "text": last_error})
+            await websocket.send_json({"type": "chat_done", "provider": provider_id})
+            return
+
+        if attempt > 0:
+            await websocket.send_json({"type": "chat_chunk", "text": f"\n⚡ Failover → {try_pid}\n"})
+
+        queue: asyncio.Queue = asyncio.Queue()
+        loop.run_in_executor(None, _provider_worker, provider, queue)
+
+        while True:
+            kind, val = await queue.get()
+            if kind == "chunk":
+                if val:
+                    full_reply += val
+                    await websocket.send_json({"type": "chat_chunk", "text": val})
+            elif kind == "meta":
+                token_meta = val
+            elif kind == "error":
+                last_error = val
+            elif kind == "end":
+                break
+
+        if full_reply:
+            actual_pid = try_pid
+            actual_model = try_model
+            if attempt > 0:
+                loop.run_in_executor(None, telegram_send,
+                    f"⚠️ Provider failover: {provider_id} → {try_pid}")
+                db_log_audit("failover", resource=f"{provider_id} → {try_pid}",
+                             details=last_error[:200])
             break
 
+        if attempt == len(providers_chain) - 1:
+            await websocket.send_json({"type": "chat_chunk",
+                "text": f"(errore {try_pid}: {last_error})"})
+
     chat_history.append({"role": "assistant", "content": full_reply})
-    db_save_chat_message(provider_id, "dashboard", "assistant", full_reply)
+    db_save_chat_message(actual_pid, "dashboard", "assistant", full_reply)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
     elapsed = int((time.time() - start_time) * 1000)
-    await websocket.send_json({"type": "chat_done", "provider": provider_id})
+    await websocket.send_json({"type": "chat_done", "provider": actual_pid})
     log_token_usage(
         token_meta.get("input_tokens", 0),
         token_meta.get("output_tokens", 0),
-        model,
-        provider=provider_id,
+        actual_model,
+        provider=actual_pid,
         response_time_ms=elapsed,
     )
-    # Knowledge Graph: estrai entità in background (fire-and-forget)
     if full_reply:
         loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
 
@@ -1508,9 +1632,7 @@ async def _chat_response(
     provider_id: str, system_prompt: str, model: str,
     channel: str = "telegram",
 ) -> str:
-    """Variante non-streaming di _stream_chat: accumula la risposta e la restituisce.
-    Usata dal Telegram handler (non ha WebSocket)."""
-    queue: asyncio.Queue = asyncio.Queue()
+    """Variante non-streaming con failover automatico. Usata da Telegram."""
     start_time = time.time()
 
     friends_ctx = _load_friends()
@@ -1522,121 +1644,70 @@ async def _chat_response(
     db_save_chat_message(provider_id, channel, "user", message)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
-    trimmed = build_context(chat_history, provider_id, system_with_friends)
 
-    provider = get_provider(provider_id, model, system_with_friends, trimmed)
-    if not provider.is_valid:
-        return f"⚠️ Provider non disponibile: {provider.error_msg}"
-
-    def _worker():
-        input_tokens = output_tokens = 0
-        try:
-            conn_class = http.client.HTTPSConnection if provider.use_https else http.client.HTTPConnection
-            conn = conn_class(provider.host, provider.port, timeout=provider.timeout)
-            conn.request("POST", provider.path, body=provider.payload, headers=provider.headers)
-            resp = conn.getresponse()
-            if resp.status != 200:
-                body = resp.read().decode("utf-8", errors="replace")
-                queue.put_nowait(("error", f"HTTP {resp.status}: {body[:200]}"))
-                return
-            buf = ""
-            while True:
-                raw = resp.read(512)
-                if not raw:
-                    break
-                buf += raw.decode("utf-8", errors="replace")
-                while "\n" in buf:
-                    line, buf = buf.split("\n", 1)
-                    line = line.strip()
-                    if not line:
-                        continue
-                    if provider.parser_type == "json_lines":
-                        try:
-                            data = json.loads(line)
-                            token = data.get("message", {}).get("content", "")
-                            if token:
-                                queue.put_nowait(("chunk", token))
-                            if data.get("done"):
-                                t_eval = data.get("eval_count", 0)
-                                queue.put_nowait(("meta", {"output_tokens": t_eval}))
-                                conn.close()
-                                return
-                        except Exception:
-                            pass
-                    elif provider.parser_type == "sse_anthropic":
-                        if line.startswith("event:"):
-                            continue
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                data = json.loads(data_str)
-                                dtype = data.get("type", "")
-                                if dtype == "content_block_delta":
-                                    queue.put_nowait(("chunk", data.get("delta", {}).get("text", "")))
-                                elif dtype == "message_start":
-                                    input_tokens = data.get("message", {}).get("usage", {}).get("input_tokens", 0)
-                                elif dtype == "message_delta":
-                                    output_tokens = data.get("usage", {}).get("output_tokens", 0)
-                            except Exception:
-                                pass
-                    elif provider.parser_type == "sse_openai":
-                        if line.startswith("event:") or line.startswith(":"):
-                            continue
-                        if line.startswith("data: "):
-                            data_str = line[6:]
-                            if data_str == "[DONE]":
-                                break
-                            try:
-                                data = json.loads(data_str)
-                                choices = data.get("choices", [])
-                                if choices:
-                                    queue.put_nowait(("chunk", choices[0].get("delta", {}).get("content", "")))
-                                usage = data.get("usage")
-                                if usage:
-                                    input_tokens = usage.get("prompt_tokens", 0)
-                                    output_tokens = usage.get("completion_tokens", 0)
-                            except Exception:
-                                pass
-            conn.close()
-        except Exception as e:
-            queue.put_nowait(("error", str(e)))
-        finally:
-            queue.put_nowait(("meta", {"input_tokens": input_tokens, "output_tokens": output_tokens}))
-            queue.put_nowait(("end", None))
-
-    loop = asyncio.get_running_loop()
-    loop.run_in_executor(None, _worker)
+    # Chain: provider primario + eventuale fallback
+    providers_chain = [(provider_id, model)]
+    fb_id = PROVIDER_FALLBACKS.get(provider_id)
+    if fb_id:
+        fb_model, _ = _provider_defaults(fb_id)
+        providers_chain.append((fb_id, fb_model))
 
     full_reply = ""
     token_meta = {}
-    while True:
-        kind, val = await queue.get()
-        if kind == "chunk":
-            if val:
-                full_reply += val
-        elif kind == "meta":
-            token_meta = val
-        elif kind == "error":
-            if not full_reply:
-                full_reply = f"(errore {provider_id}: {val})"
-        elif kind == "end":
+    actual_pid = provider_id
+    actual_model = model
+    last_error = ""
+    loop = asyncio.get_running_loop()
+
+    for attempt, (try_pid, try_model) in enumerate(providers_chain):
+        trimmed = build_context(chat_history, try_pid, system_with_friends)
+        provider = get_provider(try_pid, try_model, system_with_friends, trimmed)
+        if not provider.is_valid:
+            last_error = provider.error_msg
+            if attempt < len(providers_chain) - 1:
+                continue
+            return f"⚠️ Provider non disponibile: {last_error}"
+
+        queue: asyncio.Queue = asyncio.Queue()
+        loop.run_in_executor(None, _provider_worker, provider, queue)
+
+        while True:
+            kind, val = await queue.get()
+            if kind == "chunk":
+                if val:
+                    full_reply += val
+            elif kind == "meta":
+                token_meta = val
+            elif kind == "error":
+                last_error = val
+            elif kind == "end":
+                break
+
+        if full_reply:
+            actual_pid = try_pid
+            actual_model = try_model
+            if attempt > 0:
+                loop.run_in_executor(None, telegram_send,
+                    f"⚠️ Provider failover: {provider_id} → {try_pid}")
+                db_log_audit("failover", resource=f"{provider_id} → {try_pid}",
+                             details=last_error[:200])
             break
 
+        if attempt == len(providers_chain) - 1:
+            full_reply = f"(errore {try_pid}: {last_error})"
+
     chat_history.append({"role": "assistant", "content": full_reply})
-    db_save_chat_message(provider_id, channel, "assistant", full_reply)
+    db_save_chat_message(actual_pid, channel, "assistant", full_reply)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
     elapsed = int((time.time() - start_time) * 1000)
     log_token_usage(
         token_meta.get("input_tokens", 0),
         token_meta.get("output_tokens", 0),
-        model,
-        provider=provider_id,
+        actual_model,
+        provider=actual_pid,
         response_time_ms=elapsed,
     )
-    # Knowledge Graph: estrai entità in background (fire-and-forget)
     if full_reply:
         loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
     return full_reply

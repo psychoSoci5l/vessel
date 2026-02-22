@@ -108,6 +108,20 @@ _tg_cfg = _get_config("telegram.json")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN",   _tg_cfg.get("token", ""))
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", str(_tg_cfg.get("chat_id", "")))
 
+# ─── Provider Failover ──────────────────────────────────────────────────────
+PROVIDER_FALLBACKS = {
+    "anthropic":       "openrouter",
+    "openrouter":      "anthropic",
+    "ollama":          "ollama_pc_coder",
+    "ollama_pc_coder": "ollama",
+    "ollama_pc_deep":  "openrouter",
+}
+
+# ─── Heartbeat Monitor ──────────────────────────────────────────────────────
+HEARTBEAT_INTERVAL = 60       # secondi tra ogni check
+HEARTBEAT_ALERT_COOLDOWN = 1800  # 30 min prima di ri-alertare lo stesso problema
+HEARTBEAT_TEMP_THRESHOLD = 70.0  # °C
+
 # ─── Auth ─────────────────────────────────────────────────────────────────────
 PIN_FILE = Path.home() / ".nanobot" / "dashboard_pin.hash"
 SESSION_FILE = Path.home() / ".nanobot" / "sessions.json"
@@ -192,6 +206,7 @@ async def lifespan(app):
     asyncio.create_task(stats_broadcaster())
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         asyncio.create_task(telegram_polling_task())
+        asyncio.create_task(heartbeat_task())
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, warmup_ollama)
     yield

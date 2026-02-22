@@ -5,6 +5,46 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-22] Fase 17B — Reliability (Provider Failover, Heartbeat Monitor, Backup HDD)
+
+> Il sistema diventa resiliente: se un provider cade, ne usa un altro. Monitora la propria salute e avvisa su Telegram. Backup automatico su HDD esterno.
+
+### Provider Failover (`config.py`, `services.py`, `providers.py`)
+- **`PROVIDER_FALLBACKS`** — chain configurabile: anthropic↔openrouter, ollama↔ollama_pc_coder, ollama_pc_deep→openrouter
+- **`_provider_worker()`** — worker HTTP estratto come funzione standalone (era duplicato in `_stream_chat` e `_chat_response`, ~120 righe DRY)
+- **`_provider_defaults()`** — risolve (model, system_prompt) per qualsiasi provider_id
+- Entrambi `_stream_chat()` e `_chat_response()` iterano la chain: se il primario fallisce senza risposta, tentano il fallback
+- L'utente vede `⚡ Failover → provider` nella chat (dashboard) o risposta diretta (Telegram)
+- Alert Telegram separato + `db_log_audit("failover")` su ogni switch
+- Se anche il fallback fallisce, mostra errore come prima (nessuna regressione)
+
+### Heartbeat Monitor (`services.py`, `config.py`)
+- **`heartbeat_task()`** — loop asyncio ogni 60s, lanciato nel lifespan (solo se Telegram configurato)
+- Controlla: temperatura Pi (>70°C), RAM (>90%), Ollama locale (offline), Claude Bridge (offline, solo se configurato)
+- Alert Telegram con **cooldown 30 minuti** per tipo (anti-spam): `_heartbeat_last_alert` dict
+- Pulizia automatica: quando un problema si risolve, il cooldown si resetta → ri-alerta se il problema ritorna
+- Ogni alert loggato in `db_log_audit("heartbeat_alert")`
+- Attesa 30s post-boot per stabilizzazione prima del primo check
+
+### Backup DB su HDD esterno (`backup_db.py`)
+- Script standalone per cron settimanale (dom 04:00)
+- **Triple safety check** anti-sovrascrittura SSD:
+  1. `/mnt/backup` deve essere mount point reale (`findmnt`)
+  2. Device diverso da `/` (`os.stat().st_dev`)
+  3. Spazio totale > 100GB (discrimina da SSD sistema 91GB)
+- Backup DB via `sqlite3 .backup` (consistente con WAL attivo)
+- Copia: vessel.db, 6 config files, workspace/ (SOUL.md, FRIENDS.md, scripts), crontab export
+- Rotazione 7 copie (elimina le più vecchie)
+- Alert Telegram se HDD non montato: notifica + exit code 1
+
+### Deploy e Crontab
+- `self_evolve.py` — dom 03:00 (era gia nel crontab)
+- `backup_db.py` — dom 04:00 (nuovo)
+- HDD 1TB USB exfat montato `/mnt/backup` via fstab (UUID=3494-03A0, nofail)
+- `sqlite3` CLI installato su Pi per backup .backup consistente
+
+---
+
 ## [2026-02-22] Fase 17A — Data Intelligence (Entity Extraction, Audit Log, Performance Metrics)
 
 > Il Knowledge Graph si popola automaticamente conversando. Audit trail per azioni critiche. Metriche di performance per provider.

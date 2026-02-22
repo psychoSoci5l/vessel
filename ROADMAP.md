@@ -131,16 +131,33 @@
 > Vessel smette di aspettare comandi: monitora, notifica, agisce su schedule.
 > Dipende da: Fase 15 (Telegram per delivery) e Fase 16 (SQLite per storage).
 
-**Task:**
-- [ ] Heartbeat System: monitoraggio proattivo in background
-  - Temp Pi > 70°C, bridge offline, quota API in esaurimento → avviso Telegram/Discord
-  - Integrare con health dot e status bar esistenti
+**Blocco A — Data Intelligence** ✅ (2026-02-22):
+- [x] Entity Extraction automatico: regex-based, zero costo API, popola Knowledge Graph
+- [x] Audit Log: tabella `audit_log`, azioni tracciate (login, reboot, claude_task, cron, failover, heartbeat)
+- [x] Performance Metrics: `response_time_ms` ora popolato in `log_token_usage()`
+
+**Blocco B — Reliability** ✅ (2026-02-22):
+- [x] Provider Failover: chain configurabile (`PROVIDER_FALLBACKS`), retry automatico su provider alternativo
+  - anthropic↔openrouter, ollama↔ollama_pc_coder, ollama_pc_deep→openrouter
+  - Worker estratto in `_provider_worker()` (DRY), failover trasparente in `_stream_chat` e `_chat_response`
+  - Alert Telegram + audit log su ogni failover
+- [x] Heartbeat Monitor: loop asyncio ogni 60s nel lifespan
+  - Controlla: temp Pi (>70°C), RAM (>90%), Ollama locale, Bridge
+  - Alert Telegram con cooldown 30min (anti-spam), audit log per ogni alert
+  - Pulizia automatica alert risolti
+- [x] Backup DB su HDD esterno: `backup_db.py` standalone, cron settimanale
+  - Safety: identifica HDD per mount point, verifica device!=/, spazio>100GB
+  - Backup DB via `sqlite3 .backup` (consistente con WAL), config, workspace, crontab
+  - Rotazione 7 copie, alert Telegram se HDD non montato
+- [x] Deploy self_evolve.py + backup_db.py su Pi, crontab configurato
+  - self_evolve: dom 03:00 | backup_db: dom 04:00
+  - HDD 1TB exfat montato su `/mnt/backup` via fstab (UUID, nofail)
+  - sqlite3 CLI installato per backup .backup consistente
+
+**Task futuri:**
 - [ ] Reminder task Google: legge Tasks API → notifica X minuti prima su Telegram
 - [ ] Routine "buonanotte": briefing serale, reminder domani, spegni luci Smart Life
-- [ ] Model Failover: Haiku down → fallback OpenRouter, Pi offline → fallback PC LAN
-  - Config: `fallback_provider` per ogni provider
-- [ ] Backup automatico: config + memoria → Google Drive o rclone (cron settimanale)
-- [ ] Whisper voice: STT su Pi per messaggi vocali Discord/Telegram → testo (collegato a Fase 15)
+- [ ] Whisper voice: STT su Pi per messaggi vocali Discord/Telegram → testo
 
 ---
 
