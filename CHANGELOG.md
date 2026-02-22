@@ -5,6 +5,40 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-22] Pi System Optimizations & Performance Benchmarking
+
+### Ottimizzazioni OS Raspberry Pi 5
+- **ZRAM** (~4GB, priorità 100, algoritmo zstd): `zram-tools` con `ALGO=zstd`, `PERCENT=50` — swap compresso in RAM, ordini di grandezza più veloce dell'SSD
+- **Swap SSD 8GB** (`/swapfile`, priorità -2): fallback su disco se ZRAM esaurito
+- **sysctl persistenti** via `/etc/sysctl.d/99-vessel.conf` (priorità 99 > 98-rpi.conf di default Debian):
+  - `vm.swappiness = 10` — minimizza l'uso dello swap, privilegia la RAM
+  - `vm.vfs_cache_pressure = 50` — conserva più a lungo le cache inode/dentry
+- **gpu_mem=16** in `/boot/firmware/config.txt` — riduce la RAM riservata alla GPU (nessun display collegato)
+- **CPU Governor = performance** — fisso a 2.4GHz, reso permanente via systemd `cpu-governor.service`
+- **OLLAMA_NUM_THREADS=4** — sfrutta tutti e 4 i core del Pi 5
+
+### Benchmark canonico Ollama
+- Benchmark condotto in condizioni controllate: singolo modello (gemma3:4b), cold start dopo `ollama stop`, carico sistema minimo
+- **gemma3:4b**: eval rate **3.85 tok/s**, prompt eval 8.69 tok/s, load 472ms, temp ~57°C
+- Nota: la cifra stock "5.50 tok/s" precedente era contaminata (sessione attiva, più modelli in RAM) — 3.85 tok/s è il dato reale e affidabile
+
+### Valutazione qualità modelli locali
+- **gemma3:4b** ✅ CONFERMATO per Vessel Local — risposte scientificamente accurate, ragionamento corretto
+- **llama3.2:3b** ❌ SCARTATO — allucinazioni gravi (inventa meccanismi fisici inesistenti)
+
+### PERFORMANCE.md creato
+- Documento tecnico completo: hardware, benchmark dettagliati (5 run con condizioni), note metodologiche, valutazione qualità, guide step-by-step per ogni ottimizzazione
+- Destinato a essere incluso nella prossima major release pubblica
+
+### Refactoring architetturale (integrazione da Vessel Craw / Gemini)
+- Integrata struttura `src/` + `build.py` dalla cartella Vessel Craw (lavoro Gemini Pro)
+- `nanobot_dashboard_v2.py` è ora un artefatto compilato da `build.py` — 1489 righe vs 3660 del monolite
+- Strategy Pattern per i provider chat, WS Dispatcher dict (24 handler), linting nativo per HTML/CSS/JS/Python separati
+- Aggiornati CHANGELOG.md, ROADMAP.md, MEMORY.md, PERFORMANCE.md
+- Commit: `d6ec8e7` (integrazione), `bdd0432` (PERFORMANCE.md), `131f5a9` (fix sysctl), `53c0845` (benchmark), `f39db38` (canonico + qualità)
+
+---
+
 ## [2026-02-22] UI Overhaul & Stability Fixes
 
 ### Dashboard Redesign (Home & Desktop)
