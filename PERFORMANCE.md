@@ -45,7 +45,7 @@ Tutti i test effettuati con lo stesso prompt: *"Spiegami cos'è un buco nero in 
 | Post-ottimizzazione #1 | llama3.2:3b | Solo modello, a freddo | 4.92 tok/s | 10.17 tok/s | n.d. |
 | Post-ottimizzazione #2 | gemma3:4b | Due modelli in RAM (6GB totali), ZRAM attivo | 3.63 tok/s | 8.35 tok/s | 66°C |
 | Post-ottimizzazione #3 | gemma3:4b | Due modelli in RAM, modello warm in cache | 3.59 tok/s | **37.12 tok/s** | 66°C |
-| **Canonico da fare** | gemma3:4b | Solo modello, a freddo | stimato ~5.5 tok/s | — | — |
+| **Canonico ✅** | gemma3:4b | Solo modello, a freddo (dopo `ollama stop`) | **3.85 tok/s** | 8.69 tok/s | ~57°C |
 
 ### Note metodologiche
 
@@ -54,7 +54,25 @@ Tutti i test effettuati con lo stesso prompt: *"Spiegami cos'è un buco nero in 
 - I test #2 e #3 erano con `llama3.2:3b` ancora in RAM (keep_alive non scaduto) → pressione memoria reale
 - Con 6GB di modelli in RAM su 8GB, **ZRAM ha lavorato**: senza di esso lo swap su SSD avrebbe portato l'eval rate a 1-2 tok/s
 - Il **prompt eval anomalo di 37.12 tok/s** nel test #3 è dovuto al modello warm in cache — non replicabile a freddo
-- Il benchmark canonico va effettuato dopo `ollama stop <modello>` o riavvio del sistema
+- Il **dato stock di 5.50 tok/s era già viziato** da sessioni Ollama attive senza riavvio — il benchmark canonico reale è **3.85 tok/s**
+- Per fermare correttamente i modelli prima di un benchmark: `ollama stop <nome-modello>` (es. `ollama stop gemma3:4b`)
+
+---
+
+## Valutazione qualità modelli per Vessel Local
+
+Testati con lo stesso prompt in italiano su Pi 5 CPU.
+
+| Modello | Eval rate | Qualità risposta | Allucinazioni | Consiglio |
+|---|---|---|---|---|
+| **gemma3:4b** | 3.85 tok/s | ✅ Buona — scientificamente corretta, struttura chiara | Rare, lievi | **Raccomandato per Vessel Local** |
+| llama3.2:3b | 4.92 tok/s | ❌ Scarsa — meccanismi fisici inventati | Gravi e frequenti | Non adatto |
+
+**Dettaglio llama3.2:3b**: descrive la formazione dei buchi neri come "una stella massiccia che colpisce l'orizzonte eventuale di un'altra stella" — fisicamente sbagliato. Veloce, ma inaffidabile per un assistente personale.
+
+**Dettaglio gemma3:4b**: singolarità, orizzonte degli eventi e classificazione (stellari/supermassicci/intermedi/primordiali) corretti. Analogie efficaci. Buona qualità per uso quotidiano.
+
+> **Nota**: per qualità superiore sono disponibili modelli GPU via LAN (qwen2.5-coder:14b per coding, deepseek-r1:8b per ragionamento) e DeepSeek V3 via OpenRouter per conversazione generale — tutti già integrati in Vessel.
 
 ---
 
