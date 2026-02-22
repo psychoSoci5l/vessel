@@ -69,6 +69,18 @@ def init_db():
                 content TEXT NOT NULL DEFAULT ''
             );
 
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actor TEXT DEFAULT '',
+                resource TEXT DEFAULT '',
+                status TEXT DEFAULT 'ok',
+                details TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+            CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
+
             CREATE TABLE IF NOT EXISTS entities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 type TEXT NOT NULL,
@@ -361,6 +373,33 @@ def db_get_chat_stats() -> dict:
         ).fetchall():
             by_provider[row["provider"]] = row["cnt"]
         return {"total": total, "archived": archived, "by_provider": by_provider}
+
+
+# ─── Audit Log ────────────────────────────────────────────────────────────────
+
+def db_log_audit(action: str, actor: str = "", resource: str = "",
+                 status: str = "ok", details: str = ""):
+    """Logga un'azione nel registro audit."""
+    with _db_conn() as conn:
+        conn.execute(
+            "INSERT INTO audit_log (ts, action, actor, resource, status, details) VALUES (?, ?, ?, ?, ?, ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%S"), action, actor[:100],
+             resource[:200], status, details[:500])
+        )
+
+
+def db_get_audit_log(limit: int = 50, action: str = "") -> list:
+    """Legge ultimi N record audit, filtrabile per azione."""
+    with _db_conn() as conn:
+        if action:
+            rows = conn.execute(
+                "SELECT ts, action, actor, resource, status, details FROM audit_log WHERE action = ? ORDER BY id DESC LIMIT ?",
+                (action, limit)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT ts, action, actor, resource, status, details FROM audit_log ORDER BY id DESC LIMIT ?",
+                (limit,)).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ─── Knowledge Graph (entities + relations) ───────────────────────────────────

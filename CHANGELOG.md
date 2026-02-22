@@ -5,6 +5,38 @@ Le release sulla repo pubblica `vessel-pi` vengono fatte periodicamente come maj
 
 ---
 
+## [2026-02-22] Fase 17A — Data Intelligence (Entity Extraction, Audit Log, Performance Metrics)
+
+> Il Knowledge Graph si popola automaticamente conversando. Audit trail per azioni critiche. Metriche di performance per provider.
+
+### Entity Extraction automatica (`services.py`)
+- **`extract_entities()`** — extraction regex-based leggera, zero costo API
+  - ~50 tech keywords (linguaggi, framework, tool, modelli AI)
+  - ~40 luoghi (citta italiane + capitali mondiali)
+  - Nomi propri via regex (2+ parole capitalizzate, con stopwords)
+- **`_bg_extract_and_store()`** — fire-and-forget in background thread
+- Hook in `_stream_chat()` (dashboard WS) e `_chat_response()` (Telegram)
+- Popola `entities` via `db_upsert_entity()` con frequency tracking
+- Il Knowledge Graph si popola automaticamente ad ogni conversazione
+
+### Audit Log (`database.py`, `routes.py`)
+- **Nuova tabella `audit_log`**: ts, action, actor, resource, status, details
+- Indici su `ts` e `action` per query veloci
+- **`db_log_audit()`** — insert con troncamento sicuro (actor 100, resource 200, details 500)
+- **`db_get_audit_log()`** — query ultimi N record, filtrabile per azione
+- 7 azioni tracciate: `login`, `login_fail`, `reboot`, `shutdown`, `claude_task`, `cron_add`, `cron_delete`
+
+### Performance Metrics fix (`services.py`)
+- `response_time_ms` nella tabella `usage` era definito ma mai popolato
+- Ora passato a `log_token_usage()` in entrambi i percorsi chat (dashboard + Telegram)
+- Permette confronto latenza oggettivo tra provider
+
+### Schema DB
+- `SCHEMA_VERSION` resta 1 (nuova tabella aggiunta con `CREATE IF NOT EXISTS`)
+- 1 nuova tabella: `audit_log` (9 tabelle totali nel DB)
+
+---
+
 ## [2026-02-22] Fase 16 Blocco B — Context Pruning, Widget Ricerca, Self-evolving, Knowledge Graph
 
 > Completamento Fase 16. Il sistema diventa intelligente nella gestione della memoria.

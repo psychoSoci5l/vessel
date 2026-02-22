@@ -347,6 +347,105 @@ def warmup_ollama():
     except Exception as e:
         print(f"[Ollama] Warmup fallito: {e}")
 
+# ─── Entity Extraction (Fase 17A — auto-popola Knowledge Graph) ──────────────
+
+# Pattern per estrazione entità leggera (regex, zero costo API)
+_ENTITY_TECH = {
+    "python", "javascript", "typescript", "rust", "go", "java", "c++", "c#",
+    "ruby", "php", "swift", "kotlin", "scala", "haskell", "elixir", "lua",
+    "cobol", "sql", "html", "css", "bash", "powershell", "docker", "kubernetes",
+    "react", "vue", "angular", "svelte", "fastapi", "flask", "django", "express",
+    "node", "nodejs", "deno", "bun", "ollama", "pytorch", "tensorflow",
+    "raspberry pi", "arduino", "linux", "debian", "ubuntu", "windows", "macos",
+    "git", "github", "gitlab", "sqlite", "postgres", "postgresql", "mongodb",
+    "redis", "nginx", "anthropic", "openai", "gemma", "llama", "mistral",
+    "deepseek", "qwen", "claude", "gpt", "telegram", "discord", "whatsapp",
+}
+
+# Città/paesi comuni (espandibile)
+_ENTITY_PLACES = {
+    "milano", "roma", "napoli", "torino", "firenze", "bologna", "venezia",
+    "palermo", "genova", "bari", "catania", "verona", "padova", "trieste",
+    "brescia", "bergamo", "modena", "parma", "como", "monza", "pavia",
+    "italia", "germany", "france", "spain", "uk", "usa", "japan", "china",
+    "london", "paris", "berlin", "new york", "tokyo", "amsterdam", "barcelona",
+    "san francisco", "los angeles", "chicago", "seattle", "singapore",
+}
+
+# Regex per nomi propri: 2+ parole capitalizzate consecutive (pattern italiano/inglese)
+_RE_PROPER_NAMES = re.compile(
+    r'\b([A-Z\u00C0-\u00DC][a-z\u00E0-\u00FC]{2,}(?:\s+[A-Z\u00C0-\u00DC][a-z\u00E0-\u00FC]{2,})+)\b'
+)
+
+# Parole da ignorare come nomi propri (falsi positivi comuni)
+_NAME_STOPWORDS = {
+    "Come Posso", "Ciao Come", "Buon Giorno", "Buona Sera", "Per Favore",
+    "Per Esempio", "Grazie Mille", "Che Cosa", "Non Posso", "Come Stai",
+    "Buona Notte", "Ecco Come", "Vessel Dashboard", "Knowledge Graph",
+    "Remote Code", "Chat Mode", "Home View", "Full Text", "Context Pruning",
+    "Query String", "Rate Limit", "System Prompt",
+}
+
+
+def extract_entities(user_msg: str, assistant_msg: str) -> list[dict]:
+    """Estrae entità leggere da coppia messaggio utente + risposta.
+    Ritorna lista di dict: [{"type": "person|tech|place", "name": "..."}]
+    Pensata per essere veloce e con pochi falsi positivi."""
+    entities = []
+    combined = user_msg + " " + assistant_msg
+    combined_lower = combined.lower()
+    seen = set()
+
+    # 1) Tech keywords (match esatto case-insensitive)
+    for tech in _ENTITY_TECH:
+        if tech in combined_lower:
+            # Verifica word boundary approssimativo
+            idx = combined_lower.find(tech)
+            before = combined_lower[idx - 1] if idx > 0 else " "
+            after = combined_lower[idx + len(tech)] if idx + len(tech) < len(combined_lower) else " "
+            if not before.isalnum() and not after.isalnum():
+                key = ("tech", tech)
+                if key not in seen:
+                    seen.add(key)
+                    entities.append({"type": "tech", "name": tech})
+
+    # 2) Luoghi (match case-insensitive)
+    for place in _ENTITY_PLACES:
+        if place in combined_lower:
+            idx = combined_lower.find(place)
+            before = combined_lower[idx - 1] if idx > 0 else " "
+            after = combined_lower[idx + len(place)] if idx + len(place) < len(combined_lower) else " "
+            if not before.isalnum() and not after.isalnum():
+                key = ("place", place)
+                if key not in seen:
+                    seen.add(key)
+                    entities.append({"type": "place", "name": place.title()})
+
+    # 3) Nomi propri (regex: 2+ parole capitalizzate, solo dal messaggio utente per ridurre rumore)
+    for match in _RE_PROPER_NAMES.finditer(user_msg):
+        name = match.group(1).strip()
+        if name in _NAME_STOPWORDS:
+            continue
+        if len(name) < 5 or len(name) > 50:
+            continue
+        key = ("person", name.lower())
+        if key not in seen:
+            seen.add(key)
+            entities.append({"type": "person", "name": name})
+
+    return entities
+
+
+def _bg_extract_and_store(user_msg: str, assistant_msg: str):
+    """Background: estrae entità e le salva nel KG. Fire-and-forget."""
+    try:
+        entities = extract_entities(user_msg, assistant_msg)
+        for ent in entities:
+            db_upsert_entity(ent["type"], ent["name"])
+    except Exception as e:
+        print(f"[KG] Entity extraction error: {e}")
+
+
 # ─── Context Pruning (Fase 16B) ───────────────────────────────────────────────
 CONTEXT_BUDGETS = {
     "anthropic":        6000,
@@ -503,7 +602,11 @@ async def _stream_chat(
         token_meta.get("output_tokens", 0),
         model,
         provider=provider_id,
+        response_time_ms=elapsed,
     )
+    # Knowledge Graph: estrai entità in background (fire-and-forget)
+    if full_reply:
+        loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
 
 # ─── Telegram ────────────────────────────────────────────────────────────────
 def telegram_send(text: str) -> bool:
@@ -655,7 +758,11 @@ async def _chat_response(
         token_meta.get("output_tokens", 0),
         model,
         provider=provider_id,
+        response_time_ms=elapsed,
     )
+    # Knowledge Graph: estrai entità in background (fire-and-forget)
+    if full_reply:
+        loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
     return full_reply
 
 def chat_with_nanobot(message: str) -> str:

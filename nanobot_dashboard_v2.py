@@ -371,6 +371,18 @@ def init_db():
                 content TEXT NOT NULL DEFAULT ''
             );
 
+            CREATE TABLE IF NOT EXISTS audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                action TEXT NOT NULL,
+                actor TEXT DEFAULT '',
+                resource TEXT DEFAULT '',
+                status TEXT DEFAULT 'ok',
+                details TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+            CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
+
             CREATE TABLE IF NOT EXISTS entities (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 type TEXT NOT NULL,
@@ -663,6 +675,33 @@ def db_get_chat_stats() -> dict:
         ).fetchall():
             by_provider[row["provider"]] = row["cnt"]
         return {"total": total, "archived": archived, "by_provider": by_provider}
+
+
+# ─── Audit Log ────────────────────────────────────────────────────────────────
+
+def db_log_audit(action: str, actor: str = "", resource: str = "",
+                 status: str = "ok", details: str = ""):
+    """Logga un'azione nel registro audit."""
+    with _db_conn() as conn:
+        conn.execute(
+            "INSERT INTO audit_log (ts, action, actor, resource, status, details) VALUES (?, ?, ?, ?, ?, ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%S"), action, actor[:100],
+             resource[:200], status, details[:500])
+        )
+
+
+def db_get_audit_log(limit: int = 50, action: str = "") -> list:
+    """Legge ultimi N record audit, filtrabile per azione."""
+    with _db_conn() as conn:
+        if action:
+            rows = conn.execute(
+                "SELECT ts, action, actor, resource, status, details FROM audit_log WHERE action = ? ORDER BY id DESC LIMIT ?",
+                (action, limit)).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT ts, action, actor, resource, status, details FROM audit_log ORDER BY id DESC LIMIT ?",
+                (limit,)).fetchall()
+        return [dict(r) for r in rows]
 
 
 # ─── Knowledge Graph (entities + relations) ───────────────────────────────────
@@ -1184,6 +1223,105 @@ def warmup_ollama():
     except Exception as e:
         print(f"[Ollama] Warmup fallito: {e}")
 
+# ─── Entity Extraction (Fase 17A — auto-popola Knowledge Graph) ──────────────
+
+# Pattern per estrazione entità leggera (regex, zero costo API)
+_ENTITY_TECH = {
+    "python", "javascript", "typescript", "rust", "go", "java", "c++", "c#",
+    "ruby", "php", "swift", "kotlin", "scala", "haskell", "elixir", "lua",
+    "cobol", "sql", "html", "css", "bash", "powershell", "docker", "kubernetes",
+    "react", "vue", "angular", "svelte", "fastapi", "flask", "django", "express",
+    "node", "nodejs", "deno", "bun", "ollama", "pytorch", "tensorflow",
+    "raspberry pi", "arduino", "linux", "debian", "ubuntu", "windows", "macos",
+    "git", "github", "gitlab", "sqlite", "postgres", "postgresql", "mongodb",
+    "redis", "nginx", "anthropic", "openai", "gemma", "llama", "mistral",
+    "deepseek", "qwen", "claude", "gpt", "telegram", "discord", "whatsapp",
+}
+
+# Città/paesi comuni (espandibile)
+_ENTITY_PLACES = {
+    "milano", "roma", "napoli", "torino", "firenze", "bologna", "venezia",
+    "palermo", "genova", "bari", "catania", "verona", "padova", "trieste",
+    "brescia", "bergamo", "modena", "parma", "como", "monza", "pavia",
+    "italia", "germany", "france", "spain", "uk", "usa", "japan", "china",
+    "london", "paris", "berlin", "new york", "tokyo", "amsterdam", "barcelona",
+    "san francisco", "los angeles", "chicago", "seattle", "singapore",
+}
+
+# Regex per nomi propri: 2+ parole capitalizzate consecutive (pattern italiano/inglese)
+_RE_PROPER_NAMES = re.compile(
+    r'\b([A-Z\u00C0-\u00DC][a-z\u00E0-\u00FC]{2,}(?:\s+[A-Z\u00C0-\u00DC][a-z\u00E0-\u00FC]{2,})+)\b'
+)
+
+# Parole da ignorare come nomi propri (falsi positivi comuni)
+_NAME_STOPWORDS = {
+    "Come Posso", "Ciao Come", "Buon Giorno", "Buona Sera", "Per Favore",
+    "Per Esempio", "Grazie Mille", "Che Cosa", "Non Posso", "Come Stai",
+    "Buona Notte", "Ecco Come", "Vessel Dashboard", "Knowledge Graph",
+    "Remote Code", "Chat Mode", "Home View", "Full Text", "Context Pruning",
+    "Query String", "Rate Limit", "System Prompt",
+}
+
+
+def extract_entities(user_msg: str, assistant_msg: str) -> list[dict]:
+    """Estrae entità leggere da coppia messaggio utente + risposta.
+    Ritorna lista di dict: [{"type": "person|tech|place", "name": "..."}]
+    Pensata per essere veloce e con pochi falsi positivi."""
+    entities = []
+    combined = user_msg + " " + assistant_msg
+    combined_lower = combined.lower()
+    seen = set()
+
+    # 1) Tech keywords (match esatto case-insensitive)
+    for tech in _ENTITY_TECH:
+        if tech in combined_lower:
+            # Verifica word boundary approssimativo
+            idx = combined_lower.find(tech)
+            before = combined_lower[idx - 1] if idx > 0 else " "
+            after = combined_lower[idx + len(tech)] if idx + len(tech) < len(combined_lower) else " "
+            if not before.isalnum() and not after.isalnum():
+                key = ("tech", tech)
+                if key not in seen:
+                    seen.add(key)
+                    entities.append({"type": "tech", "name": tech})
+
+    # 2) Luoghi (match case-insensitive)
+    for place in _ENTITY_PLACES:
+        if place in combined_lower:
+            idx = combined_lower.find(place)
+            before = combined_lower[idx - 1] if idx > 0 else " "
+            after = combined_lower[idx + len(place)] if idx + len(place) < len(combined_lower) else " "
+            if not before.isalnum() and not after.isalnum():
+                key = ("place", place)
+                if key not in seen:
+                    seen.add(key)
+                    entities.append({"type": "place", "name": place.title()})
+
+    # 3) Nomi propri (regex: 2+ parole capitalizzate, solo dal messaggio utente per ridurre rumore)
+    for match in _RE_PROPER_NAMES.finditer(user_msg):
+        name = match.group(1).strip()
+        if name in _NAME_STOPWORDS:
+            continue
+        if len(name) < 5 or len(name) > 50:
+            continue
+        key = ("person", name.lower())
+        if key not in seen:
+            seen.add(key)
+            entities.append({"type": "person", "name": name})
+
+    return entities
+
+
+def _bg_extract_and_store(user_msg: str, assistant_msg: str):
+    """Background: estrae entità e le salva nel KG. Fire-and-forget."""
+    try:
+        entities = extract_entities(user_msg, assistant_msg)
+        for ent in entities:
+            db_upsert_entity(ent["type"], ent["name"])
+    except Exception as e:
+        print(f"[KG] Entity extraction error: {e}")
+
+
 # ─── Context Pruning (Fase 16B) ───────────────────────────────────────────────
 CONTEXT_BUDGETS = {
     "anthropic":        6000,
@@ -1340,7 +1478,11 @@ async def _stream_chat(
         token_meta.get("output_tokens", 0),
         model,
         provider=provider_id,
+        response_time_ms=elapsed,
     )
+    # Knowledge Graph: estrai entità in background (fire-and-forget)
+    if full_reply:
+        loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
 
 # ─── Telegram ────────────────────────────────────────────────────────────────
 def telegram_send(text: str) -> bool:
@@ -1492,7 +1634,11 @@ async def _chat_response(
         token_meta.get("output_tokens", 0),
         model,
         provider=provider_id,
+        response_time_ms=elapsed,
     )
+    # Knowledge Graph: estrai entità in background (fire-and-forget)
+    if full_reply:
+        loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
     return full_reply
 
 def chat_with_nanobot(message: str) -> str:
@@ -1868,6 +2014,7 @@ async def handle_add_cron(websocket, msg, ctx):
     cmd = msg.get("command", "")
     result = await bg(add_cron_job, sched, cmd)
     if result == "ok":
+        db_log_audit("cron_add", actor=ip, resource=f"{sched} {cmd}")
         await websocket.send_json({"type": "toast", "text": "✅ Cron job aggiunto"})
         jobs = await bg(get_cron_jobs)
         await websocket.send_json({"type": "cron", "jobs": jobs})
@@ -1878,6 +2025,7 @@ async def handle_delete_cron(websocket, msg, ctx):
     idx = msg.get("index", -1)
     result = await bg(delete_cron_job, idx)
     if result == "ok":
+        db_log_audit("cron_delete", actor=websocket.client.host, resource=f"index={idx}")
         await websocket.send_json({"type": "toast", "text": "✅ Cron job rimosso"})
         jobs = await bg(get_cron_jobs)
         await websocket.send_json({"type": "cron", "jobs": jobs})
@@ -1925,6 +2073,7 @@ async def handle_reboot(websocket, msg, ctx):
     if not _rate_limit(ip, "reboot", 1, 300):
         await websocket.send_json({"type": "toast", "text": "⚠️ Reboot già richiesto di recente"})
         return
+    db_log_audit("reboot", actor=ip)
     await manager.broadcast({"type": "reboot_ack"})
     await asyncio.sleep(0.5)
     subprocess.run(["sudo", "reboot"])
@@ -1934,6 +2083,7 @@ async def handle_shutdown(websocket, msg, ctx):
     if not _rate_limit(ip, "shutdown", 1, 300):
         await websocket.send_json({"type": "toast", "text": "⚠️ Shutdown già richiesto di recente"})
         return
+    db_log_audit("shutdown", actor=ip)
     await manager.broadcast({"type": "shutdown_ack"})
     await asyncio.sleep(0.5)
     subprocess.run(["sudo", "shutdown", "-h", "now"])
@@ -1951,6 +2101,7 @@ async def handle_claude_task(websocket, msg, ctx):
     if not _rate_limit(ip, "claude_task", 5, 3600):
         await websocket.send_json({"type": "toast", "text": "⚠️ Limite task raggiunto (max 5/ora)"})
         return
+    db_log_audit("claude_task", actor=ip, resource=prompt[:100])
     await websocket.send_json({"type": "claude_thinking"})
     await run_claude_task_stream(websocket, prompt, use_loop=use_loop)
 
@@ -2076,9 +2227,11 @@ async def auth_login(request: Request):
                         httponly=True, samesite="lax", secure=is_secure)
         return resp
     if not _verify_pin(pin):
+        db_log_audit("login_fail", actor=ip)
         return JSONResponse({"error": "PIN errato"}, status_code=401)
     RATE_LIMITS.pop(f"{ip}:auth", None)
     token = _create_session()
+    db_log_audit("login", actor=ip)
     resp = JSONResponse({"ok": True})
     is_secure = request.url.scheme == "https"
     resp.set_cookie("vessel_session", token, max_age=SESSION_TIMEOUT,

@@ -183,6 +183,7 @@ async def handle_add_cron(websocket, msg, ctx):
     cmd = msg.get("command", "")
     result = await bg(add_cron_job, sched, cmd)
     if result == "ok":
+        db_log_audit("cron_add", actor=ip, resource=f"{sched} {cmd}")
         await websocket.send_json({"type": "toast", "text": "✅ Cron job aggiunto"})
         jobs = await bg(get_cron_jobs)
         await websocket.send_json({"type": "cron", "jobs": jobs})
@@ -193,6 +194,7 @@ async def handle_delete_cron(websocket, msg, ctx):
     idx = msg.get("index", -1)
     result = await bg(delete_cron_job, idx)
     if result == "ok":
+        db_log_audit("cron_delete", actor=websocket.client.host, resource=f"index={idx}")
         await websocket.send_json({"type": "toast", "text": "✅ Cron job rimosso"})
         jobs = await bg(get_cron_jobs)
         await websocket.send_json({"type": "cron", "jobs": jobs})
@@ -240,6 +242,7 @@ async def handle_reboot(websocket, msg, ctx):
     if not _rate_limit(ip, "reboot", 1, 300):
         await websocket.send_json({"type": "toast", "text": "⚠️ Reboot già richiesto di recente"})
         return
+    db_log_audit("reboot", actor=ip)
     await manager.broadcast({"type": "reboot_ack"})
     await asyncio.sleep(0.5)
     subprocess.run(["sudo", "reboot"])
@@ -249,6 +252,7 @@ async def handle_shutdown(websocket, msg, ctx):
     if not _rate_limit(ip, "shutdown", 1, 300):
         await websocket.send_json({"type": "toast", "text": "⚠️ Shutdown già richiesto di recente"})
         return
+    db_log_audit("shutdown", actor=ip)
     await manager.broadcast({"type": "shutdown_ack"})
     await asyncio.sleep(0.5)
     subprocess.run(["sudo", "shutdown", "-h", "now"])
@@ -266,6 +270,7 @@ async def handle_claude_task(websocket, msg, ctx):
     if not _rate_limit(ip, "claude_task", 5, 3600):
         await websocket.send_json({"type": "toast", "text": "⚠️ Limite task raggiunto (max 5/ora)"})
         return
+    db_log_audit("claude_task", actor=ip, resource=prompt[:100])
     await websocket.send_json({"type": "claude_thinking"})
     await run_claude_task_stream(websocket, prompt, use_loop=use_loop)
 
@@ -391,9 +396,11 @@ async def auth_login(request: Request):
                         httponly=True, samesite="lax", secure=is_secure)
         return resp
     if not _verify_pin(pin):
+        db_log_audit("login_fail", actor=ip)
         return JSONResponse({"error": "PIN errato"}, status_code=401)
     RATE_LIMITS.pop(f"{ip}:auth", None)
     token = _create_session()
+    db_log_audit("login", actor=ip)
     resp = JSONResponse({"ok": True})
     is_secure = request.url.scheme == "https"
     resp.set_cookie("vessel_session", token, max_age=SESSION_TIMEOUT,
