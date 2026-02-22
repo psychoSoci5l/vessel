@@ -96,10 +96,17 @@ grep swap /etc/fstab
 - `vfs_cache_pressure=50`: mantiene più cache filesystem in RAM (config, log, file modello)
 
 ```bash
-echo 'vm.swappiness=10' | sudo tee -a /etc/sysctl.conf
-echo 'vm.vfs_cache_pressure=50' | sudo tee -a /etc/sysctl.conf
-sudo sysctl -p
+sudo tee /etc/sysctl.d/99-vessel.conf > /dev/null <<'EOF'
+# Vessel Pi — Ottimizzazioni memoria per server AI/LLM headless
+vm.swappiness=10
+vm.vfs_cache_pressure=50
+EOF
+
+# Applica subito senza riavvio
+sudo sysctl -p /etc/sysctl.d/99-vessel.conf
 ```
+
+> **Nota Debian/Raspberry Pi OS**: usare `/etc/sysctl.d/99-vessel.conf` (non `/etc/sysctl.conf` direttamente). Il suffisso `99` garantisce che venga caricato per ultimo, sovrascrivendo eventuali valori di sistema come `98-rpi.conf`.
 
 **Verifica:**
 ```bash
