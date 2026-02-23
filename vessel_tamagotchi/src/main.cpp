@@ -628,124 +628,129 @@ void renderMenu() {
     bool isPi = (currentView == VIEW_MENU_PI);
     const MenuItem* items = isPi ? MENU_PI : MENU_VESSEL;
     int count = isPi ? MENU_PI_COUNT : MENU_VESSEL_COUNT;
-    const char* title = isPi ? "PI CONTROL" : "VESSEL CONTROL";
+    const char* title = isPi ? "PI CONTROL" : "VESSEL";
 
     fb.fillSprite(COL_BG);
 
-    // Header
+    // ── Breadcrumb header (piccolo, stile Bruce) ──
     fb.setTextDatum(TL_DATUM);
-    fb.setTextColor(COL_GREEN);
-    fb.drawString(title, 10, 4, 2);
+    fb.setTextColor(COL_DIM);
+    fb.drawString(title, 8, 3, 1);
+    drawConnectionIndicator();
 
-    // Separatore header
-    fb.drawFastHLine(8, 22, 304, COL_DIM);
+    // ── Finestra visibile: max 3 items, selezione centrata ──
+    const int VISIBLE = 3;
+    const int ITEM_H  = 44;
+    const int START_Y = 18;
 
-    // Items
-    for (int i = 0; i < count && i < 6; i++) {
-        int itemY = 26 + i * 20;
+    int scrollOffset = 0;
+    if (count > VISIBLE) {
+        scrollOffset = menu.selectedIdx - 1;
+        if (scrollOffset < 0) scrollOffset = 0;
+        if (scrollOffset > count - VISIBLE) scrollOffset = count - VISIBLE;
+    }
 
-        if (i == menu.selectedIdx) {
-            // Item selezionato — sfondo invertito (Bruce pattern)
-            fb.fillRect(5, itemY - 1, 310, 18, COL_DIM);
-            fb.setTextColor(COL_GREEN);
-            fb.drawString(">", 8, itemY, 2);
+    // ── Render items ──
+    for (int vi = 0; vi < VISIBLE && (scrollOffset + vi) < count; vi++) {
+        int idx   = scrollOffset + vi;
+        int itemY = START_Y + vi * ITEM_H;
+        int textY = itemY + ITEM_H / 2 - 1;
+
+        if (idx == menu.selectedIdx) {
+            // ── Barra piena verde + testo nero (Bruce pattern) ──
+            fb.fillRect(0, itemY, 320, ITEM_H - 2, COL_GREEN);
+            fb.setTextColor(COL_BG);
+            fb.setTextDatum(ML_DATUM);
+            fb.drawString(items[idx].label, 12, textY, 4);
+
+            if (items[idx].dangerous) {
+                fb.setTextColor(COL_RED);
+                fb.setTextDatum(MR_DATUM);
+                fb.drawString("!", 312, textY, 4);
+            }
+
+            // Dots animati se in attesa risposta
+            if (menu.waitingResp) {
+                int dots = (millis() / 400) % 4;
+                String dotStr = "";
+                for (int d = 0; d < dots; d++) dotStr += ".";
+                fb.setTextColor(COL_BG);
+                fb.setTextDatum(MR_DATUM);
+                fb.drawString(dotStr, 312, textY, 4);
+            }
         } else {
+            // ── Item non selezionato ──
             fb.setTextColor(COL_DIM);
-            fb.drawString(" ", 8, itemY, 2);
-        }
+            fb.setTextDatum(ML_DATUM);
+            fb.drawString(items[idx].label, 12, textY, 4);
 
-        fb.drawString(items[i].label, 22, itemY, 2);
-
-        // Marker [!] per azioni pericolose
-        if (items[i].dangerous) {
-            fb.setTextColor(COL_RED);
-            fb.drawString("[!]", 280, itemY, 2);
-        }
-
-        // Dots animati se in attesa su questo item
-        if (menu.waitingResp && i == menu.selectedIdx) {
-            int dots = (millis() / 400) % 4;
-            String dotStr = "";
-            for (int d = 0; d < dots; d++) dotStr += ".";
-            fb.setTextColor(COL_GREEN);
-            fb.drawString(dotStr, 240, itemY, 2);
+            if (items[idx].dangerous) {
+                fb.setTextColor(COL_RED);
+                fb.setTextDatum(MR_DATUM);
+                fb.drawString("!", 312, textY, 4);
+            }
         }
     }
 
-    // Separatore footer
-    fb.drawFastHLine(8, 146, 304, COL_DIM);
+    // ── Frecce scroll se ci sono voci nascoste ──
+    if (scrollOffset > 0) {
+        fb.fillTriangle(160, START_Y - 12, 154, START_Y - 6, 166, START_Y - 6, COL_DIM);
+    }
+    if (scrollOffset + VISIBLE < count) {
+        int arrowY = START_Y + VISIBLE * ITEM_H + 2;
+        fb.fillTriangle(160, arrowY + 8, 154, arrowY + 2, 166, arrowY + 2, COL_DIM);
+    }
 
-    // Footer hints
-    fb.setTextColor(COL_DIM);
-    fb.setTextDatum(MC_DATUM);
-    fb.drawString("[L hold] BACK    [R hold] OK", 160, 153, 1);
-    fb.setTextDatum(TL_DATUM);
-
-    drawScanlines();
-    drawCryptoTicker();
     fb.pushSprite(0, 0);
 }
 
 void renderConfirm() {
     fb.fillSprite(COL_BG);
 
-    // Bordo giallo
-    fb.drawRect(15, 10, 290, 120, COL_YELLOW);
-    fb.drawRect(16, 11, 288, 118, COL_YELLOW);
+    // Bordo giallo doppio
+    fb.drawRect(10, 12, 300, 125, COL_YELLOW);
+    fb.drawRect(11, 13, 298, 123, COL_YELLOW);
 
-    // Titolo
     fb.setTextDatum(MC_DATUM);
-    fb.setTextColor(COL_YELLOW);
-    fb.drawString("CONFIRM", 160, 30, 2);
 
-    // Testo azione
+    // CONFIRM?
+    fb.setTextColor(COL_YELLOW);
+    fb.drawString("CONFIRM?", 160, 42, 4);
+
+    // Nome azione
     fb.setTextColor(COL_GREEN);
     String action = String(menu.pendingCmd ? menu.pendingCmd : "???");
     action.toUpperCase();
-    fb.drawString(action + " ?", 160, 60, 2);
+    fb.drawString(action, 160, 78, 4);
 
     // Warning
     fb.setTextColor(COL_DIM);
-    fb.drawString("Azione non reversibile", 160, 90, 1);
+    fb.drawString("Irreversible", 160, 112, 2);
 
-    // Footer
-    fb.setTextColor(COL_DIM);
-    fb.drawString("[L] ANNULLA    [R hold] CONFERMA", 160, 153, 1);
+    // Footer hints
+    fb.drawString("L=Cancel   Rhold=OK", 160, 152, 2);
+
     fb.setTextDatum(TL_DATUM);
-
-    drawScanlines();
-    drawCryptoTicker();
     fb.pushSprite(0, 0);
 }
 
 void renderResult() {
     fb.fillSprite(COL_BG);
 
-    // Header OK/ERROR
+    // Header OK/ERROR grande
     fb.setTextDatum(TL_DATUM);
     fb.setTextColor(menu.resultOk ? COL_GREEN : COL_RED);
-    fb.drawString(menu.resultOk ? "OK" : "ERROR", 10, 4, 2);
+    fb.drawString(menu.resultOk ? "OK" : "ERROR", 10, 4, 4);
 
     // Separatore
-    fb.drawFastHLine(8, 22, 304, COL_DIM);
+    fb.drawFastHLine(8, 34, 304, COL_DIM);
 
-    // Righe dati
+    // Righe dati — font 2, spaziatura 24px, max 5 righe
     fb.setTextColor(COL_DIM);
-    for (int i = 0; i < menu.resultLineCount && i < 6; i++) {
-        fb.drawString(menu.resultLines[i], 10, 28 + i * 20, 2);
+    for (int i = 0; i < menu.resultLineCount && i < 5; i++) {
+        fb.drawString(menu.resultLines[i], 10, 42 + i * 24, 2);
     }
 
-    // Separatore footer
-    fb.drawFastHLine(8, 146, 304, COL_DIM);
-
-    // Footer
-    fb.setTextColor(COL_DIM);
-    fb.setTextDatum(MC_DATUM);
-    fb.drawString("[press to close]", 160, 153, 1);
-    fb.setTextDatum(TL_DATUM);
-
-    drawScanlines();
-    drawCryptoTicker();
     fb.pushSprite(0, 0);
 }
 
@@ -1408,8 +1413,13 @@ void loop() {
             currentView = VIEW_RESULT;
             menu.needsRedraw = true;
         }
-        if (menu.needsRedraw) {
+        // Redraw: su richiesta, o periodico per dots animati durante attesa
+        static unsigned long lastMenuDraw = 0;
+        bool shouldDraw = menu.needsRedraw;
+        if (menu.waitingResp && now - lastMenuDraw >= 400) shouldDraw = true;
+        if (shouldDraw) {
             menu.needsRedraw = false;
+            lastMenuDraw = now;
             renderMenu();
         }
         return;
