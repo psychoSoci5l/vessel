@@ -1,6 +1,6 @@
 # ─── Database SQLite ──────────────────────────────────────────────────────────
 DB_PATH = Path.home() / ".nanobot" / "vessel.db"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _db_conn():
@@ -122,10 +122,23 @@ def init_db():
                 use_loop INTEGER NOT NULL DEFAULT 0
             );
         """)
-        # Schema version
+        # Schema version + migrations
         row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
+        current_ver = row[0] if row else 0
         if not row:
             conn.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+        if current_ver < 2:
+            try:
+                conn.execute("ALTER TABLE chat_messages ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_agent ON chat_messages(agent)")
+                print("[DB] Migrazione v2: colonna 'agent' aggiunta a chat_messages")
+            except Exception:
+                pass  # colonna già presente
+            try:
+                conn.execute("ALTER TABLE chat_messages_archive ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
+            except Exception:
+                pass
+            conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
 
     _migrate_jsonl()
     print(f"[DB] SQLite inizializzato: {DB_PATH}")
@@ -334,12 +347,12 @@ def db_log_claude_task(prompt: str, status: str, exit_code: int = 0,
 
 # ─── Chat Messages (history persistente) ──────────────────────────────────────
 
-def db_save_chat_message(provider: str, channel: str, role: str, content: str):
+def db_save_chat_message(provider: str, channel: str, role: str, content: str, agent: str = ""):
     """Salva un singolo messaggio chat in SQLite."""
     with _db_conn() as conn:
         conn.execute(
-            "INSERT INTO chat_messages (ts, provider, channel, role, content) VALUES (?, ?, ?, ?, ?)",
-            (time.strftime("%Y-%m-%dT%H:%M:%S"), provider, channel, role, content)
+            "INSERT INTO chat_messages (ts, provider, channel, role, content, agent) VALUES (?, ?, ?, ?, ?, ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%S"), provider, channel, role, content, agent)
         )
 
 

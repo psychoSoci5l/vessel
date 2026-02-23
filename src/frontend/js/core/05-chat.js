@@ -53,6 +53,21 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  function showAgentBadge(agentId) {
+    const box = document.getElementById('chat-messages');
+    const wraps = box.querySelectorAll('.copy-wrap');
+    const last = wraps[wraps.length - 1];
+    if (!last) return;
+    const existing = last.querySelector('.agent-badge');
+    if (existing) return;
+    const badge = document.createElement('span');
+    badge.className = 'agent-badge';
+    badge.dataset.agent = agentId;
+    badge.textContent = agentId;
+    const msgDiv = last.querySelector('.msg-bot');
+    if (msgDiv) msgDiv.appendChild(badge);
+  }
+
   function finalizeStream() {
     if (streamDiv) {
       const box = streamDiv.parentNode;

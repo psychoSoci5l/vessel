@@ -10,8 +10,7 @@ def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
     """Risolve prefisso provider dal testo Telegram. Ritorna (provider_id, system, model, clean_text)."""
     low = text.lower()
     if low.startswith("@haiku "):
-        raw_model = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
-        return "anthropic", OLLAMA_SYSTEM, _resolve_model(raw_model), text.split(" ", 1)[1]
+        return "anthropic", OLLAMA_SYSTEM, ANTHROPIC_MODEL, text.split(" ", 1)[1]
     if low.startswith("@coder ") or low.startswith("@pc "):
         return "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL, text.split(" ", 1)[1]
     if low.startswith("@deep "):

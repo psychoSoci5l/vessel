@@ -57,7 +57,11 @@
     }
     else if (msg.type === 'chat_thinking') { appendThinking(); }
     else if (msg.type === 'chat_chunk') { removeThinking(); appendChunk(msg.text); }
-    else if (msg.type === 'chat_done') { finalizeStream(); document.getElementById('chat-send').disabled = false; }
+    else if (msg.type === 'chat_done') {
+      finalizeStream();
+      document.getElementById('chat-send').disabled = false;
+      if (msg.agent) showAgentBadge(msg.agent);
+    }
     else if (msg.type === 'chat_reply') { removeThinking(); appendMessage(msg.text, 'bot'); document.getElementById('chat-send').disabled = false; }
     else if (msg.type === 'memory')   { const el = document.getElementById('memory-content'); if (el) el.textContent = msg.text; }
     else if (msg.type === 'history')  { const el = document.getElementById('history-content'); if (el) el.textContent = msg.text; }

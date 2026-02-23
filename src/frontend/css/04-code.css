@@ -260,11 +260,28 @@
 .dot {
   width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
 }
+.dot-auto { background: var(--green); box-shadow: 0 0 4px var(--green); }
 .dot-cloud { background: #ffb300; box-shadow: 0 0 4px #ffb300; }
 .dot-local { background: #00ffcc; box-shadow: 0 0 4px #00ffcc; }
 .dot-deepseek { background: #6c5ce7; box-shadow: 0 0 4px #6c5ce7; }
 .dot-pc-coder { background: #ff006e; box-shadow: 0 0 4px #ff006e; }
 .dot-pc-deep { background: #e74c3c; box-shadow: 0 0 4px #e74c3c; }
+
+.agent-badge {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-left: 6px;
+  font-family: var(--font);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.agent-badge[data-agent="vessel"]     { color: #00ff41; border: 1px solid #00ff4144; }
+.agent-badge[data-agent="coder"]      { color: #00e5ff; border: 1px solid #00e5ff44; }
+.agent-badge[data-agent="sysadmin"]   { color: #ffab00; border: 1px solid #ffab0044; }
+.agent-badge[data-agent="researcher"] { color: #aa00ff; border: 1px solid #aa00ff44; }
 
 /* Task panel */
 .task-scroll {

@@ -15,6 +15,9 @@ def _get_config(filename: str) -> dict:
             print(f"[Config] Errore parsing {filename}: {e}")
     return {}
 
+# ─── Anthropic (Haiku) ───────────────────────────────────────────────────────
+ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
+
 # ─── Ollama (LLM locale) ─────────────────────────────────────────────────────
 OLLAMA_BASE = "http://127.0.0.1:11434"
 OLLAMA_MODEL = "gemma3:4b"
@@ -58,6 +61,59 @@ OLLAMA_SYSTEM = _build_system_prompt(
     "Puoi aiutare con qualsiasi cosa: domande generali, coding, consigli, "
     "curiosità, brainstorming, organizzazione — sei un assistente tuttofare."
 )
+
+# ─── Agent Registry ──────────────────────────────────────────────────────────
+_AGENTS_CACHE: dict = {}
+
+def _load_agents() -> dict:
+    """Carica agents.json con cache. Ritorna dict vuoto se non esiste."""
+    if _AGENTS_CACHE:
+        return _AGENTS_CACHE
+    cfg = _get_config("agents.json")
+    if cfg and "agents" in cfg:
+        _AGENTS_CACHE.update(cfg)
+    return _AGENTS_CACHE
+
+_HARDWARE_BY_PROVIDER = {
+    "anthropic": "Cloud (Haiku)",
+    "ollama": "Raspberry Pi 5",
+    "ollama_pc_coder": "un PC Windows con GPU NVIDIA RTX 3060",
+    "ollama_pc_deep": "un PC Windows con GPU NVIDIA RTX 3060",
+    "openrouter": "Cloud (DeepSeek V3)",
+}
+
+def get_agent_config(agent_id: str) -> dict:
+    """Ritorna la config di un agente, fallback a vessel."""
+    agents = _load_agents().get("agents", {})
+    return agents.get(agent_id, agents.get("vessel", {}))
+
+def get_default_agent() -> str:
+    """Ritorna l'agent_id di default."""
+    return _load_agents().get("default_agent", "vessel")
+
+def get_all_agents() -> dict:
+    """Ritorna tutti gli agenti registrati."""
+    return _load_agents().get("agents", {})
+
+def build_agent_prompt(agent_id: str, provider_id: str | None = None) -> str:
+    """Compone il system prompt per un agente specifico.
+    Se agents.json non esiste, fallback al prompt Vessel standard."""
+    agent = get_agent_config(agent_id)
+    if not agent:
+        return OLLAMA_SYSTEM  # fallback totale
+
+    name = agent.get("name", "Vessel")
+    role = agent.get("role", "assistente personale")
+    spec = agent.get("specialization", "")
+    pid = provider_id or agent.get("default_provider", "anthropic")
+    hardware = _HARDWARE_BY_PROVIDER.get(pid, "Cloud")
+
+    return (
+        f"Sei {name}, {role} di psychoSocial (Filippo). "
+        f"Giri su {hardware}. Rispondi in italiano, breve e diretto. "
+        f"{spec}\n\n"
+        f"{_SYSTEM_SHARED}"
+    )
 
 FRIENDS_FILE = Path.home() / ".nanobot" / "workspace" / "FRIENDS.md"
 

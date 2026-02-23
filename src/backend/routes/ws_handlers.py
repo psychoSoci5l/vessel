@@ -1,3 +1,15 @@
+# ─── Auto-routing helper (Fase 39C) ──────────────────────────────────────────
+def _resolve_auto_params(provider_id: str) -> tuple:
+    """Risolve (ctx_key, model) per il routing automatico agente."""
+    _map = {
+        "anthropic": ("cloud", ANTHROPIC_MODEL),
+        "ollama": ("ollama", OLLAMA_MODEL),
+        "ollama_pc_coder": ("pc_coder", OLLAMA_PC_CODER_MODEL),
+        "ollama_pc_deep": ("pc_deep", OLLAMA_PC_DEEP_MODEL),
+        "openrouter": ("deepseek", OPENROUTER_MODEL),
+    }
+    return _map.get(provider_id, ("cloud", ANTHROPIC_MODEL))
+
 # ─── WebSocket Handlers ──────────────────────────────────────────────────────
 async def handle_chat(websocket, msg, ctx):
     text = msg.get("text", "").strip()[:4000]
@@ -11,7 +23,14 @@ async def handle_chat(websocket, msg, ctx):
     await broadcast_tamagotchi("THINKING")
     mem = ctx.get("_memory_enabled", False)
     reply = ""
-    if provider == "local":
+    if provider == "auto":
+        agent_id = detect_agent(text)
+        agent_cfg = get_agent_config(agent_id)
+        pid = agent_cfg.get("default_provider", "anthropic")
+        system = build_agent_prompt(agent_id, pid)
+        ctx_key, model = _resolve_auto_params(pid)
+        reply = await _stream_chat(websocket, text, ctx[ctx_key], pid, system, model, memory_enabled=mem, agent_id=agent_id)
+    elif provider == "local":
         reply = await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, memory_enabled=mem)
     elif provider == "pc_coder":
         reply = await _stream_chat(websocket, text, ctx["pc_coder"], "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL, memory_enabled=mem)
@@ -20,8 +39,7 @@ async def handle_chat(websocket, msg, ctx):
     elif provider == "deepseek":
         reply = await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, memory_enabled=mem)
     else:
-        raw_model = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
-        reply = await _stream_chat(websocket, text, ctx["cloud"], "anthropic", _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM), _resolve_model(raw_model), memory_enabled=mem)
+        reply = await _stream_chat(websocket, text, ctx["cloud"], "anthropic", OLLAMA_SYSTEM, ANTHROPIC_MODEL, memory_enabled=mem)
     emotion = detect_emotion(reply or "")
     await broadcast_tamagotchi(emotion)
 

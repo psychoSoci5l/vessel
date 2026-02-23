@@ -40,6 +40,42 @@ def detect_emotion(text: str) -> str:
         return "HAPPY"
     return max(scores, key=scores.get)
 
+# ─── Agent Detection (Fase 39C) ──────────────────────────────────────────────
+_AGENT_KEYWORDS: dict[str, list[str]] = {
+    "coder": [
+        "codice", "debug", "debugga", "implementa", "scrivi", "fix", "fixa",
+        "funzione", "classe", "import", "algoritmo", "bug", "errore nel codice",
+        "api", "endpoint", "refactor", "python", "javascript", "html", "css",
+        "frontend", "backend", "database", "query", "sql", "git", "commit",
+        "deploy", "test", "unit test", "compilare", "build",
+    ],
+    "sysadmin": [
+        "backup", "cron", "crontab", "reboot", "riavvia", "tmux", "log",
+        "disco", "spazio disco", "cpu", "ram", "memoria", "processo",
+        "servizio", "systemctl", "apt", "pip", "temperatura", "monitoring",
+        "aggiorna sistema", "uptime", "ssh", "firewall", "permessi",
+    ],
+    "researcher": [
+        "cerca", "analizza", "riassumi", "spiega", "compara", "confronta",
+        "ricerca", "studio", "come funziona", "perché", "differenza tra",
+        "approfondisci", "pro e contro", "vantaggi", "cosa ne pensi di",
+    ],
+}
+
+def detect_agent(message: str) -> str:
+    """Routing keyword-based, zero LLM cost. Ritorna agent_id."""
+    if not message or len(message) < 3:
+        return get_default_agent()
+    text_lower = message.lower()
+    scores: dict[str, int] = {}
+    for agent_id, keywords in _AGENT_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw in text_lower)
+        if score > 0:
+            scores[agent_id] = score
+    if not scores:
+        return get_default_agent()
+    return max(scores, key=scores.get)
+
 # ─── Chat Core (unified streaming + buffered) ────────────────────────────────
 
 def _provider_worker(provider, queue):
@@ -143,13 +179,13 @@ def _enrich_system_prompt(system_prompt: str, memory_enabled: bool, message: str
 
 
 async def _execute_chat(message, chat_history, provider_id, system_prompt, model,
-                        memory_enabled=False, channel="dashboard", on_chunk=None):
+                        memory_enabled=False, channel="dashboard", on_chunk=None, agent=""):
     """Core chat unificato con failover. on_chunk: async callback per streaming."""
     start_time = time.time()
     system = _enrich_system_prompt(system_prompt, memory_enabled, message, provider_id)
 
     chat_history.append({"role": "user", "content": message})
-    db_save_chat_message(provider_id, channel, "user", message)
+    db_save_chat_message(provider_id, channel, "user", message, agent=agent)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
 
@@ -217,7 +253,7 @@ async def _execute_chat(message, chat_history, provider_id, system_prompt, model
             full_reply = err
 
     chat_history.append({"role": "assistant", "content": full_reply})
-    db_save_chat_message(actual_pid, channel, "assistant", full_reply)
+    db_save_chat_message(actual_pid, channel, "assistant", full_reply, agent=agent)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
     elapsed = int((time.time() - start_time) * 1000)
@@ -236,7 +272,7 @@ async def _execute_chat(message, chat_history, provider_id, system_prompt, model
 async def _stream_chat(
     websocket: WebSocket, message: str, chat_history: list,
     provider_id: str, system_prompt: str, model: str,
-    memory_enabled: bool = False
+    memory_enabled: bool = False, agent_id: str = ""
 ):
     """Chat streaming via WebSocket (wrapper sottile)."""
     async def _send_chunk(text):
@@ -244,8 +280,11 @@ async def _stream_chat(
 
     full_reply, actual_pid, _ = await _execute_chat(
         message, chat_history, provider_id, system_prompt, model,
-        memory_enabled=memory_enabled, on_chunk=_send_chunk)
-    await websocket.send_json({"type": "chat_done", "provider": actual_pid})
+        memory_enabled=memory_enabled, on_chunk=_send_chunk, agent=agent_id)
+    done_msg = {"type": "chat_done", "provider": actual_pid}
+    if agent_id:
+        done_msg["agent"] = agent_id
+    await websocket.send_json(done_msg)
     return full_reply
 
 

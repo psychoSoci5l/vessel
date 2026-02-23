@@ -66,8 +66,7 @@ def _resolve_model(raw: str) -> str:
 def _provider_defaults(provider_id: str) -> tuple:
     """Ritorna (model, system_prompt) di default per un provider_id."""
     if provider_id == "anthropic":
-        raw = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
-        return _resolve_model(raw), _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM)
+        return ANTHROPIC_MODEL, OLLAMA_SYSTEM
     if provider_id == "openrouter":
         return OPENROUTER_MODEL, OLLAMA_SYSTEM
     if provider_id == "ollama":
