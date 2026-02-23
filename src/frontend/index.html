@@ -28,6 +28,7 @@
 
       <!-- ═══ HOME VIEW (default) ═══ -->
       <div id="home-view" class="home-view">
+        <div class="home-scroll">
         <div class="home-header">
           <img class="logo-icon"
             src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k="
@@ -35,8 +36,14 @@
           <span class="home-title">VESSEL</span>
           <div id="home-health-dot" class="health-dot" title="Salute Pi"></div>
           <span class="home-spacer"></span>
+          <span class="home-temp" id="home-temp" style="color:var(--amber);font-size:12px;">--</span>
           <span id="home-clock" class="home-clock">--:--:--</span>
-          <div id="home-conn-dot" class="conn-dot-mini" title="WebSocket"></div>
+          <button class="hdr-btn hdr-btn-help" onclick="showHelpModal()" title="Guida rapida">?</button>
+          <div class="hdr-controls desktop-only">
+            <button class="hdr-btn" onclick="requestStats()" title="Refresh">&#x21BB;</button>
+            <button class="hdr-btn hdr-btn-red" onclick="showRebootModal()" title="Reboot">&#x21BA;</button>
+            <button class="hdr-btn hdr-btn-red" onclick="showShutdownModal()" title="Off">&#x23FB;</button>
+          </div>
         </div>
 
         <div class="home-vitals">
@@ -78,97 +85,136 @@
             </div>
           </div>
 
-          <div class="home-chart">
-            <div class="chart-header">
-              <span class="chart-label">Ultimi 15 min</span>
-              <div class="chart-legend">
-                <span>
-                  <div class="dot-cpu"></div> <span style="color:var(--text2)">CPU%</span>
-                </span>
-                <span>
-                  <div class="dot-temp"></div> <span style="color:var(--text2)">Temp</span>
-                </span>
-              </div>
-            </div>
-            <canvas id="pi-chart"></canvas>
-          </div>
         </div>
 
         <button class="home-services-toggle" id="home-svc-toggle" onclick="toggleHomeServices()">
-          <span>Pi Stats</span>
+          <span>Servizi</span>
           <span class="svc-arrow">&#x25BE;</span>
         </button>
         <div class="home-services" id="home-services">
           <div class="home-services-inner">
-            <div class="stats-grid">
-              <div class="stat-item desktop-hide">
-                <div class="stat-label">CPU</div>
-                <div class="stat-value" id="stat-cpu">—</div>
-              </div>
-              <div class="stat-item desktop-hide">
-                <div class="stat-label">Temp</div>
-                <div class="stat-value" id="stat-temp">—</div>
-              </div>
-              <div class="stat-item desktop-hide">
-                <div class="stat-label">RAM</div>
-                <div class="stat-value" id="stat-mem">—</div>
-              </div>
-              <div class="stat-item desktop-hide">
-                <div class="stat-label">Disco</div>
-                <div class="stat-value" id="stat-disk">—</div>
-              </div>
-              <div class="stat-item full desktop-hide">
-                <div class="stat-label">Uptime</div>
-                <div class="stat-value" id="stat-uptime">—</div>
-              </div>
-            </div>
-            <!-- Crypto live -->
-            <div id="home-crypto" style="margin-top:10px;">
-              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Crypto</div>
-              <div id="home-crypto-data" style="display:flex;gap:12px;font-size:13px;">
-                <span style="color:var(--amber);">₿ <span id="home-btc-price">--</span></span>
-                <span style="color:var(--cyan);">Ξ <span id="home-eth-price">--</span></span>
-              </div>
-            </div>
-            <!-- Meteo live -->
-            <div id="home-weather" style="margin-top:10px;">
-              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Meteo</div>
-              <div id="home-weather-data" style="font-size:13px;color:var(--text2);">
-                <span id="home-weather-text">--</span>
+            <!-- Crypto + Meteo -->
+            <div class="svc-card">
+              <div class="svc-card-row">
+                <div class="svc-block">
+                  <div class="svc-label">Crypto</div>
+                  <div id="home-crypto-data" style="display:flex;gap:12px;font-size:13px;">
+                    <span style="color:var(--amber);">&#x20BF; <span id="home-btc-price">--</span></span>
+                    <span style="color:var(--cyan);">&#x039E; <span id="home-eth-price">--</span></span>
+                  </div>
+                </div>
+                <div class="svc-divider"></div>
+                <div class="svc-block">
+                  <div class="svc-label">Meteo</div>
+                  <div style="font-size:13px;color:var(--text2);">
+                    <span id="home-weather-text">--</span>
+                  </div>
+                </div>
               </div>
             </div>
             <!-- Sessioni tmux -->
-            <div style="margin-top:10px;">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-                <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Sessioni
-                  tmux</span>
+            <div class="svc-card">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <div class="svc-label" style="margin:0;">Sessioni tmux</div>
                 <button class="btn-green" onclick="gatewayRestart()"
-                  style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BA; Gateway</button>
+                  style="min-height:24px;padding:2px 8px;font-size:10px;">&#x21BA; Gateway</button>
               </div>
               <div class="session-list" id="session-list">
                 <div class="no-items">Caricamento…</div>
               </div>
             </div>
-            <div style="display:flex;gap:6px;margin-top:10px;justify-content:space-between;align-items:center;">
-              <div style="display:flex;gap:6px;align-items:center;">
-                <button class="btn-ghost" onclick="requestStats()"
-                  style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BB; Refresh</button>
-                <span id="version-badge" class="version-badge">—</span>
-              </div>
-              <div style="display:flex;gap:6px;">
-                <button class="btn-red" onclick="showRebootModal()"
-                  style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BA; Reboot</button>
-                <button class="btn-red" onclick="showShutdownModal()"
-                  style="min-height:28px;padding:3px 10px;font-size:10px;">&#x23FB; Off</button>
+            <!-- Sistema -->
+            <div class="svc-card">
+              <div style="display:flex;gap:6px;justify-content:space-between;align-items:center;">
+                <div style="display:flex;gap:6px;align-items:center;">
+                  <button class="btn-ghost" onclick="requestStats()"
+                    style="min-height:26px;padding:2px 8px;font-size:10px;">&#x21BB; Refresh</button>
+                  <span id="version-badge" class="version-badge">—</span>
+                </div>
+                <div style="display:flex;gap:6px;">
+                  <button class="btn-red" onclick="showRebootModal()"
+                    style="min-height:26px;padding:2px 8px;font-size:10px;">&#x21BA; Reboot</button>
+                  <button class="btn-red" onclick="showShutdownModal()"
+                    style="min-height:26px;padding:2px 8px;font-size:10px;">&#x23FB; Off</button>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
+        <div class="home-widgets" id="home-widgets">
+          <div class="widget-tile chart-tile">
+            <div class="wt-content" style="width:100%;">
+              <div class="chart-header">
+                <span class="chart-label">Ultimi 15 min</span>
+                <div class="chart-legend">
+                  <span>
+                    <div class="dot-cpu"></div> <span style="color:var(--text2)">CPU%</span>
+                  </span>
+                  <span>
+                    <div class="dot-temp"></div> <span style="color:var(--text2)">Temp</span>
+                  </span>
+                </div>
+              </div>
+              <canvas id="pi-chart"></canvas>
+            </div>
+          </div>
+          <div class="widget-tile" data-widget="briefing" onclick="openDrawer('briefing')">
+            <div class="wt-icon">&#x25A4;</div>
+            <div class="wt-content">
+              <div class="wt-label">Briefing</div>
+              <div class="wt-preview" id="wt-briefing-preview">--</div>
+            </div>
+          </div>
+          <div class="widget-tile" data-widget="tokens" onclick="openDrawer('tokens')">
+            <div class="wt-icon">&#x00A4;</div>
+            <div class="wt-content">
+              <div class="wt-label">Token</div>
+              <div class="wt-preview" id="wt-tokens-preview">--</div>
+            </div>
+          </div>
+          <div class="widget-tile" data-widget="logs" onclick="openDrawer('logs')">
+            <div class="wt-icon">&#x2261;</div>
+            <div class="wt-content">
+              <div class="wt-label">Log</div>
+              <div class="wt-preview" id="wt-logs-preview">--</div>
+            </div>
+          </div>
+          <div class="widget-tile" data-widget="cron" onclick="openDrawer('cron')">
+            <div class="wt-icon">&#x25C7;</div>
+            <div class="wt-content">
+              <div class="wt-label">Cron</div>
+              <div class="wt-preview" id="wt-cron-preview">--</div>
+            </div>
+          </div>
+          <div class="widget-tile" data-widget="claude" onclick="openDrawer('claude')">
+            <div class="wt-icon">&gt;_</div>
+            <div class="wt-content">
+              <div class="wt-label">Code</div>
+              <div class="wt-preview" id="wt-code-preview">--</div>
+            </div>
+          </div>
+          <div class="widget-tile" data-widget="tmux" onclick="openDrawer('tmux')">
+            <div class="wt-icon">&#x25CF;</div>
+            <div class="wt-content">
+              <div class="wt-label">Tmux</div>
+              <div class="wt-preview" id="wt-tmux-preview">--</div>
+            </div>
+          </div>
+          <div class="widget-tile" data-widget="memoria" onclick="openDrawer('memoria')">
+            <div class="wt-icon">&#x25CE;</div>
+            <div class="wt-content">
+              <div class="wt-label">Memoria</div>
+              <div class="wt-preview" id="wt-mem-preview">--</div>
+            </div>
+          </div>
+        </div>
+
+        </div><!-- /.home-scroll -->
         <div class="home-input-area">
           <div class="home-input-row" id="home-input-row">
-            <div id="chat-input" contenteditable="true" role="textbox" aria-placeholder="scrivi qui…" autocorrect="off"
-              autocapitalize="off" spellcheck="false"></div>
+            <textarea id="chat-input" placeholder="scrivi qui…" rows="1"
+              autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
             <div class="provider-dropdown" id="provider-dropdown">
               <button class="provider-btn" id="provider-trigger" onclick="toggleProviderMenu()" type="button">
                 <span class="provider-dot dot-local" id="provider-dot"></span>
@@ -262,6 +308,15 @@
                     stato del bridge</span></div>
               </div>
             </div>
+            <div class="drawer-widget" id="dw-tmux">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+                <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Sessioni attive</span>
+                <button class="btn-green" onclick="gatewayRestart()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BA; Gateway</button>
+              </div>
+              <div class="session-list" id="drawer-session-list">
+                <div class="no-items">Caricamento…</div>
+              </div>
+            </div>
             <div class="drawer-widget" id="dw-memoria">
               <div class="tab-row">
                 <button class="tab active" onclick="switchTab('memory', this)">MEMORY.md</button>
@@ -313,21 +368,6 @@
       </div>
     </div><!-- /app-content -->
 
-    <!-- ─── Tab Bar ─── -->
-    <nav class="tab-bar">
-      <button class="tab-bar-btn" data-widget="briefing"
-        onclick="openDrawer('briefing')"><span>&#x25A4;</span><span>Brief</span></button>
-      <button class="tab-bar-btn" data-widget="tokens"
-        onclick="openDrawer('tokens')"><span>&#x00A4;</span><span>Token</span></button>
-      <button class="tab-bar-btn" data-widget="logs"
-        onclick="openDrawer('logs')"><span>&#x2261;</span><span>Log</span></button>
-      <button class="tab-bar-btn" data-widget="cron"
-        onclick="openDrawer('cron')"><span>&#x25C7;</span><span>Cron</span></button>
-      <button class="tab-bar-btn" data-widget="claude"
-        onclick="openDrawer('claude')"><span>&gt;_</span><span>Code</span></button>
-      <button class="tab-bar-btn" data-widget="memoria"
-        onclick="openDrawer('memoria')"><span>&#x25CE;</span><span>Mem</span></button>
-    </nav>
 
   </div><!-- /app-layout -->
 
@@ -377,6 +417,78 @@
         </div>
       </div>
       <div id="output-fs-content" class="output-fs-content"></div>
+    </div>
+  </div>
+
+  <!-- Modal Help -->
+  <div class="modal-overlay" id="help-modal" onclick="closeHelpModal()">
+    <div class="help-modal-box" onclick="event.stopPropagation()">
+      <div class="help-modal-header">
+        <span>// GUIDA RAPIDA VESSEL</span>
+        <button class="btn-ghost" style="min-height:28px;padding:2px 10px;" onclick="closeHelpModal()">✕</button>
+      </div>
+      <div class="help-modal-body">
+
+        <div class="help-section">
+          <div class="help-section-title">WIDGET CODE — ROUTING AUTOMATICO</div>
+          <div class="help-table">
+            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">ANALIZZA</span><span class="help-kw">analizza · spiega · mostra · log · verifica · leggi · elenca</span><span class="help-mode">one-shot</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#00ff41;border-color:#00ff41;">CREA</span><span class="help-kw">crea · genera · scrivi · costruisci · implementa · progetta</span><span class="help-mode">one-shot</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">MODIFICA</span><span class="help-kw">modifica · aggiorna · cambia · refactor · aggiungi · rimuovi</span><span class="help-mode loop">⟳ loop</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#ff5555;border-color:#ff5555;">DEBUG</span><span class="help-kw">debug · errore · crash · fix · correggi · risolvi · problema</span><span class="help-mode loop">⟳ loop</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">DEPLOY</span><span class="help-kw">deploy · installa · avvia · configura · setup · pubblica</span><span class="help-mode loop">⟳ loop</span></div>
+          </div>
+          <div class="help-note">Ralph Loop: max 3 iter · 12 min · supervisore Ollama valuta + error_type</div>
+        </div>
+
+        <div class="help-section">
+          <div class="help-section-title">PROVIDER CHAT</div>
+          <div class="help-table">
+            <div class="help-row"><span class="help-badge" style="color:#00ff41;border-color:#00ff41;">Haiku</span><span class="help-kw">Claude Haiku — cloud Anthropic, veloce, a pagamento</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#888;border-color:#888;">Local</span><span class="help-kw">Gemma 3 4B sul Pi — lento (~3.85 tok/s), sempre gratis</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">PC Coder</span><span class="help-kw">Qwen2.5-Coder 14B su LAN — GPU RTX 3060, ottimo per codice</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">PC Deep</span><span class="help-kw">DeepSeek-R1 8B su LAN — ragionamento, gratis</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">Deep</span><span class="help-kw">DeepSeek V3 via OpenRouter — cloud, economico</span></div>
+          </div>
+          <div class="help-note">PC Coder/Deep richiedono PC acceso e Ollama avviato (LAN 192.168.178.34)</div>
+        </div>
+
+        <div class="help-section">
+          <div class="help-section-title">TEMPLATE WIDGET CODE</div>
+          <div class="help-table">
+            <div class="help-row"><span class="help-label">Build + Deploy</span><span class="help-kw">build.py → SCP → tmux restart</span></div>
+            <div class="help-row"><span class="help-label">Fix bug</span><span class="help-kw">incolla errore + "correggi il codice in src/"</span></div>
+            <div class="help-row"><span class="help-label">Git status</span><span class="help-kw">mostra stato repo senza commit</span></div>
+            <div class="help-row"><span class="help-label">Test dashboard</span><span class="help-kw">curl picoclaw.local:8090 + verifica risposta</span></div>
+            <div class="help-row"><span class="help-label">Log Pi</span><span class="help-kw">SSH → tail -50 ~/.nanobot/gateway.log</span></div>
+          </div>
+        </div>
+
+        <div class="help-section">
+          <div class="help-section-title">TELEGRAM</div>
+          <div class="help-table">
+            <div class="help-row"><span class="help-label">/voice &lt;msg&gt;</span><span class="help-kw">risposta testo + audio vocale (stile parlato)</span></div>
+            <div class="help-row"><span class="help-label">@coder &lt;msg&gt;</span><span class="help-kw">forza provider PC Coder (Qwen)</span></div>
+            <div class="help-row"><span class="help-label">@deep &lt;msg&gt;</span><span class="help-kw">forza provider PC Deep (DeepSeek-R1)</span></div>
+            <div class="help-row"><span class="help-label">@pc &lt;msg&gt;</span><span class="help-kw">alias @coder</span></div>
+            <div class="help-row"><span class="help-label">@status</span><span class="help-kw">stato sistema Pi (temp, RAM, uptime)</span></div>
+            <div class="help-row"><span class="help-label">vocale</span><span class="help-kw">STT Groq Whisper → LLM → risposta vocale (max 3 min)</span></div>
+          </div>
+        </div>
+
+        <div class="help-section">
+          <div class="help-section-title">INFRASTRUTTURA</div>
+          <div class="help-table">
+            <div class="help-row"><span class="help-label">Dashboard live</span><span class="help-kw">picoclaw.local:8090 · tmux: nanobot-dashboard</span></div>
+            <div class="help-row"><span class="help-label">Dashboard test</span><span class="help-kw">porta 8091 (staging nanobot_dashboard_v2.py)</span></div>
+            <div class="help-row"><span class="help-label">Bridge Windows</span><span class="help-kw">porta 8095 · avvio auto da shell:startup</span></div>
+            <div class="help-row"><span class="help-label">Accesso remoto</span><span class="help-kw">Cloudflare Tunnel (configurato a OS level)</span></div>
+            <div class="help-row"><span class="help-label">DB</span><span class="help-kw">~/.nanobot/vessel.db · backup domenica 04:00</span></div>
+            <div class="help-row"><span class="help-label">Cron briefing</span><span class="help-kw">07:00 mattina · 22:00 buonanotte</span></div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 

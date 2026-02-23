@@ -55,6 +55,7 @@ async def _handle_telegram_message(text: str):
         return
 
     # /voice <messaggio> → risposta testo + vocale
+    low = text.strip().lower()
     send_voice = False
     if low.startswith("/voice "):
         text = text[7:].strip()

@@ -10,11 +10,23 @@ let ws = null;
         const el = document.getElementById(id);
         if (el) el.classList.add('on');
       });
+      // Ripristina health dot home (sarà aggiornato dal prossimo stats)
+      const hhd = document.getElementById('home-health-dot');
+      if (hhd && hhd.classList.contains('ws-offline')) {
+        hhd.classList.remove('ws-offline', 'red');
+        hhd.className = 'health-dot';
+      }
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      // Auto-fetch dati live per home
+      // Auto-fetch dati live per home + widget tiles preview
       setTimeout(() => {
         send({ action: 'get_crypto' });
         send({ action: 'plugin_weather' });
+        send({ action: 'get_tokens' });
+        send({ action: 'get_briefing' });
+        send({ action: 'get_cron' });
+        send({ action: 'get_logs' });
+        send({ action: 'check_bridge' });
+        send({ action: 'get_entities' });
       }, 500);
     };
     ws.onclose = (e) => {
@@ -22,6 +34,9 @@ let ws = null;
         const el = document.getElementById(id);
         if (el) el.classList.remove('on');
       });
+      // Health dot home diventa rosso quando WS disconnesso
+      const hhd = document.getElementById('home-health-dot');
+      if (hhd) { hhd.className = 'health-dot red ws-offline'; hhd.title = 'Disconnesso'; }
       if (e.code === 4001) { window.location.href = '/'; return; }
       reconnectTimer = setTimeout(connect, 3000);
     };
@@ -140,7 +155,10 @@ let ws = null;
           if (d.city) parts.push(d.city);
           if (d.temp != null) parts.push(d.temp + '°C');
           if (d.condition) parts.push(d.condition);
-          hw.textContent = parts.join(' · ') || '--';
+          const wText = parts.join(' · ') || '--';
+          hw.textContent = wText;
+          const hdrW = document.getElementById('hdr-weather');
+          if (hdrW) hdrW.textContent = wText;
         }
       }
     }
@@ -198,13 +216,6 @@ let ws = null;
       diskBar.style.background = diskPct > 85 ? 'var(--red)' : diskPct > 70 ? 'var(--amber)' : 'var(--green)';
     }
 
-    // ── Stats detail (sezione servizi) ──
-    const sc = document.getElementById('stat-cpu');    if (sc) sc.textContent = pi.cpu || '—';
-    const st = document.getElementById('stat-temp');   if (st) st.textContent = pi.temp || '—';
-    const sm = document.getElementById('stat-mem');    if (sm) sm.textContent = pi.mem || '—';
-    const sd = document.getElementById('stat-disk');   if (sd) sd.textContent = pi.disk || '—';
-    const su = document.getElementById('stat-uptime'); if (su) su.textContent = pi.uptime || '—';
-
     // ── Health dots (tutti) ──
     ['home-health-dot', 'chat-health-dot'].forEach(id => {
       const el = document.getElementById(id);
@@ -214,9 +225,11 @@ let ws = null;
       }
     });
 
-    // ── Chat compact temp ──
+    // ── Temp (chat + home header) ──
     const chatTemp = document.getElementById('chat-temp');
     if (chatTemp) chatTemp.textContent = pi.temp || '--';
+    const homeTemp = document.getElementById('home-temp');
+    if (homeTemp) homeTemp.textContent = pi.temp || '--';
 
     // ── Storico per grafico ──
     cpuHistory.push(cpuPct);
@@ -263,18 +276,26 @@ let ws = null;
 
   function updateSessions(sessions) {
     const el = document.getElementById('session-list');
+    const drawerEl = document.getElementById('drawer-session-list');
     const countEl = document.getElementById('hc-sessions-sub');
+    const tmuxPreview = document.getElementById('wt-tmux-preview');
     if (!sessions || !sessions.length) {
-      el.innerHTML = '<div class="no-items">// nessuna sessione attiva</div>';
+      const empty = '<div class="no-items">// nessuna sessione attiva</div>';
+      if (el) el.innerHTML = empty;
+      if (drawerEl) drawerEl.innerHTML = empty;
       if (countEl) countEl.textContent = '0 sessioni';
+      if (tmuxPreview) tmuxPreview.textContent = '0 sessioni';
       return;
     }
-    el.innerHTML = sessions.map(s => `
+    const html = sessions.map(s => `
       <div class="session-item">
         <div class="session-name"><div class="session-dot"></div><code>${esc(s.name)}</code></div>
         <button class="btn-red" onclick="killSession('${esc(s.name)}')">✕ Kill</button>
       </div>`).join('');
+    if (el) el.innerHTML = html;
+    if (drawerEl) drawerEl.innerHTML = html;
     if (countEl) countEl.textContent = sessions.length + ' session' + (sessions.length !== 1 ? 'i' : 'e');
+    if (tmuxPreview) tmuxPreview.textContent = sessions.map(s => '● ' + s.name).join('\n');
   }
 
   // ── Vista corrente + Chat ──
@@ -325,7 +346,7 @@ let ws = null;
     // Switch viste
     chatView.style.display = 'none';
     chatView.classList.remove('active');
-    homeView.style.display = 'flex';
+    homeView.style.display = '';
 
     // Ridisegna il canvas (potrebbe aver perso dimensioni)
     requestAnimationFrame(() => drawChart());
@@ -360,14 +381,18 @@ let ws = null;
   function toggleHomeServices() {
     const svc = document.getElementById('home-services');
     const btn = document.getElementById('home-svc-toggle');
+    const wasOpen = svc.classList.contains('open');
     svc.classList.toggle('open');
     btn.classList.toggle('open');
+    if (!wasOpen) {
+      setTimeout(() => svc.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+    }
   }
 
-  // ── Focus input → chat mode (solo mobile) ──
+  // ── Focus input → chat mode ──
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('chat-input').addEventListener('focus', () => {
-      if (window.innerWidth < 768) switchToChat();
+      switchToChat();
     });
   });
 
@@ -423,18 +448,25 @@ let ws = null;
 
   function sendChat() {
     const input = document.getElementById('chat-input');
-    const text = (input.textContent || '').trim();
+    const text = (input.value || '').trim();
     if (!text) return;
     switchToChat();
     appendMessage(text, 'user');
     send({ action: 'chat', text, provider: chatProvider });
-    input.textContent = '';
+    input.value = '';
+    input.style.height = 'auto';
     document.getElementById('chat-send').disabled = true;
   }
+  function autoResizeInput(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
   document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('chat-input').addEventListener('keydown', e => {
+    const chatInput = document.getElementById('chat-input');
+    chatInput.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
     });
+    chatInput.addEventListener('input', () => autoResizeInput(chatInput));
     document.getElementById('mem-search-keyword')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') searchMemory();
     });
@@ -485,6 +517,7 @@ let ws = null;
     logs:     { title: '≡ Log Nanobot', actions: '<button class="btn-ghost" onclick="loadLogs(this)">Carica</button>' },
     cron:     { title: '◇ Task schedulati', actions: '<button class="btn-ghost" onclick="loadCron(this)">Carica</button>' },
     claude:   { title: '>_ Remote Code', actions: '<span id="bridge-dot" class="health-dot" title="Bridge" style="width:8px;height:8px;"></span><button class="btn-ghost" onclick="loadBridge(this)">Carica</button>' },
+    tmux:     { title: '● Sessioni Tmux', actions: '' },
     memoria:  { title: '◎ Memoria', actions: '' }
   };
   function openDrawer(widgetId) {
@@ -508,16 +541,16 @@ let ws = null;
     const isWide = widgetId === 'claude' || (cfg && cfg.wide);
     if (isWide) dOverlay.classList.add('drawer-wide');
     else dOverlay.classList.remove('drawer-wide');
-    // Tab bar highlight
-    document.querySelectorAll('.tab-bar-btn').forEach(b =>
-      b.classList.toggle('active', b.dataset.widget === widgetId));
+    // Widget tile highlight
+    document.querySelectorAll('.widget-tile').forEach(t =>
+      t.classList.toggle('active', t.dataset.widget === widgetId));
     activeDrawer = widgetId;
   }
   function closeDrawer() {
     document.getElementById('drawer-overlay').classList.remove('show', 'drawer-wide');
     document.querySelector('.app-content').classList.remove('has-drawer');
     document.getElementById('drawer-overlay').classList.remove('drawer-wide');
-    document.querySelectorAll('.tab-bar-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.widget-tile').forEach(t => t.classList.remove('active'));
     activeDrawer = null;
   }
 
@@ -606,9 +639,29 @@ let ws = null;
     if (hBtc && data.btc) hBtc.textContent = '$' + data.btc.usd.toLocaleString();
     const hEth = document.getElementById('home-eth-price');
     if (hEth && data.eth) hEth.textContent = '$' + data.eth.usd.toLocaleString();
+    // Header badges (desktop)
+    const hdrBtc = document.getElementById('hdr-btc');
+    if (hdrBtc && data.btc) hdrBtc.textContent = '$' + data.btc.usd.toLocaleString();
+    const hdrEth = document.getElementById('hdr-eth');
+    if (hdrEth && data.eth) hdrEth.textContent = '$' + data.eth.usd.toLocaleString();
   }
 
   function renderBriefing(data) {
+    // Preview tile
+    const bp = document.getElementById('wt-briefing-preview');
+    if (bp) {
+      if (data.last) {
+        const parts = [];
+        const ts = (data.last.ts || '').split('T')[0];
+        if (ts) parts.push(ts);
+        if (data.last.weather) parts.push(data.last.weather.substring(0, 25));
+        const cal = (data.last.calendar_today || []).length;
+        if (cal > 0) parts.push(cal + ' eventi oggi');
+        bp.textContent = parts.join(' · ') || 'Caricato';
+      } else {
+        bp.textContent = 'Nessun briefing';
+      }
+    }
     const el = document.getElementById('briefing-body');
     if (!data.last) {
       el.innerHTML = '<div class="no-items">// nessun briefing generato ancora</div>' +
@@ -656,6 +709,15 @@ let ws = null;
   }
 
   function renderTokens(data) {
+    // Preview tile
+    const tp = document.getElementById('wt-tokens-preview');
+    if (tp) {
+      const inTok = (data.today_input || 0);
+      const outTok = (data.today_output || 0);
+      const fmt = n => n >= 1000 ? (n/1000).toFixed(1) + 'K' : n;
+      const model = (data.last_model || '').split('-').pop() || '';
+      tp.textContent = fmt(inTok) + ' in / ' + fmt(outTok) + ' out' + (model ? ' · ' + model : '');
+    }
     const src = data.source === 'api' ? '🌐 Anthropic API' : '📁 Log locale';
     document.getElementById('tokens-body').innerHTML = `
       <div class="token-grid">
@@ -672,6 +734,13 @@ let ws = null;
   }
 
   function renderLogs(data) {
+    // Preview tile
+    const lp = document.getElementById('wt-logs-preview');
+    if (lp) {
+      const lines = (typeof data === 'object' && data.lines) ? data.lines : [];
+      const last = lines.length ? lines[lines.length - 1] : '';
+      lp.textContent = last ? last.substring(0, 60) : 'Nessun log';
+    }
     const el = document.getElementById('logs-body');
     // data può essere stringa (vecchio formato) o oggetto {lines, total, filtered}
     if (typeof data === 'string') {
@@ -697,9 +766,9 @@ let ws = null;
     }).join('\n') : '(nessun log corrispondente)';
     el.innerHTML = `
       <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">
-        <input type="date" id="log-date-filter" value="${dateVal}" tabindex="-1"
+        <input type="date" id="log-date-filter" value="${dateVal}"
           style="background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--amber);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;">
-        <input type="text" id="log-search-filter" placeholder="🔍 cerca…" value="${searchVal}" tabindex="-1"
+        <input type="text" id="log-search-filter" placeholder="🔍 cerca…" value="${searchVal}"
           style="flex:1;min-width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;">
         <button class="btn-green" onclick="loadLogs()" style="min-height:32px;">🔍 Filtra</button>
         <button class="btn-ghost" onclick="clearLogFilters()" style="min-height:32px;">✕ Reset</button>
@@ -721,6 +790,12 @@ let ws = null;
   }
 
   function renderCron(jobs) {
+    // Preview tile
+    const cp = document.getElementById('wt-cron-preview');
+    if (cp) {
+      const count = (jobs && jobs.length) || 0;
+      cp.textContent = count + ' job attivi';
+    }
     const el = document.getElementById('cron-body');
     const jobList = (jobs && jobs.length) ? '<div class="cron-list">' + jobs.map((j, i) => `
       <div class="cron-item" style="align-items:center;">
@@ -733,8 +808,8 @@ let ws = null;
       <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
         <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">AGGIUNGI TASK</div>
         <div style="display:flex;gap:6px;margin-bottom:6px;">
-          <input id="cron-schedule" placeholder="30 7 * * *" tabindex="-1" style="width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;">
-          <input id="cron-command" placeholder="python3.13 /path/to/script.py" tabindex="-1" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;">
+          <input id="cron-schedule" placeholder="30 7 * * *" style="width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;">
+          <input id="cron-command" placeholder="python3.13 /path/to/script.py" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;">
         </div>
         <div style="display:flex;gap:6px;">
           <button class="btn-green" onclick="addCron()">+ Aggiungi</button>
@@ -754,6 +829,46 @@ let ws = null;
 
   // ── Remote Code ──
   let claudeRunning = false;
+
+  const TASK_CATEGORIES = [
+    { id: 'debug',    label: 'DEBUG',    color: '#ff5555', loop: true,
+      keywords: ['debug','errore','crash','fix','correggi','problema','risolvi','broken','traceback','exception','fallisce','non funziona'] },
+    { id: 'modifica', label: 'MODIFICA', color: '#ffaa00', loop: true,
+      keywords: ['modifica','aggiorna','cambia','refactor','aggiungi','rimuovi','sostituisci','rinomina','sposta','estendi','integra'] },
+    { id: 'deploy',   label: 'DEPLOY',   color: '#aa66ff', loop: true,
+      keywords: ['deploy','installa','avvia','configura','setup','migra','pubblica','rilascia','lancia'] },
+    { id: 'crea',     label: 'CREA',     color: '#00ff41', loop: false,
+      keywords: ['crea','genera','scrivi','costruisci','make','nuova','nuovo','implementa','progetta','realizza'] },
+    { id: 'analizza', label: 'ANALIZZA', color: '#44aaff', loop: false,
+      keywords: ['analizza','spiega','controlla','leggi','dimmi','cosa fa','verifica','mostra','elenca','lista','log','report','confronta'] },
+  ];
+
+  function detectTaskCategory(prompt) {
+    const p = prompt.toLowerCase();
+    for (const cat of TASK_CATEGORIES) {
+      if (cat.keywords.some(kw => p.includes(kw))) return cat;
+    }
+    return { id: 'generico', label: 'GENERICO', color: '#666', loop: false };
+  }
+
+  function updateCategoryBadge() {
+    const ta = document.getElementById('claude-prompt');
+    const badge = document.getElementById('task-category-badge');
+    const loopToggle = document.getElementById('ralph-toggle');
+    if (!badge || !ta) return;
+    const cat = detectTaskCategory(ta.value);
+    const manualLoop = loopToggle?.checked || false;
+    const willLoop = manualLoop || cat.loop;
+    badge.textContent = cat.label;
+    badge.style.color = cat.color;
+    badge.style.borderColor = cat.color;
+    badge.title = willLoop ? 'Usa Ralph Loop (iterativo)' : 'Esecuzione one-shot';
+    const loopBadge = document.getElementById('task-loop-badge');
+    if (loopBadge) {
+      loopBadge.style.display = willLoop ? 'inline-block' : 'none';
+    }
+  }
+
   const promptTemplates = [
     { label: '— Template —', value: '' },
     { label: 'Build + Deploy', value: 'Esegui build.py nella cartella Pi Nanobot, copia il file generato sul Pi via SCP e riavvia il servizio in tmux.' },
@@ -788,7 +903,9 @@ let ws = null;
     if (wrap) wrap.style.display = 'block';
     const out = document.getElementById('claude-output');
     if (out) out.innerHTML = '';
-    const useLoop = document.getElementById('ralph-toggle')?.checked || false;
+    const manualLoop = document.getElementById('ralph-toggle')?.checked || false;
+    const cat = detectTaskCategory(prompt);
+    const useLoop = manualLoop || cat.loop;
     send({ action: 'claude_task', prompt: prompt, use_loop: useLoop });
   }
 
@@ -810,6 +927,13 @@ let ws = null;
   }
 
   function renderBridgeStatus(data) {
+    // Preview tile
+    const codePrev = document.getElementById('wt-code-preview');
+    if (codePrev) {
+      const isOnline = data.status === 'ok';
+      codePrev.innerHTML = '<span class="wt-dot ' + (isOnline ? 'online' : 'offline') + '"></span>' +
+        (isOnline ? 'Bridge online' : 'Bridge offline');
+    }
     const dot = document.getElementById('bridge-dot');
     if (!dot) return;
     if (data.status === 'ok') {
@@ -835,17 +959,23 @@ let ws = null;
         <select onchange="applyTemplate(this)" style="width:100%;margin-bottom:6px;background:var(--bg2);
           border:1px solid var(--border);border-radius:4px;color:var(--text2);padding:6px 8px;
           font-family:var(--font);font-size:11px;outline:none;cursor:pointer;">${opts}</select>
-        <textarea id="claude-prompt" rows="3" placeholder="Descrivi il task per Claude Code..." tabindex="-1"
+        <textarea id="claude-prompt" rows="3" placeholder="Descrivi il task per Claude Code..."
+          oninput="updateCategoryBadge()"
           style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;
           color:var(--green);padding:9px 12px;font-family:var(--font);font-size:13px;
           outline:none;resize:vertical;caret-color:var(--green);min-height:60px;box-sizing:border-box;"></textarea>
-        <div style="display:flex;gap:6px;margin-top:6px;align-items:center;">
+        <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;">
           <button class="btn-green" id="claude-run-btn" onclick="runClaudeTask()"
             ${!isOnline ? 'disabled title="Bridge offline"' : ''}>▶ Esegui</button>
           <button class="btn-red" id="claude-cancel-btn" onclick="cancelClaudeTask()"
             style="display:none;">■ Stop</button>
+          <span id="task-category-badge" style="font-size:9px;font-weight:700;letter-spacing:1px;
+            border:1px solid #666;border-radius:3px;padding:1px 6px;color:#666;">GENERICO</span>
+          <span id="task-loop-badge" style="display:none;font-size:9px;font-weight:700;letter-spacing:1px;
+            border:1px solid #ffaa00;border-radius:3px;padding:1px 6px;color:#ffaa00;">⟳ LOOP</span>
           <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-left:auto;cursor:pointer;">
-            <input type="checkbox" id="ralph-toggle" style="accent-color:var(--green);cursor:pointer;">
+            <input type="checkbox" id="ralph-toggle" style="accent-color:var(--green);cursor:pointer;"
+              onchange="updateCategoryBadge()">
             Ralph Loop
           </label>
           <button class="btn-ghost" onclick="loadBridge()">↻</button>
@@ -903,6 +1033,13 @@ let ws = null;
   }
 
   function renderKnowledgeGraph(entities, relations) {
+    // Preview tile
+    const mp = document.getElementById('wt-mem-preview');
+    if (mp) {
+      const eCount = entities ? entities.length : 0;
+      const rCount = relations ? relations.length : 0;
+      mp.textContent = eCount + ' entita · ' + rCount + ' relazioni';
+    }
     const el = document.getElementById('grafo-body');
     if (!entities || entities.length === 0) {
       el.innerHTML = '<div class="no-items">// nessuna entit\u00e0 nel Knowledge Graph</div>' +
@@ -1003,6 +1140,12 @@ let ws = null;
   function gatewayRestart() { showToast('⏳ Riavvio gateway…'); send({ action: 'gateway_restart' }); }
 
   // ── Reboot / Shutdown ──
+  function showHelpModal() {
+    document.getElementById('help-modal').classList.add('show');
+  }
+  function closeHelpModal() {
+    document.getElementById('help-modal').classList.remove('show');
+  }
   function showRebootModal() {
     document.getElementById('reboot-modal').classList.add('show');
   }
@@ -1158,17 +1301,19 @@ let ws = null;
           dw.innerHTML = '<div id="plugin-' + p.id + '-body"><div class="widget-placeholder"><span class="ph-icon">' + p.icon + '</span><span>Premi Carica per ' + p.title + '</span></div></div>';
           body.appendChild(dw);
         }
-        // Aggiungi tab bar button (skip plugin promossi in home)
+        // Aggiungi widget tile alla home (skip plugin promossi in home)
         const homePromoted = ['weather'];
         if (!homePromoted.includes(p.id)) {
-          const tabBar = document.querySelector('.tab-bar');
-          if (tabBar) {
-            const btn = document.createElement('button');
-            btn.className = 'tab-bar-btn';
-            btn.dataset.widget = pid;
-            btn.onclick = function() { openDrawer(pid); };
-            btn.innerHTML = '<span>' + p.icon + '</span><span>' + p.tab_label + '</span>';
-            tabBar.appendChild(btn);
+          const homeWidgets = document.getElementById('home-widgets');
+          if (homeWidgets) {
+            const tile = document.createElement('div');
+            tile.className = 'widget-tile';
+            tile.dataset.widget = pid;
+            tile.onclick = function() { openDrawer(pid); };
+            tile.innerHTML = '<div class="wt-icon">' + p.icon + '</div>' +
+              '<div class="wt-content"><div class="wt-label">' + p.tab_label + '</div>' +
+              '<div class="wt-preview" id="wt-' + p.id + '-preview">--</div></div>';
+            homeWidgets.appendChild(tile);
           }
         }
         // Inietta CSS opzionale

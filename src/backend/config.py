@@ -33,7 +33,11 @@ OLLAMA_SYSTEM = (
     "nell'elenco, presentati e chiedi chi sono. Se ci sono PIÙ persone con lo "
     "stesso nome, chiedi quale sono (es. 'Filippo conosce due Stefano — sei "
     "Santaiti o Rodella?'). Gli amici sono di Filippo, non tuoi — parla in "
-    "terza persona (es. 'Filippo conosce...', 'So che sei amico di Filippo')."
+    "terza persona (es. 'Filippo conosce...', 'So che sei amico di Filippo').\n\n"
+    "## Regola proprietario\n"
+    "Se l'interlocutore non si è presentato in questa conversazione, "
+    "assumi che stai parlando con Filippo (il tuo proprietario). "
+    "Non confonderlo con gli amici nell'elenco. Salutalo in modo naturale."
 )
 
 FRIENDS_FILE = Path.home() / ".nanobot" / "workspace" / "FRIENDS.md"
@@ -56,7 +60,7 @@ OLLAMA_PC_KEEP_ALIVE = "60m"
 OLLAMA_PC_TIMEOUT = 60  # GPU è veloce
 _pc_models = _pc_cfg.get("models", {})
 OLLAMA_PC_CODER_MODEL = _pc_models.get("coder", "qwen2.5-coder:14b")
-OLLAMA_PC_DEEP_MODEL = _pc_models.get("deep", "deepseek-r1:8b")
+OLLAMA_PC_DEEP_MODEL = _pc_models.get("deep", "qwen3-coder:30b")
 OLLAMA_PC_NUM_PREDICT = _pc_cfg.get("num_predict", 2048)  # limita generazione (anti-loop)
 OLLAMA_PC_CODER_SYSTEM = (
     "Sei Vessel, assistente personale di psychoSocial (Filippo). "
@@ -68,7 +72,11 @@ OLLAMA_PC_CODER_SYSTEM = (
     "rispondi in modo caldo e naturale: presentati, saluta per nome, cita i "
     "loro interessi in modo discorsivo (non come elenco!). Se il nome non è "
     "nell'elenco, presentati e chiedi chi sono. Se ci sono PIÙ persone con lo "
-    "stesso nome, chiedi quale sono. Gli amici sono di Filippo, non tuoi."
+    "stesso nome, chiedi quale sono. Gli amici sono di Filippo, non tuoi.\n\n"
+    "## Regola proprietario\n"
+    "Se l'interlocutore non si è presentato in questa conversazione, "
+    "assumi che stai parlando con Filippo (il tuo proprietario). "
+    "Non confonderlo con gli amici nell'elenco. Salutalo in modo naturale."
 )
 OLLAMA_PC_DEEP_SYSTEM = (
     "Sei Vessel, assistente personale di psychoSocial (Filippo). "
@@ -81,7 +89,11 @@ OLLAMA_PC_DEEP_SYSTEM = (
     "rispondi in modo caldo e naturale: presentati, saluta per nome, cita i "
     "loro interessi in modo discorsivo (non come elenco!). Se il nome non è "
     "nell'elenco, presentati e chiedi chi sono. Se ci sono PIÙ persone con lo "
-    "stesso nome, chiedi quale sono. Gli amici sono di Filippo, non tuoi."
+    "stesso nome, chiedi quale sono. Gli amici sono di Filippo, non tuoi.\n\n"
+    "## Regola proprietario\n"
+    "Se l'interlocutore non si è presentato in questa conversazione, "
+    "assumi che stai parlando con Filippo (il tuo proprietario). "
+    "Non confonderlo con gli amici nell'elenco. Salutalo in modo naturale."
 )
 
 # ─── Claude Bridge (Remote Code) ────────────────────────────────────────────
@@ -180,7 +192,7 @@ PROVIDER_FALLBACKS = {
 # ─── Heartbeat Monitor ──────────────────────────────────────────────────────
 HEARTBEAT_INTERVAL = 60       # secondi tra ogni check
 HEARTBEAT_ALERT_COOLDOWN = 1800  # 30 min prima di ri-alertare lo stesso problema
-HEARTBEAT_TEMP_THRESHOLD = 70.0  # °C
+HEARTBEAT_TEMP_THRESHOLD = 79.0  # °C
 
 # ─── Plugin System ───────────────────────────────────────────────────────────
 PLUGINS_DIR = Path.home() / ".nanobot" / "widgets"

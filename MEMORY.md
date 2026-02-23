@@ -110,11 +110,14 @@
 - **Lavoro diretto su Pi**: SSH per debug, ispezione config, log
 - **NOTA SSH + Bash tool**: stdout non catturato direttamente, redirect su file + Read tool
 
-## Stato attuale (2026-02-21)
-- **Fase 1–4.5**: COMPLETATE
-- **Fase 5**: COMPLETATA — briefing+calendario, Ollama integrato
-- **Fase 6**: COMPLETATA — repo pubblica `vessel-pi`, README, LICENSE
-- **Fase 7**: COMPLETATA — Remote Claude Code (bridge Windows)
-- **Fase 8**: COMPLETATA — Ralph Loop (iterazione automatica con supervisore Ollama)
-- **Fase 9**: IN CORSO — Hardening (XSS fix, PIN pbkdf2, streaming cloud, history cloud, DeepSeek V3)
-- **Prossimo**: performance (async broadcaster, persistenza sessioni), notifiche push, temi
+## Stato attuale (2026-02-23)
+- **Fasi 1-22**: COMPLETATE (vedere MEMORY principale Claude projects per dettagli)
+- **Fase 23**: COMPLETATA — UI Polish + Infra (23/02/2026)
+  - 23A: date injection Ollama, default-owner, fix Telegram crash, stats/chart/input mobile
+  - 23B: crypto rimosso header, chart full-width, soglia temp 79°C, ZRAM rimosso, ventola progressiva
+  - 23C: iOS cleanup, bottoni 42px, health dot unificato con WS, header riordinato
+- **Infra Pi** (aggiornata Fase 23B):
+  - ZRAM rimosso: `apt-get remove zram-tools systemd-zram-generator`
+  - Swap SSD 8GB attivo: `/var/swap` (Priority -2)
+  - Ventola progressiva 4 livelli: 45→55→62→70°C (max 100% a 70°C), isteresi 5°C
+  - Temp max osservata: 78°C (era 82°C pre-curva), soglia alert: 79°C

@@ -1,3 +1,14 @@
+# ─── Date injection ──────────────────────────────────────────────────────────
+import locale as _locale
+try:
+    _locale.setlocale(_locale.LC_TIME, "it_IT.UTF-8")
+except Exception:
+    pass
+
+def _inject_date(system_prompt: str) -> str:
+    """Aggiunge la data corrente al system prompt."""
+    return system_prompt + f"\n\nOggi è {_dt.now().strftime('%A %d %B %Y')}."
+
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 async def bg(fn, *args):
     """Esegue una funzione sincrona in un thread executor (non blocca l'event loop)."""
@@ -746,9 +757,9 @@ async def _stream_chat(
     start_time = time.time()
 
     friends_ctx = _load_friends()
-    system_with_friends = system_prompt
+    system_with_friends = _inject_date(system_prompt)
     if friends_ctx:
-        system_with_friends = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
+        system_with_friends = system_with_friends + "\n\n## Elenco Amici\n" + friends_ctx
     if memory_enabled:
         memory_block = _build_memory_block()
         if memory_block:
@@ -1052,9 +1063,9 @@ async def _chat_response(
     start_time = time.time()
 
     friends_ctx = _load_friends()
-    system_with_friends = system_prompt
+    system_with_friends = _inject_date(system_prompt)
     if friends_ctx:
-        system_with_friends = system_prompt + "\n\n## Elenco Amici\n" + friends_ctx
+        system_with_friends = system_with_friends + "\n\n## Elenco Amici\n" + friends_ctx
     if memory_enabled:
         memory_block = _build_memory_block()
         if memory_block:

@@ -59,7 +59,7 @@
     padding: 16px 0; border: 1px solid var(--border2); border-radius: 8px;
     background: var(--bg2); color: var(--green); cursor: pointer;
     transition: all .15s; -webkit-tap-highlight-color: transparent;
-    user-select: none; min-height: 58px;
+    user-select: none; min-height: 58px; touch-action: manipulation;
   }
   .numpad-btn:active { background: var(--green-dim); border-color: var(--green3); }
   .numpad-btn.fn { font-size: 14px; color: var(--muted); }
@@ -72,7 +72,7 @@
     width: 100%; padding: 16px 0; border: 1px solid var(--green3); border-radius: 8px;
     background: var(--green-dim); color: var(--green); cursor: pointer;
     transition: all .15s; -webkit-tap-highlight-color: transparent;
-    user-select: none; text-transform: uppercase;
+    user-select: none; text-transform: uppercase; touch-action: manipulation;
   }
   .numpad-submit:active { background: #004422; }
   #login-error {
