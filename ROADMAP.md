@@ -346,6 +346,68 @@
 
 ---
 
+## Fase 39 — Agent System + Tone Refinement
+
+> Da singolo assistente a sistema multi-agente leggero. Zero overhead sul Pi:
+> routing keyword-based (niente LLM extra), config-driven, system prompt diversi per ruolo.
+> Include fix del tono di Vessel: umorismo dosato, risposte utility asciutte.
+
+**Blocco A — Tone Guardrails:**
+> Quick win: il tono attuale è fuori controllo (battute COBOL in ogni risposta,
+> emoji spam, fake code blocks comici, cabaret durante backup).
+> Fix: regole esplicite nel system prompt + SOUL.md.
+
+- [ ] Aggiungere regole di tono in `_SYSTEM_SHARED` (config.py):
+  - Umorismo dosato: una battuta ok se il contesto lo richiede, non ogni risposta
+  - Mai battute sul lavoro/interessi dell'utente a meno che non sia in tema
+  - Niente fake code blocks per scopi comici
+  - Emoji max 1-2 per risposta, non spam
+  - Risposte utility (backup, calendario, stato, sistema) = zero cabaret, solo fatti
+- [ ] Aggiornare SOUL.md (nanobot CLI/Discord/Telegram) con le stesse regole
+- [ ] Tono base: **competente, caldo, asciutto** — amico tecnico, non comico
+
+**Blocco B — Agent Registry:**
+> Config-driven: definizioni agente in JSON, `_build_system_prompt()` legge dal registry.
+
+- [ ] File `~/.nanobot/agents.json`:
+  - `vessel` — generalista, tono balanced, provider Haiku/DeepSeek
+  - `coder` — tecnico, tono strict (zero battute), provider PC Coder/Deep
+  - `sysadmin` — operativo, solo fatti, provider Haiku (veloce)
+  - `researcher` — analitico, contesto lungo, provider DeepSeek
+- [ ] Ogni agent: `id`, `name`, `system_prompt_template`, `default_provider`, `tone`
+- [ ] `_build_system_prompt()` refactor: legge da registry, compone con `_SYSTEM_SHARED`
+- [ ] Fallback: se agents.json manca, comportamento attuale (vessel default)
+
+**Blocco C — Routing Intelligente:**
+> Keyword-based come `detectTaskCategory()` nel frontend. Nessun costo LLM.
+
+- [ ] `detect_agent(message)` backend — analisi keyword + pattern:
+  - Chat generica / domande / saluti → `vessel`
+  - Codice / debug / implementa / fix → `coder`
+  - Stato / backup / cron / reboot / tmux → `sysadmin`
+  - Cerca / analizza / riassumi / spiega → `researcher`
+- [ ] Il provider segue l'agente (auto-select, non più solo manuale)
+- [ ] Override manuale: dropdown provider o prefisso sovrascrive il routing
+
+**Blocco D — Dashboard Integration:**
+> Visuale: l'utente vede quale agente sta rispondendo.
+
+- [ ] Indicatore agente attivo nel Code tab header (nome + colore)
+- [ ] Colori: verde vessel, cyan coder, amber sysadmin, viola researcher
+- [ ] Campo `agent` in `chat_messages` DB per tracking
+- [ ] Provider dropdown mostra anche l'agente suggerito
+
+**Non in scope (futuro):**
+- Delegazione inter-agente (Vessel chiama Coder, Coder passa a Sysadmin)
+- Agenti autonomi con trigger (heartbeat → Sysadmin interviene)
+- Contesto condiviso tra agenti (memory cross-agent)
+- Agenti custom via plugin
+
+**Ordine:** A (quick win, subito) → B → C → D
+**Vincoli:** tutto gira sul Pi, zero chiamate LLM per routing, config editabile a mano
+
+---
+
 ## Visione futura (no timeline, complessità crescente)
 
 **Medio termine:**
@@ -357,7 +419,6 @@
 - iOS & Android companion app nativa
 
 **Sperimentale:**
-- Agent Swarms: più agenti specializzati che collaborano
 - ESP32/MicroPi: heartbeat hardware fisico
 
 ---
