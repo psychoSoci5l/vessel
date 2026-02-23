@@ -96,10 +96,31 @@
   .prof-header { grid-column: 1 / -1; padding-bottom: 0; }
   .prof-section-mem { grid-column: 1 / -1; }
 
-  /* ── Drawer Desktop ── */
+  /* ── Drawer Desktop: side panel destro (Fase 22) ── */
   .drawer {
-    max-width: 600px;
-    margin: 0 auto;
+    max-width: none;
+    margin: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: 420px;
+    max-height: none;
+    height: 100%;
+    border-top: none;
+    border-left: 2px solid var(--green3);
+    border-radius: 0;
+    transform: translateX(100%);
+  }
+
+  .drawer-overlay.show .drawer {
+    transform: translateX(0);
+  }
+
+  .drawer-handle { display: none; }
+
+  .drawer-overlay {
+    background: rgba(0,0,0,0.35);
   }
 
   /* ── Modal Desktop ── */
@@ -116,4 +137,61 @@
   }
 
   ::-webkit-scrollbar { width: 5px; height: 5px; }
+}
+
+/* ═══ WIDESCREEN — Fase 22 ═══ */
+@media (min-width: 1400px) {
+
+  /* ── Content: riempie lo schermo ── */
+  .tab-scroll {
+    max-width: none;
+    padding: 24px 48px;
+  }
+
+  /* ── Sidebar più leggibile ── */
+  .bottom-nav { width: 80px; }
+  .nav-item .nav-icon { font-size: 24px; }
+  .nav-item { font-size: 9px; padding: 16px 0; }
+
+  /* ── Dashboard: chart + widgets affiancati ── */
+  #tab-dashboard .tab-scroll {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 16px;
+    align-content: start;
+  }
+
+  .dash-header { grid-column: 1 / -1; }
+  .dash-stats { grid-column: 1 / -1; }
+  .dash-chart { margin-bottom: 0; }
+  #pi-chart { height: 200px; }
+  .widget-card { flex: 1 1 calc(50% - 8px); }
+
+  /* ── Stats compatte ── */
+  .stat-value { font-size: 28px; }
+  .stat-card { padding: 14px 18px; }
+
+  /* ── Code: task non truncato ── */
+  .claude-task-prompt { white-space: normal; }
+
+  /* ── Cron: path visibili ── */
+  .cron-cmd { white-space: normal; word-break: break-word; }
+
+  /* ── Drawer più largo ── */
+  .drawer { width: 480px; }
+
+  /* ── System/Profile: più respiro ── */
+  .sys-section { padding: 18px 20px; }
+  .prof-section { padding: 18px 20px; }
+
+  /* ── System: colonne più larghe ── */
+  #tab-system .tab-scroll {
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+
+  /* ── Profile: colonne bilanciate ── */
+  #tab-profile .tab-scroll {
+    gap: 18px;
+  }
 }
