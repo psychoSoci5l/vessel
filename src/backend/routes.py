@@ -10,6 +10,9 @@ def _tg_history(provider_id: str) -> list:
 def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
     """Risolve prefisso provider dal testo Telegram. Ritorna (provider_id, system, model, clean_text)."""
     low = text.lower()
+    if low.startswith("@haiku "):
+        raw_model = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
+        return "anthropic", OLLAMA_SYSTEM, _resolve_model(raw_model), text.split(" ", 1)[1]
     if low.startswith("@coder ") or low.startswith("@pc "):
         return "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL, text.split(" ", 1)[1]
     if low.startswith("@deep "):
@@ -43,9 +46,10 @@ async def _handle_telegram_message(text: str):
             "Vessel - comandi Telegram\n\n"
             "Scrivi liberamente per chattare (provider default: DeepSeek V3)\n\n"
             "Prefissi provider:\n"
-            "  @coder - Qwen2.5-Coder PC\n"
-            "  @deep - DeepSeek-R1 PC\n"
-            "  @local - Gemma3 Pi locale\n\n"
+            "  @haiku - Claude Haiku (cloud)\n"
+            "  @coder - Qwen 14B (LAN)\n"
+            "  @deep - Qwen 30B (LAN)\n"
+            "  @local - Gemma3 (Pi)\n\n"
             "Comandi:\n"
             "  /status - stats Pi\n"
             "  /voice <msg> - risposta vocale\n"
@@ -328,6 +332,13 @@ async def handle_get_tokens(websocket, msg, ctx):
     ts = await bg(get_token_stats)
     await websocket.send_json({"type": "tokens", "data": ts})
 
+async def handle_get_usage_report(websocket, msg, ctx):
+    period = msg.get("period", "day")
+    if period not in ("day", "week", "month"):
+        period = "day"
+    data = await bg(db_get_usage_report, period)
+    await websocket.send_json({"type": "usage_report", "data": data})
+
 async def handle_get_crypto(websocket, msg, ctx):
     cp = await bg(get_crypto_prices)
     await websocket.send_json({"type": "crypto", "data": cp})
@@ -461,6 +472,7 @@ WS_DISPATCHER = {
     "add_cron": handle_add_cron,
     "delete_cron": handle_delete_cron,
     "get_tokens": handle_get_tokens,
+    "get_usage_report": handle_get_usage_report,
     "get_crypto": handle_get_crypto,
     "get_briefing": handle_get_briefing,
     "run_briefing": handle_run_briefing,

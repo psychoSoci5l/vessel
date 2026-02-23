@@ -243,6 +243,31 @@ def db_get_token_stats() -> dict:
     return stats
 
 
+def db_get_usage_report(period: str = "day") -> dict:
+    """Report utilizzo token aggregato per provider. period: day|week|month."""
+    days = {"day": 0, "week": 7, "month": 30}.get(period, 0)
+    if days == 0:
+        since = time.strftime("%Y-%m-%d")
+    else:
+        since = time.strftime("%Y-%m-%d", time.localtime(time.time() - days * 86400))
+    rows_out = []
+    total = {"input": 0, "output": 0, "calls": 0}
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT provider, SUM(input) AS tok_in, SUM(output) AS tok_out, COUNT(*) AS calls "
+            "FROM usage WHERE ts >= ? GROUP BY provider ORDER BY tok_out DESC",
+            (since,)
+        ).fetchall()
+        for r in rows:
+            entry = {"provider": r["provider"] or "unknown",
+                     "input": r["tok_in"] or 0, "output": r["tok_out"] or 0, "calls": r["calls"] or 0}
+            rows_out.append(entry)
+            total["input"] += entry["input"]
+            total["output"] += entry["output"]
+            total["calls"] += entry["calls"]
+    return {"rows": rows_out, "total": total, "period": period}
+
+
 # ─── Briefings ────────────────────────────────────────────────────────────────
 
 def db_get_briefing() -> dict:

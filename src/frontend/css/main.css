@@ -139,7 +139,7 @@ body::after {
 }
 
 .nav-item .nav-icon {
-  font-size: 18px;
+  font-size: 24px;
   line-height: 1;
   transition: text-shadow .2s;
 }
@@ -1006,6 +1006,7 @@ button {
   border: 1px solid var(--border);
 }
 .btn-ghost:hover { color: var(--green2); border-color: var(--green3); }
+.usage-period-btn.active { color: var(--green); border-color: var(--green); text-shadow: var(--glow-sm); }
 
 .btn-sm { min-height: 28px; padding: 3px 10px; font-size: 10px; }
 
@@ -1194,13 +1195,114 @@ button {
   .mono-block { max-height: 150px; }
 }
 
-/* ═══ DESKTOP (placeholder — fase successiva) ═══ */
+/* ═══ DESKTOP — Fase 32c ═══ */
 @media (min-width: 768px) {
+  :root { --safe-bot: 0px; }
+  body { font-size: 14px; }
+
+  /* ── App Layout: sidebar + content ── */
+  .app-layout { flex-direction: row; }
+
+  .app-content { flex: 1; min-width: 0; }
+
+  /* ── Sidebar Nav ── */
+  .bottom-nav {
+    flex-direction: column;
+    width: 70px;
+    order: -1;
+    border-top: none;
+    border-right: 1px solid var(--border2);
+    padding: 12px 0;
+    gap: 4px;
+  }
+
+  .nav-item {
+    padding: 14px 0;
+    font-size: 8px;
+    min-height: auto;
+  }
+
+  .nav-item .nav-icon { font-size: 22px; }
+
+  /* ── Content Area ── */
+  .tab-scroll {
+    padding: 24px 32px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ── Dashboard Tab ── */
+  .dash-header { padding: 0 0 16px; }
   .dash-stats { gap: 14px; }
   .stat-card { flex: 1 1 calc(25% - 12px); }
+  .stat-value { font-size: 26px; }
+  #pi-chart { height: 120px; }
+  .dash-chart { margin-bottom: 18px; }
   .dash-widgets { gap: 14px; }
   .widget-card { flex: 1 1 calc(25% - 12px); }
-  #pi-chart { height: 100px; }
-  .stat-value { font-size: 26px; }
-  .tab-scroll { padding: 0 32px; padding-top: 24px; }
+
+  /* ── Code Tab: Split-Pane ── */
+  #tab-code.active {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  .code-header { grid-column: 1 / -1; }
+  .code-tabs { display: none; }
+
+  #tab-code .code-panel {
+    display: flex !important;
+    min-height: 0;
+  }
+
+  #code-chat { border-right: 1px solid var(--border); }
+
+  .code-input-area { padding-bottom: 10px; }
+  #chat-input { font-size: 13px; }
+  .msg { max-width: 75%; }
+
+  /* ── System Tab: 2-column grid ── */
+  #tab-system .tab-scroll {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-content: start;
+  }
+
+  .sys-header { grid-column: 1 / -1; padding-bottom: 0; }
+  .sys-actions { grid-column: 1 / -1; }
+  #sys-cron { grid-column: 1 / -1; }
+
+  /* ── Profile Tab: 2-column grid ── */
+  #tab-profile .tab-scroll {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-content: start;
+  }
+
+  .prof-header { grid-column: 1 / -1; padding-bottom: 0; }
+  .prof-section-mem { grid-column: 1 / -1; }
+
+  /* ── Drawer Desktop ── */
+  .drawer {
+    max-width: 600px;
+    margin: 0 auto;
+  }
+
+  /* ── Modal Desktop ── */
+  .modal-box { max-width: 420px; }
+
+  /* ── Misc Desktop ── */
+  button { min-height: 36px; }
+  .btn-sm { min-height: 28px; }
+  .btn-send { min-height: 40px; }
+
+  #toast {
+    bottom: 24px;
+    right: 24px;
+  }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
 }

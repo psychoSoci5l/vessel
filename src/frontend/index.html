@@ -126,8 +126,8 @@
                 autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
               <div class="provider-dropdown" id="provider-dropdown">
                 <button class="provider-btn" id="provider-trigger" onclick="toggleProviderMenu()" type="button">
-                  <span class="provider-dot dot-local" id="provider-dot"></span>
-                  <span id="provider-short">Local</span>
+                  <span class="provider-dot dot-cloud" id="provider-dot"></span>
+                  <span id="provider-short">Haiku</span>
                   <span class="provider-arrow">&#x25BE;</span>
                 </button>
                 <div class="provider-menu" id="provider-menu">
@@ -135,7 +135,7 @@
                   <button type="button" onclick="switchProvider('local')"><span class="dot dot-local"></span> Local (Gemma)</button>
                   <button type="button" onclick="switchProvider('pc_coder')"><span class="dot dot-pc-coder"></span> PC Coder</button>
                   <button type="button" onclick="switchProvider('pc_deep')"><span class="dot dot-pc-deep"></span> PC Deep</button>
-                  <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> Deep (DeepSeek)</button>
+                  <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> DeepSeek V3</button>
                 </div>
               </div>
               <button class="btn-send" id="chat-send" onclick="sendChat()">&#x21B5;</button>
@@ -233,7 +233,20 @@
               <div class="prof-prov"><span class="dot dot-local"></span><span class="prof-prov-name">Local</span><span class="prof-prov-info">Gemma 3 4B &mdash; Pi</span></div>
               <div class="prof-prov"><span class="dot dot-pc-coder"></span><span class="prof-prov-name">PC Coder</span><span class="prof-prov-info">Qwen 14B &mdash; LAN</span></div>
               <div class="prof-prov"><span class="dot dot-pc-deep"></span><span class="prof-prov-name">PC Deep</span><span class="prof-prov-info">Qwen 30B &mdash; LAN</span></div>
-              <div class="prof-prov"><span class="dot dot-deepseek"></span><span class="prof-prov-name">Deep</span><span class="prof-prov-info">DeepSeek V3 &mdash; cloud</span></div>
+              <div class="prof-prov"><span class="dot dot-deepseek"></span><span class="prof-prov-name">DeepSeek</span><span class="prof-prov-info">DeepSeek V3 &mdash; cloud</span></div>
+            </div>
+          </div>
+
+          <!-- Token Usage Report -->
+          <div class="prof-section">
+            <div class="prof-section-title">UTILIZZO TOKEN</div>
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+              <button class="btn-ghost btn-sm usage-period-btn active" onclick="loadUsageReport('day',this)">Oggi</button>
+              <button class="btn-ghost btn-sm usage-period-btn" onclick="loadUsageReport('week',this)">7gg</button>
+              <button class="btn-ghost btn-sm usage-period-btn" onclick="loadUsageReport('month',this)">30gg</button>
+            </div>
+            <div id="usage-report-body">
+              <div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Caricamento&hellip;</span></div>
             </div>
           </div>
 
@@ -400,7 +413,7 @@
             <div class="help-row"><span class="help-badge" style="color:#888;border-color:#888;">Local</span><span class="help-kw">Gemma 3 4B &mdash; Pi, lento</span></div>
             <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">PC Coder</span><span class="help-kw">Qwen 14B &mdash; GPU LAN</span></div>
             <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">PC Deep</span><span class="help-kw">Qwen 30B &mdash; LAN</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">Deep</span><span class="help-kw">DeepSeek V3 &mdash; cloud</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">DeepSeek</span><span class="help-kw">DeepSeek V3 &mdash; cloud</span></div>
           </div>
         </div>
         <div class="help-section">

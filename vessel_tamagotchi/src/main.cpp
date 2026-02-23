@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <TFT_eSPI.h>
 #include <WiFi.h>
+#include <WiFiMulti.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
 #include <HTTPClient.h>
@@ -12,10 +13,23 @@ TFT_eSprite fb = TFT_eSprite(&tft);
 WebSocketsClient webSocket;
 
 // ─── Config ──────────────────────────────────────────────────────────────────
-const char* ssid        = "FrzTsu";
-const char* password    = "qegduw-juSqe4-jikkom";
-const char* vessel_ip   = "192.168.178.48";
-const int   vessel_port = 8090;
+// WiFi — rete casa + hotspot iPhone
+const char* HOME_SSID     = "FrzTsu";
+const char* HOME_PASS     = "qegduw-juSqe4-jikkom";
+const char* HOTSPOT_SSID  = "iPhone 14 pro max";
+const char* HOTSPOT_PASS  = "filippo74";
+
+// Connessione locale (LAN)
+const char* LOCAL_HOST  = "192.168.178.48";
+const int   LOCAL_PORT  = 8090;
+
+// Tunnel Cloudflare (fuori casa)
+const char* TUNNEL_HOST      = "nanobot.psychosoci5l.com";
+const int   TUNNEL_PORT      = 443;
+const char* CF_CLIENT_ID     = "f337a1e056478f2ca8507f262eb185c9.access";
+const char* CF_CLIENT_SECRET = "8d4e010ff62a4b453138cbf2fdf16cc0ac862419a92127f8d3dcd03990c5b308";
+
+WiFiMulti wifiMulti;
 
 // Bottoni fisici (active LOW, pullup interno)
 const int BTN_LEFT  = 14;  // GPIO14 — pulsante fisico superiore
@@ -37,6 +51,12 @@ bool   wsConnected  = false;
 unsigned long offlineSince    = 0;
 bool          standaloneMode  = false;
 const unsigned long STANDALONE_TIMEOUT = 60000;
+
+// ─── Connection mode (local vs tunnel) ──────────────────────────────────────
+enum ConnMode { CONN_LOCAL, CONN_TUNNEL };
+ConnMode      connMode        = CONN_LOCAL;
+unsigned long wsConnectStart  = 0;
+const unsigned long WS_FALLBACK_TIMEOUT = 15000;  // 15s prima di provare tunnel
 
 // ─── View & Menu ────────────────────────────────────────────────────────────
 enum ViewMode { VIEW_FACE, VIEW_MENU_PI, VIEW_MENU_VESSEL, VIEW_CONFIRM, VIEW_RESULT };
@@ -1089,11 +1109,11 @@ void onLeftLong() {
         case VIEW_FACE:
             // Forza riconnessione WS
             Serial.println("[BTN] LEFT long — reconnect WS");
-            webSocket.disconnect();
             currentState = "ERROR";
             standaloneMode = false;
             offlineSince   = millis();
             renderState();
+            connectWS();
             break;
         case VIEW_MENU_PI:
             menu.piIdx = menu.selectedIdx;  // salva indice
@@ -1159,11 +1179,11 @@ void onRightLong() {
         case VIEW_FACE:
             // Reconnect WS
             Serial.println("[BTN] RIGHT long — reconnect WS");
-            webSocket.disconnect();
             currentState = "ERROR";
             standaloneMode = false;
             offlineSince   = millis();
             renderState();
+            connectWS();
             break;
         case VIEW_MENU_PI:
         case VIEW_MENU_VESSEL: {
@@ -1196,11 +1216,36 @@ void onRightLong() {
     }
 }
 
+// ─── WebSocket Connect (local o tunnel) ──────────────────────────────────────
+
+void webSocketEvent(WStype_t type, uint8_t * payload, size_t length);  // forward decl
+
+void connectWS() {
+    webSocket.disconnect();
+    if (WiFi.SSID() == String(HOME_SSID)) {
+        connMode = CONN_LOCAL;
+        webSocket.begin(LOCAL_HOST, LOCAL_PORT, "/ws/tamagotchi");
+        Serial.printf("[WS] Modo LOCAL → %s:%d\n", LOCAL_HOST, LOCAL_PORT);
+    } else {
+        connMode = CONN_TUNNEL;
+        webSocket.beginSSL(TUNNEL_HOST, TUNNEL_PORT, "/ws/tamagotchi");
+        String headers = String("CF-Access-Client-Id: ") + CF_CLIENT_ID
+                       + "\r\nCF-Access-Client-Secret: " + CF_CLIENT_SECRET;
+        webSocket.setExtraHeaders(headers.c_str());
+        Serial.printf("[WS] Modo TUNNEL → %s:%d\n", TUNNEL_HOST, TUNNEL_PORT);
+    }
+    webSocket.onEvent(webSocketEvent);
+    webSocket.setReconnectInterval(5000);
+    wsConnectStart = millis();
+}
+
 // ─── Boot Animation ───────────────────────────────────────────────────────────
 
 void bootAnimation() {
-    WiFi.begin(ssid, password);
-    Serial.print("[Boot] WiFi connecting");
+    wifiMulti.addAP(HOME_SSID, HOME_PASS);
+    wifiMulti.addAP(HOTSPOT_SSID, HOTSPOT_PASS);
+    wifiMulti.run();
+    Serial.print("[Boot] WiFi connecting (multi)");
 
     for (int h = 0; h <= 85; h += 2) {
         fb.fillSprite(COL_BG);
@@ -1245,6 +1290,7 @@ void bootAnimation() {
 
     while (op < 1.0f || WiFi.status() != WL_CONNECTED) {
         unsigned long now = millis();
+        if (WiFi.status() != WL_CONNECTED) wifiMulti.run();
         if (WiFi.status() != WL_CONNECTED && now - wifiStart > 15000) {
             Serial.println("\n[Boot] WiFi timeout");
             break;
@@ -1287,7 +1333,8 @@ void bootAnimation() {
     }
 
     if (WiFi.status() == WL_CONNECTED)
-        Serial.printf("\n[Boot] WiFi OK — IP: %s\n", WiFi.localIP().toString().c_str());
+        Serial.printf("\n[Boot] WiFi OK — SSID: %s  IP: %s\n",
+                      WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
     delay(250);
 }
 
@@ -1305,7 +1352,13 @@ void performOTA() {
     fb.pushSprite(0, 0);
 
     HTTPClient http;
-    String url = String("http://") + vessel_ip + ":" + String(vessel_port) + "/api/tamagotchi/firmware";
+    String url;
+    if (connMode == CONN_LOCAL) {
+        url = String("http://") + LOCAL_HOST + ":" + String(LOCAL_PORT) + "/api/tamagotchi/firmware";
+    } else {
+        url = String("https://") + TUNNEL_HOST + "/api/tamagotchi/firmware";
+    }
+    Serial.printf("[OTA] URL: %s\n", url.c_str());
     http.begin(url);
     http.setTimeout(30000);
     int code = http.GET();
@@ -1398,6 +1451,8 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
             offlineSince = millis();
             standaloneMode = false;
             renderState();
+            // Ri-determina modo connessione in base a SSID attuale
+            connectWS();
             break;
 
         case WStype_CONNECTED:
@@ -1578,9 +1633,7 @@ void setup() {
 
     bootAnimation();
 
-    webSocket.begin(vessel_ip, vessel_port, "/ws/tamagotchi");
-    webSocket.onEvent(webSocketEvent);
-    webSocket.setReconnectInterval(5000);
+    connectWS();
 
     randomSeed(analogRead(0));
     blink.nextBlinkAt = millis() + random(2000, 5000);
@@ -1593,13 +1646,28 @@ void loop() {
     webSocket.loop();
     unsigned long now = millis();
 
-    // WiFi reconnect
+    // WiFi reconnect (multi-network)
     if (WiFi.status() != WL_CONNECTED) {
         if (now - lastWifiRetry >= 10000) {
             lastWifiRetry = now;
-            WiFi.reconnect();
+            wifiMulti.run();
         }
         return;
+    }
+
+    // Fallback: local → tunnel dopo 15s senza WS
+    if (!wsConnected && connMode == CONN_LOCAL &&
+        now - wsConnectStart > WS_FALLBACK_TIMEOUT) {
+        Serial.println("[WS] Local timeout → fallback TUNNEL");
+        webSocket.disconnect();
+        connMode = CONN_TUNNEL;
+        webSocket.beginSSL(TUNNEL_HOST, TUNNEL_PORT, "/ws/tamagotchi");
+        String headers = String("CF-Access-Client-Id: ") + CF_CLIENT_ID
+                       + "\r\nCF-Access-Client-Secret: " + CF_CLIENT_SECRET;
+        webSocket.setExtraHeaders(headers.c_str());
+        webSocket.onEvent(webSocketEvent);
+        webSocket.setReconnectInterval(5000);
+        wsConnectStart = millis();
     }
 
     // ── Bottoni ─────────────────────────────────────────────────────────────
