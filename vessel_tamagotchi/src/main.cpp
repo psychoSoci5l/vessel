@@ -18,8 +18,8 @@ const char* vessel_ip   = "192.168.178.48";
 const int   vessel_port = 8090;
 
 // Bottoni fisici (active LOW, pullup interno)
-const int BTN_LEFT  = 0;   // GPIO0  — lato USB-C
-const int BTN_RIGHT = 14;  // GPIO14 — lato opposto
+const int BTN_LEFT  = 14;  // GPIO14 — pulsante fisico superiore
+const int BTN_RIGHT = 0;   // GPIO0  — pulsante fisico inferiore
 
 // ─── Colors ──────────────────────────────────────────────────────────────────
 uint16_t COL_BG;
@@ -62,9 +62,8 @@ const MenuItem MENU_VESSEL[] = {
     {"Check Ollama",     "check_ollama",    false},
     {"Check Bridge",     "check_bridge",    false},
     {"Ollama Warmup",    "warmup_ollama",   false},
-    {"Refresh Crypto",   "refresh_crypto",  false},
 };
-const int MENU_VESSEL_COUNT = 5;
+const int MENU_VESSEL_COUNT = 4;
 
 struct MenuState {
     int           selectedIdx   = 0;
@@ -100,6 +99,29 @@ const unsigned long PROUD_DURATION = 5000;
 // ─── Breathing ───────────────────────────────────────────────────────────────
 bool breathingEnabled = true;
 
+// ─── Deep Idle (standby progressivo) ────────────────────────────────────────
+enum IdleDepth { IDLE_AWAKE, IDLE_DROWSY, IDLE_DOZING, IDLE_DEEP, IDLE_ABYSS };
+IdleDepth currentIdleDepth = IDLE_AWAKE;
+unsigned long lastInteractionAt = 0;
+const unsigned long DROWSY_TIMEOUT  =  5UL * 60 * 1000;  //  5 min
+const unsigned long DOZING_TIMEOUT  = 15UL * 60 * 1000;  // 15 min
+const unsigned long DEEP_TIMEOUT    = 45UL * 60 * 1000;  // 45 min
+const unsigned long ABYSS_TIMEOUT   = 120UL * 60 * 1000; //  2 ore
+
+IdleDepth getIdleDepth(unsigned long now) {
+    unsigned long elapsed = now - lastInteractionAt;
+    if (elapsed >= ABYSS_TIMEOUT)  return IDLE_ABYSS;
+    if (elapsed >= DEEP_TIMEOUT)   return IDLE_DEEP;
+    if (elapsed >= DOZING_TIMEOUT) return IDLE_DOZING;
+    if (elapsed >= DROWSY_TIMEOUT) return IDLE_DROWSY;
+    return IDLE_AWAKE;
+}
+
+void resetInteraction() {
+    lastInteractionAt = millis();
+    currentIdleDepth = IDLE_AWAKE;
+}
+
 // ─── WiFi reconnect ──────────────────────────────────────────────────────────
 unsigned long lastWifiRetry = 0;
 
@@ -114,26 +136,58 @@ const unsigned long YAWN_MOUTH_END  = 800;
 const unsigned long YAWN_EYES_END   = 1600;
 const unsigned long YAWN_ZZZ_END    = 2500;
 
-// ─── Notifica visiva overlay ─────────────────────────────────────────────────
-String notifDetail       = "";
-String notifText         = "";
-unsigned long notifStartedAt = 0;
-bool   notifActive       = false;
-const unsigned long NOTIF_DURATION = 30000;
+// ─── Notifiche persistenti ───────────────────────────────────────────────────
+struct PendingNotif {
+    String detail;
+    String text;
+    bool   read;
+};
+const int MAX_NOTIFS = 8;
+PendingNotif notifQueue[MAX_NOTIFS];
+uint8_t notifCount    = 0;
+uint8_t unreadNotifs  = 0;
+bool    notifShowing  = false;       // overlay attivo
+unsigned long notifShowStart = 0;
+const unsigned long NOTIF_SHOW_DURATION = 30000;  // 30s per notifica mostrata
+const unsigned long NOTIF_PEEK_DURATION = 5000;   // 5s per notifica su button press
+
+void pushNotification(const String& detail, const String& text) {
+    // Shift se pieno (FIFO drop più vecchia)
+    if (notifCount >= MAX_NOTIFS) {
+        if (notifQueue[0].read == false && unreadNotifs > 0) unreadNotifs--;
+        for (int i = 1; i < MAX_NOTIFS; i++) notifQueue[i - 1] = notifQueue[i];
+        notifCount = MAX_NOTIFS - 1;
+    }
+    notifQueue[notifCount].detail = detail;
+    notifQueue[notifCount].text = text;
+    notifQueue[notifCount].read = false;
+    notifCount++;
+    unreadNotifs++;
+}
+
+// Trova la notifica non letta più vecchia, indice o -1
+int getOldestUnread() {
+    for (int i = 0; i < notifCount; i++)
+        if (!notifQueue[i].read) return i;
+    return -1;
+}
+
+void markNotifRead(int idx) {
+    if (idx >= 0 && idx < notifCount && !notifQueue[idx].read) {
+        notifQueue[idx].read = true;
+        if (unreadNotifs > 0) unreadNotifs--;
+    }
+}
+
+// Variabili per la notifica attualmente mostrata
+String notifShowDetail = "";
+String notifShowText   = "";
+bool notifShowIsPeek   = false;  // true = mostrata da button press (5s)
 
 // ─── Info overlay (bottone RIGHT, 10s) ───────────────────────────────────────
 bool          infoActive      = false;
 unsigned long infoStartedAt   = 0;
 const unsigned long INFO_DURATION = 10000;
-
-// ─── Crypto ticker ───────────────────────────────────────────────────────────
-bool   cryptoAvailable  = false;
-float  cryptoBtc        = 0, cryptoEth        = 0;
-float  cryptoBtcChange  = 0, cryptoEthChange  = 0;
-String cryptoText       = "";
-int    cryptoTextW      = 0;
-int    cryptoScrollX    = 320;
-unsigned long lastTickerStep = 0;
 
 // ─── Mood summary pre-SLEEPING ───────────────────────────────────────────────
 bool          moodActive    = false;
@@ -159,15 +213,18 @@ void renderTransition(unsigned long now);
 void renderMoodSummary();
 void renderStats();
 void renderInfoOverlay();
-void drawCryptoTicker();
 void drawNotifOverlay();
+void drawUnreadIndicator(unsigned long now);
 void drawConnectionIndicator();
 void drawScanlines();
+void drawHood(int cx, int cy, uint16_t col);
+void drawMandorlaEye(int cx, int cy, int halfW, int halfH, uint16_t col);
+void drawSigil(int cx, int cy, uint16_t col);
 
 // ─── Drawing helpers ─────────────────────────────────────────────────────────
 
 void drawScanlines() {
-    for (int y = 0; y < 158; y += 2)
+    for (int y = 0; y < 170; y += 2)
         fb.drawFastHLine(0, y, 320, COL_SCAN);
 }
 
@@ -182,41 +239,56 @@ uint16_t getBreathingColor(unsigned long now) {
     return tft.color565(0, (uint8_t)(255 * b), (uint8_t)(65 * b));
 }
 
-// Ticker scorrevole — zona bassa 320×12px (y 158-169)
-void drawCryptoTicker() {
-    if (!cryptoAvailable) return;
-    fb.fillRect(0, 158, 320, 12, COL_BG);
-    fb.drawFastHLine(0, 158, 320, COL_DIM);
-    fb.setTextDatum(TL_DATUM);
-    // Scrivi testo in due colori (BTC e ETH separati)
-    // Per semplicità: testo unico già formattato in cryptoText, colore verde base
-    fb.setTextColor(COL_GREEN);
-    fb.drawString(cryptoText, cryptoScrollX, 160, 1);
-    // Se il testo è abbastanza stretto, duplicalo per continuità
-    if (cryptoScrollX < 320 - cryptoTextW) {
-        fb.drawString(cryptoText, cryptoScrollX + cryptoTextW + 30, 160, 1);
-    }
+uint16_t getSigilBreathingColor(unsigned long now) {
+    float t = (float)(now % 5000) / 5000.0;
+    float b = 0.5 + 0.5 * sin(t * 2.0 * PI);
+    return tft.color565((uint8_t)(255 * b), 0, (uint8_t)(64 * b));
 }
 
-// Aggiorna crypto text e larghezza quando arrivano nuovi dati
-void buildCryptoText() {
-    char buf[64];
-    char btcSign = (cryptoBtcChange >= 0) ? '+' : ' ';
-    char ethSign = (cryptoEthChange >= 0) ? '+' : ' ';
-    snprintf(buf, sizeof(buf), "BTC $%.0f %c%.1f%%   ETH $%.0f %c%.1f%%   ",
-             cryptoBtc, btcSign, cryptoBtcChange,
-             cryptoEth, ethSign, cryptoEthChange);
-    cryptoText  = String(buf);
-    fb.setTextFont(1);
-    cryptoTextW = fb.textWidth(cryptoText);
-    cryptoScrollX = 320;
+// ── Cappuccio: arco stilizzato sopra la faccia ──
+void drawHood(int cx, int cy, uint16_t col) {
+    // Arco principale: curva parabolica da sinistra a destra
+    for (int dx = -65; dx <= 65; dx++) {
+        float t = (float)dx / 65.0;
+        int dy = (int)(55.0 * t * t) - 55;  // parabola invertita
+        fb.drawPixel(cx + dx, cy + dy, col);
+        fb.drawPixel(cx + dx, cy + dy + 1, col);
+    }
+    // Lati del cappuccio che scendono
+    fb.drawWideLine(cx - 65, cy, cx - 60, cy + 20, 2, col);
+    fb.drawWideLine(cx + 65, cy, cx + 60, cy + 20, 2, col);
+}
+
+// ── Occhio a mandorla (rombo angolare) ──
+void drawMandorlaEye(int ex, int ey, int halfW, int halfH, uint16_t col) {
+    // Rombo: 4 punti cardinali, riempito con 2 triangoli
+    fb.fillTriangle(ex - halfW, ey, ex, ey - halfH, ex + halfW, ey, col);  // upper
+    fb.fillTriangle(ex - halfW, ey, ex, ey + halfH, ex + halfW, ey, col);  // lower
+}
+
+// ── Sigil geometrico tra gli occhi ──
+void drawSigil(int sx, int sy, uint16_t col) {
+    // Croce centrale
+    fb.drawWideLine(sx, sy - 8, sx, sy + 8, 2, col);
+    fb.drawWideLine(sx - 8, sy, sx + 8, sy, 2, col);
+    // Raggi diagonali
+    fb.drawWideLine(sx - 5, sy - 5, sx + 5, sy + 5, 1, col);
+    fb.drawWideLine(sx - 5, sy + 5, sx + 5, sy - 5, 1, col);
+    // Cerchietto al centro
+    fb.drawCircle(sx, sy, 3, col);
+    // Punte esterne (stile runa/sole)
+    fb.drawPixel(sx, sy - 10, col);
+    fb.drawPixel(sx, sy + 10, col);
+    fb.drawPixel(sx - 10, sy, col);
+    fb.drawPixel(sx + 10, sy, col);
 }
 
 // Box notifica in basso a sinistra, 30s
 void drawNotifOverlay() {
-    if (!notifActive) return;
-    if (millis() - notifStartedAt >= NOTIF_DURATION) {
-        notifActive = false;
+    if (!notifShowing) return;
+    unsigned long dur = notifShowIsPeek ? NOTIF_PEEK_DURATION : NOTIF_SHOW_DURATION;
+    if (millis() - notifShowStart >= dur) {
+        notifShowing = false;
         return;
     }
     const int bx = 2, by = 125, bw = 165, bh = 30;
@@ -224,100 +296,192 @@ void drawNotifOverlay() {
     fb.drawRect(bx, by, bw, bh, COL_GREEN);
     fb.setTextColor(COL_GREEN);
     fb.setTextDatum(TL_DATUM);
-    String tag = notifDetail.substring(0, 12);
+    String tag = notifShowDetail.substring(0, 12);
     tag.toUpperCase();
     fb.drawString(tag, bx + 3, by + 3, 1);
-    fb.drawString(notifText.substring(0, 24), bx + 3, by + 16, 1);
+    fb.drawString(notifShowText.substring(0, 24), bx + 3, by + 16, 1);
     fb.setTextDatum(MC_DATUM);
 }
 
-// ─── Render faces ─────────────────────────────────────────────────────────────
+// Indicatore notifiche non lette: puntino pulsante + numerino
+void drawUnreadIndicator(unsigned long now) {
+    if (unreadNotifs == 0) return;
+    // Puntino pulsante in alto a destra (accanto al connection indicator)
+    float pulse = 0.5 + 0.5 * sin((float)(now % 2000) / 2000.0 * 2.0 * PI);
+    uint8_t g = (uint8_t)(255 * pulse);
+    fb.fillCircle(290, 10, 4, tft.color565(0, g, (uint8_t)(65 * pulse)));
+    if (unreadNotifs > 1) {
+        fb.setTextColor(COL_GREEN);
+        fb.setTextDatum(MR_DATUM);
+        fb.drawString(String(unreadNotifs), 284, 11, 1);
+        fb.setTextDatum(MC_DATUM);
+    }
+}
+
+// Mostra notifica immediata (auto-show)
+void showNotification(const String& detail, const String& text, bool isPeek) {
+    notifShowDetail = detail;
+    notifShowText   = text;
+    notifShowStart  = millis();
+    notifShowing    = true;
+    notifShowIsPeek = isPeek;
+}
+
+// Tenta di mostrare una notifica non letta (per button press)
+bool peekUnreadNotification() {
+    int idx = getOldestUnread();
+    if (idx < 0) return false;
+    showNotification(notifQueue[idx].detail, notifQueue[idx].text, true);
+    markNotifRead(idx);
+    return true;
+}
+
+// ─── Render faces (Sigil Face design) ────────────────────────────────────────
 
 void renderState() {
     fb.fillSprite(COL_BG);
-    const int cx = 160, cy = 82;
+    const int cx = 160, cy = 85;
+    const int lx = cx - 40, rx = cx + 40, eyeY = cy - 15;
+    const int sigilY = cy - 42;   // sigil tra cappuccio e occhi
+    const int mouthY = cy + 30;
+    unsigned long now = millis();
 
     if (standaloneMode && !wsConnected) {
-        // ── Standalone: occhi vaganti, "vessel offline" ───────────────────────
-        float offsetX = 7.0 * sin((float)millis() / 1800.0);
-        int lx = cx - 40, rx = cx + 40, eyeY = cy - 20;
-        fb.fillEllipse(lx, eyeY, 20, 20, COL_DIM);
-        fb.fillEllipse(rx, eyeY, 20, 20, COL_DIM);
-        // Pupille che si spostano
-        fb.fillCircle(lx + (int)offsetX, eyeY - 5, 7, COL_BG);
-        fb.fillCircle(rx + (int)offsetX, eyeY - 5, 7, COL_BG);
-        // Bocca dritta
-        fb.fillRect(cx - 15, cy + 35, 30, 2, COL_DIM);
+        // ── Standalone: cappuccio dim, occhi vaganti, sigil spento ────────────
+        drawHood(cx, cy, COL_DIM);
+        float offsetX = 5.0 * sin((float)now / 1800.0);
+        drawMandorlaEye(lx, eyeY, 22, 12, COL_DIM);
+        drawMandorlaEye(rx, eyeY, 22, 12, COL_DIM);
+        // Pupille vaganti (fessure scure dentro la mandorla)
+        fb.fillCircle(lx + (int)offsetX, eyeY, 5, COL_BG);
+        fb.fillCircle(rx + (int)offsetX, eyeY, 5, COL_BG);
+        // Sigil spento, pulsazione dim lentissima
+        uint16_t sigilCol = getSigilBreathingColor(now);
+        drawSigil(cx, sigilY, sigilCol);
+        // Bocca sottile
+        fb.drawWideLine(cx - 12, mouthY, cx + 12, mouthY, 1, COL_DIM);
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("vessel offline", cx, cy + 58, 1);
+        fb.drawString("vessel offline", cx, cy + 55, 1);
 
     } else if (currentState == "IDLE") {
-        uint16_t eyeCol = COL_GREEN;
-        if (breathingEnabled && blink.phase == BLINK_NONE)
-            eyeCol = getBreathingColor(millis());
-        int lx = cx - 40, rx = cx + 40, eyeY = cy - 20;
-        int halfH = max(1, (int)(20 * blink.openness));
-        if (blink.openness > 0.05) {
-            fb.fillEllipse(lx, eyeY, 20, halfH, eyeCol);
-            fb.fillEllipse(rx, eyeY, 20, halfH, eyeCol);
+        // ── IDLE: rendering varia per livello di profondità ───────────────────
+        if (currentIdleDepth == IDLE_ABYSS) {
+            // ABYSS: schermo quasi nero, solo sigil che pulsa debolmente
+            float pulse = 0.15 + 0.15 * sin((float)now / 5000.0 * 2.0 * PI);
+            uint8_t r = (uint8_t)(255 * pulse);
+            uint8_t b = (uint8_t)(64 * pulse);
+            drawSigil(cx, cy - 5, tft.color565(r, 0, b));
+
+        } else if (currentIdleDepth == IDLE_DEEP) {
+            // DEEP: occhi chiusi, cappuccio dim, heartbeat lento del sigil
+            drawHood(cx, cy, tft.color565(0, 30, 8));
+            fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, tft.color565(0, 40, 10));
+            fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, tft.color565(0, 40, 10));
+            // Heartbeat sigil: pulse breve ogni 6s
+            float phase = fmod((float)now / 6000.0, 1.0);
+            float beat = (phase < 0.08) ? sin(phase / 0.08 * PI) : 0.0;
+            float base = 0.1 + 0.5 * beat;
+            drawSigil(cx, sigilY, tft.color565((uint8_t)(255 * base), 0, (uint8_t)(64 * base)));
+
+        } else if (currentIdleDepth == IDLE_DOZING) {
+            // DOZING: occhi semi-chiusi, drift lento pupille, tutto rallentato
+            drawHood(cx, cy, COL_DIM);
+            float maxOpen = 0.4;
+            int halfH = max(1, (int)(12 * min(maxOpen, blink.openness)));
+            if (blink.openness > 0.05) {
+                drawMandorlaEye(lx, eyeY, 22, halfH, COL_DIM);
+                drawMandorlaEye(rx, eyeY, 22, halfH, COL_DIM);
+                // Micro-drift pupille
+                float drift = 3.0 * sin((float)now / 3000.0);
+                fb.fillCircle(lx + (int)drift, eyeY, 3, COL_BG);
+                fb.fillCircle(rx + (int)drift, eyeY, 3, COL_BG);
+            } else {
+                fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, COL_DIM);
+                fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, COL_DIM);
+            }
+            // Sigil dim con breathing lentissimo
+            float sb = 0.2 + 0.2 * sin((float)(now % 8000) / 8000.0 * 2.0 * PI);
+            drawSigil(cx, sigilY, tft.color565((uint8_t)(255 * sb), 0, (uint8_t)(64 * sb)));
+
         } else {
-            fb.drawWideLine(lx - 20, eyeY, lx + 20, eyeY, 2, eyeCol);
-            fb.drawWideLine(rx - 20, eyeY, rx + 20, eyeY, 2, eyeCol);
+            // AWAKE / DROWSY: rendering standard con modulazione
+            drawHood(cx, cy, COL_DIM);
+            uint16_t eyeCol = COL_GREEN;
+            float breathPeriod = (currentIdleDepth == IDLE_DROWSY) ? 8000.0 : 4000.0;
+            if (breathingEnabled && blink.phase == BLINK_NONE) {
+                float t = (float)(now % (unsigned long)breathPeriod) / breathPeriod;
+                float b = 0.7 + 0.3 * sin(t * 2.0 * PI);
+                eyeCol = tft.color565(0, (uint8_t)(255 * b), (uint8_t)(65 * b));
+            }
+            float maxOpen = (currentIdleDepth == IDLE_DROWSY) ? 0.85 : 1.0;
+            int halfH = max(1, (int)(12 * min(maxOpen, blink.openness)));
+            if (blink.openness > 0.05) {
+                drawMandorlaEye(lx, eyeY, 22, halfH, eyeCol);
+                drawMandorlaEye(rx, eyeY, 22, halfH, eyeCol);
+            } else {
+                fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, eyeCol);
+                fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, eyeCol);
+            }
+            drawSigil(cx, sigilY, getSigilBreathingColor(now));
+            fb.drawWideLine(cx - 15, mouthY, cx + 15, mouthY, 1, eyeCol);
         }
-        fb.fillRoundRect(cx - 20, cy + 30, 40, 10, 5, eyeCol);
 
     } else if (currentState == "THINKING") {
-        // Occhi normali con pupille in alto, dots
-        int lx = cx - 40, rx = cx + 40, eyeY = cy - 20;
-        fb.fillEllipse(lx, eyeY, 20, 20, COL_GREEN);
-        fb.fillEllipse(rx, eyeY, 20, 20, COL_GREEN);
-        fb.fillCircle(lx, eyeY - 8, 6, COL_BG);
-        fb.fillCircle(rx, eyeY - 8, 6, COL_BG);
-        fb.fillRect(cx - 15, cy + 35, 30, 2, COL_GREEN);
-        int dots = (millis() / 400) % 4;
+        // ── THINKING: mandorle con pupille alte, sigil fisso, dots ─────────────
+        drawHood(cx, cy, COL_DIM);
+        drawMandorlaEye(lx, eyeY, 22, 12, COL_GREEN);
+        drawMandorlaEye(rx, eyeY, 22, 12, COL_GREEN);
+        // Pupille in alto (fessure scure)
+        fb.fillCircle(lx, eyeY - 5, 5, COL_BG);
+        fb.fillCircle(rx, eyeY - 5, 5, COL_BG);
+        drawSigil(cx, sigilY, COL_RED);
+        fb.drawWideLine(cx - 12, mouthY, cx + 12, mouthY, 1, COL_GREEN);
+        // Dots animati
+        int dots = (now / 400) % 4;
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
         String dotStr = "";
         for (int i = 0; i < dots; i++) dotStr += ".";
-        fb.drawString(dotStr, cx, cy + 55, 2);
+        fb.drawString(dotStr, cx, cy + 50, 2);
 
     } else if (currentState == "WORKING") {
-        // Occhi semi-chiusi concentrati (openness fissa 0.25), sopracciglia
-        int lx = cx - 40, rx = cx + 40, eyeY = cy - 20;
-        int halfH = 5;  // semi-chiusi
-        fb.fillEllipse(lx, eyeY, 20, halfH, COL_DIM);
-        fb.fillEllipse(rx, eyeY, 20, halfH, COL_DIM);
-        // Sopracciglio piatto e basso (espressione concentrata)
-        fb.drawWideLine(lx - 18, eyeY - 12, lx + 18, eyeY - 12, 2, COL_DIM);
-        fb.drawWideLine(rx - 18, eyeY - 12, rx + 18, eyeY - 12, 2, COL_DIM);
-        // Bocca neutra piccola
-        fb.fillRect(cx - 10, cy + 36, 20, 2, COL_DIM);
+        // ── WORKING: occhi semi-chiusi, sopracciglia, sigil dim, dots lenti ───
+        drawHood(cx, cy, COL_DIM);
+        int halfH = 4;  // semi-chiusi
+        drawMandorlaEye(lx, eyeY, 22, halfH, COL_DIM);
+        drawMandorlaEye(rx, eyeY, 22, halfH, COL_DIM);
+        // Sopracciglia piatte
+        fb.drawWideLine(lx - 18, eyeY - 14, lx + 18, eyeY - 14, 2, COL_DIM);
+        fb.drawWideLine(rx - 18, eyeY - 14, rx + 18, eyeY - 14, 2, COL_DIM);
+        drawSigil(cx, sigilY, COL_DIM);
+        fb.drawWideLine(cx - 8, mouthY, cx + 8, mouthY, 1, COL_DIM);
         // Dots lenti
-        int dots = (millis() / 600) % 4;
+        int dots = (now / 600) % 4;
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
         String dotStr = "";
         for (int i = 0; i < dots; i++) dotStr += ".";
-        fb.drawString(dotStr, cx, cy + 55, 2);
+        fb.drawString(dotStr, cx, cy + 50, 2);
 
     } else if (currentState == "PROUD") {
-        // Occhi grandi, sorriso largo, "OK" che sale e svanisce
-        unsigned long elapsed = millis() - proudStartedAt;
+        // ── PROUD: mandorle larghe, sigil bright, arco sorriso, "OK" sale ────
+        unsigned long elapsed = now - proudStartedAt;
         float t = min(1.0f, (float)elapsed / PROUD_DURATION);
-        int lx = cx - 40, rx = cx + 40, eyeY = cy - 20;
-        fb.fillEllipse(lx, eyeY, 22, 22, COL_GREEN);
-        fb.fillEllipse(rx, eyeY, 22, 22, COL_GREEN);
-        // Sorriso PROUD: arco parabola
-        for (int dx = -25; dx <= 25; dx++) {
-            float ft = (float)dx / 25.0;
-            int dy = (int)(12.0 * ft * ft);
-            fb.drawPixel(cx + dx, cy + 32 + dy, COL_GREEN);
-            fb.drawPixel(cx + dx, cy + 33 + dy, COL_GREEN);
+        drawHood(cx, cy, COL_GREEN);
+        drawMandorlaEye(lx, eyeY, 24, 14, COL_GREEN);
+        drawMandorlaEye(rx, eyeY, 24, 14, COL_GREEN);
+        drawSigil(cx, sigilY, COL_RED);
+        // Sorriso: arco sottile verso l'alto
+        for (int dx = -20; dx <= 20; dx++) {
+            float ft = (float)dx / 20.0;
+            int dy = (int)(8.0 * ft * ft);
+            fb.drawPixel(cx + dx, mouthY + dy, COL_GREEN);
+            fb.drawPixel(cx + dx, mouthY + dy + 1, COL_GREEN);
         }
         // "OK" che sale e svanisce
-        int checkY   = cy - 20 - (int)(35.0 * t);
-        float fade   = max(0.0f, 1.0f - t * 1.4f);  // svanisce completamente a ~71%
+        int checkY = cy - 20 - (int)(35.0 * t);
+        float fade = max(0.0f, 1.0f - t * 1.4f);
         if (fade > 0.01f) {
             uint8_t g = (uint8_t)(255 * fade);
             uint8_t b = (uint8_t)(65  * fade);
@@ -327,57 +491,77 @@ void renderState() {
         }
 
     } else if (currentState == "SLEEPING") {
-        int lx = cx - 40, rx = cx + 40, eyeY = cy - 20;
-        fb.drawWideLine(lx - 20, eyeY, lx + 20, eyeY, 2, COL_GREEN);
-        fb.drawWideLine(rx - 20, eyeY, rx + 20, eyeY, 2, COL_GREEN);
-        int yOff = (int)(5 * sin(millis() / 800.0));
+        // ── SLEEPING: occhi chiusi, cappuccio, sigil spento, zZz ─────────────
+        drawHood(cx, cy, COL_DIM);
+        fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, COL_DIM);
+        fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, COL_DIM);
+        // Sigil quasi invisibile
+        drawSigil(cx, sigilY, tft.color565(40, 0, 10));
+        int yOff = (int)(5 * sin(now / 800.0));
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("z", cx + 50, cy - 50 + yOff, 2);
-        fb.drawString("Z", cx + 65, cy - 65 + yOff, 4);
-        fb.drawString("z", cx + 85, cy - 80 + yOff, 2);
+        fb.drawString("z", cx + 50, cy - 45 + yOff, 2);
+        fb.drawString("Z", cx + 65, cy - 60 + yOff, 4);
+        fb.drawString("z", cx + 85, cy - 75 + yOff, 2);
 
     } else if (currentState == "HAPPY") {
-        int lx = cx - 40, rx = cx + 40, eyeY = cy - 20;
-        fb.fillEllipse(lx, eyeY, 24, 24, COL_GREEN);
-        fb.fillEllipse(rx, eyeY, 24, 24, COL_GREEN);
-        fb.fillRoundRect(cx - 25, cy + 28, 50, 12, 6, COL_GREEN);
+        // ── HAPPY: mandorle grandi, sigil flash, arco largo, stelline ────────
+        drawHood(cx, cy, COL_GREEN);
+        drawMandorlaEye(lx, eyeY, 26, 14, COL_GREEN);
+        drawMandorlaEye(rx, eyeY, 26, 14, COL_GREEN);
+        // Sigil lampeggia rapidamente
+        uint16_t sigilCol = ((now / 300) % 2 == 0) ? COL_RED : tft.color565(180, 0, 45);
+        drawSigil(cx, sigilY, sigilCol);
+        // Bocca: arco pronunciato
+        for (int dx = -22; dx <= 22; dx++) {
+            float ft = (float)dx / 22.0;
+            int dy = (int)(10.0 * ft * ft);
+            fb.drawPixel(cx + dx, mouthY + dy, COL_GREEN);
+            fb.drawPixel(cx + dx, mouthY + 1 + dy, COL_GREEN);
+        }
         fb.setTextColor(COL_GREEN);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("*", cx - 75, cy - 40, 2);
-        fb.drawString("*", cx + 70, cy - 40, 2);
+        fb.drawString("*", cx - 75, cy - 35, 2);
+        fb.drawString("*", cx + 70, cy - 35, 2);
 
     } else if (currentState == "ALERT") {
-        int lx = cx - 40, rx = cx + 40, eyeY = cy - 15;
-        fb.fillCircle(lx, eyeY, 18, COL_YELLOW);
-        fb.fillCircle(rx, eyeY, 18, COL_YELLOW);
-        fb.fillCircle(lx, eyeY, 8, COL_BG);
-        fb.fillCircle(rx, eyeY, 8, COL_BG);
-        fb.drawWideLine(cx - 58, cy - 35, cx - 22, cy - 29, 3, COL_YELLOW);
-        fb.drawWideLine(cx + 22, cy - 29, cx + 58, cy - 35, 3, COL_YELLOW);
+        // ── ALERT: mandorle gialle con pupilla, sigil lampeggia, zig-zag ─────
+        drawHood(cx, cy, COL_YELLOW);
+        drawMandorlaEye(lx, eyeY, 22, 12, COL_YELLOW);
+        drawMandorlaEye(rx, eyeY, 22, 12, COL_YELLOW);
+        fb.fillCircle(lx, eyeY, 5, COL_BG);
+        fb.fillCircle(rx, eyeY, 5, COL_BG);
+        // Sopracciglia a V aggressiva
+        fb.drawWideLine(lx - 18, eyeY - 18, lx + 5, eyeY - 12, 2, COL_YELLOW);
+        fb.drawWideLine(rx - 5, eyeY - 12, rx + 18, eyeY - 18, 2, COL_YELLOW);
+        // Sigil lampeggia rosso
+        if ((now / 500) % 2 == 0) drawSigil(cx, sigilY, COL_RED);
+        // Bocca zig-zag
         for (int i = 0; i < 4; i++) {
             int sx = cx - 20 + i * 10;
-            int sy = cy + 35 + ((i % 2 == 0) ? 0 : 5);
-            fb.drawWideLine(sx, sy, sx + 10, cy + 35 + ((i % 2 == 0) ? 5 : 0), 2, COL_YELLOW);
+            int sy = mouthY + ((i % 2 == 0) ? 0 : 5);
+            fb.drawWideLine(sx, sy, sx + 10, mouthY + ((i % 2 == 0) ? 5 : 0), 2, COL_YELLOW);
         }
-        if ((millis() / 500) % 2 == 0) {
+        if ((now / 500) % 2 == 0) {
             fb.setTextColor(COL_RED);
             fb.setTextDatum(MC_DATUM);
-            fb.drawString("!", cx + 90, cy - 20, 4);
+            fb.drawString("!", cx + 90, cy - 15, 4);
         }
 
     } else if (currentState == "ERROR") {
-        // ERROR normale (connessione WS appena persa, non ancora standalone)
-        int lx = cx - 40, rx = cx + 40, ey = cy - 20;
+        // ── ERROR: X rosse, sigil spento, cappuccio rosso ────────────────────
+        drawHood(cx, cy, COL_RED);
+        int ey = eyeY;
         fb.drawWideLine(lx - 12, ey - 12, lx + 12, ey + 12, 3, COL_RED);
         fb.drawWideLine(lx - 12, ey + 12, lx + 12, ey - 12, 3, COL_RED);
         fb.drawWideLine(rx - 12, ey - 12, rx + 12, ey + 12, 3, COL_RED);
         fb.drawWideLine(rx - 12, ey + 12, rx + 12, ey - 12, 3, COL_RED);
-        fb.drawWideLine(cx - 15, cy + 40, cx, cy + 35, 2, COL_RED);
-        fb.drawWideLine(cx,      cy + 35, cx + 15, cy + 40, 2, COL_RED);
+        // Bocca V rovesciata
+        fb.drawWideLine(cx - 15, mouthY + 5, cx, mouthY, 2, COL_RED);
+        fb.drawWideLine(cx, mouthY, cx + 15, mouthY + 5, 2, COL_RED);
         fb.setTextColor(COL_RED);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("reconnecting", cx, cy + 58, 1);
+        fb.drawString("reconnecting", cx, cy + 55, 1);
 
     } else {
         // BOOTING fallback
@@ -389,9 +573,9 @@ void renderState() {
     }
 
     drawNotifOverlay();
+    drawUnreadIndicator(now);
     drawConnectionIndicator();
     drawScanlines();
-    drawCryptoTicker();
 
     if (infoActive) renderInfoOverlay();
 
@@ -403,53 +587,62 @@ void renderState() {
 void renderTransition(unsigned long now) {
     unsigned long elapsed = now - transition.start;
     fb.fillSprite(COL_BG);
-    const int cx = 160, cy = 82;
-    int lx = cx - 40, rx = cx + 40, eyeY = cy - 20;
+    const int cx = 160, cy = 85;
+    const int lx = cx - 40, rx = cx + 40, eyeY = cy - 15;
+    const int sigilY = cy - 42;
+    const int mouthY = cy + 30;
+
+    drawHood(cx, cy, COL_DIM);
 
     if (elapsed < YAWN_MOUTH_END) {
         // Fase 1: occhi chiusi, bocca si apre gradualmente
-        fb.drawWideLine(lx - 20, eyeY, lx + 20, eyeY, 2, COL_GREEN);
-        fb.drawWideLine(rx - 20, eyeY, rx + 20, eyeY, 2, COL_GREEN);
+        fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, COL_DIM);
+        fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, COL_DIM);
+        drawSigil(cx, sigilY, tft.color565(40, 0, 10));
         float t = (float)elapsed / YAWN_MOUTH_END;
-        int mouthH = max(2, (int)(18.0 * t));
-        fb.fillEllipse(cx, cy + 35, 14, mouthH, COL_DIM);
+        int mouthH = max(2, (int)(14.0 * t));
+        fb.fillEllipse(cx, mouthY, 10, mouthH, COL_DIM);
         // zZz ancora visibili
         int yOff = (int)(5 * sin(now / 800.0));
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("z", cx + 50, cy - 50 + yOff, 2);
-        fb.drawString("Z", cx + 65, cy - 65 + yOff, 4);
+        fb.drawString("z", cx + 50, cy - 45 + yOff, 2);
+        fb.drawString("Z", cx + 65, cy - 60 + yOff, 4);
 
     } else if (elapsed < YAWN_EYES_END) {
-        // Fase 2: bocca aperta, occhi si aprono (easing quadratico)
-        fb.fillEllipse(cx, cy + 35, 14, 18, COL_DIM);
+        // Fase 2: bocca aperta, mandorle si aprono (easing quadratico)
+        fb.fillEllipse(cx, mouthY, 10, 14, COL_DIM);
         float t   = (float)(elapsed - YAWN_MOUTH_END) / (YAWN_EYES_END - YAWN_MOUTH_END);
-        float eas = t * t;  // quadratico — lento all'inizio
-        int halfH = max(1, (int)(20.0 * eas));
+        float eas = t * t;
+        int halfH = max(1, (int)(12.0 * eas));
         if (eas > 0.05) {
-            fb.fillEllipse(lx, eyeY, 20, halfH, COL_GREEN);
-            fb.fillEllipse(rx, eyeY, 20, halfH, COL_GREEN);
+            drawMandorlaEye(lx, eyeY, 22, halfH, COL_GREEN);
+            drawMandorlaEye(rx, eyeY, 22, halfH, COL_GREEN);
         } else {
-            fb.drawWideLine(lx - 20, eyeY, lx + 20, eyeY, 2, COL_GREEN);
-            fb.drawWideLine(rx - 20, eyeY, rx + 20, eyeY, 2, COL_GREEN);
+            fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, COL_GREEN);
+            fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, COL_GREEN);
         }
+        // Sigil si accende gradualmente
+        uint8_t r = (uint8_t)(255 * eas);
+        drawSigil(cx, sigilY, tft.color565(r, 0, (uint8_t)(64 * eas)));
 
     } else if (elapsed < YAWN_ZZZ_END) {
-        // Fase 3: occhi aperti, bocca si richiude, zZz svaniscono
-        fb.fillEllipse(lx, eyeY, 20, 20, COL_GREEN);
-        fb.fillEllipse(rx, eyeY, 20, 20, COL_GREEN);
+        // Fase 3: mandorle aperte, bocca si richiude, zZz svaniscono
+        drawMandorlaEye(lx, eyeY, 22, 12, COL_GREEN);
+        drawMandorlaEye(rx, eyeY, 22, 12, COL_GREEN);
+        drawSigil(cx, sigilY, COL_RED);
         float t = (float)(elapsed - YAWN_EYES_END) / (YAWN_ZZZ_END - YAWN_EYES_END);
-        int mouthH = max(0, (int)(18.0 * (1.0 - t)));
-        if (mouthH > 1) fb.fillEllipse(cx, cy + 35, 14, mouthH, COL_DIM);
-        // zZz che svaniscono (colore interpolato verso BG)
+        int mouthH = max(0, (int)(14.0 * (1.0 - t)));
+        if (mouthH > 1) fb.fillEllipse(cx, mouthY, 10, mouthH, COL_DIM);
+        // zZz che svaniscono
         float fade = 1.0 - t;
         uint8_t g = (uint8_t)(85 * fade);
         uint16_t zCol = tft.color565(0, g, (uint8_t)(21 * fade));
         fb.setTextColor(zCol);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("z", cx + 50, cy - 50, 2);
-        fb.drawString("Z", cx + 65, cy - 65, 4);
-        fb.drawString("z", cx + 85, cy - 80, 2);
+        fb.drawString("z", cx + 50, cy - 45, 2);
+        fb.drawString("Z", cx + 65, cy - 60, 4);
+        fb.drawString("z", cx + 85, cy - 75, 2);
 
     } else {
         // Fine transizione
@@ -464,7 +657,6 @@ void renderTransition(unsigned long now) {
 
     drawConnectionIndicator();
     drawScanlines();
-    drawCryptoTicker();
     fb.pushSprite(0, 0);
 }
 
@@ -472,43 +664,47 @@ void renderTransition(unsigned long now) {
 
 void renderMoodSummary() {
     fb.fillSprite(COL_BG);
-    const int cx = 160, cy = 75;
+    const int cx = 160, cy = 78;
 
     fb.setTextColor(COL_DIM);
     fb.setTextDatum(MC_DATUM);
     fb.drawString("DAILY RECAP", cx, 12, 1);
 
-    // Faccina riassuntiva
-    int lx = cx - 35, rx = cx + 35, eyeY = cy - 15;
+    // Faccina riassuntiva — stile mandorla
+    int lx = cx - 35, rx = cx + 35, eyeY = cy - 12;
     bool goodDay = (moodHappy > (moodAlert + moodError * 2));
     bool toughDay = (moodAlert > moodHappy || moodError > 0);
 
+    drawHood(cx, cy, COL_DIM);
+
     if (goodDay) {
-        // Occhioni felici + sorriso largo
-        fb.fillEllipse(lx, eyeY, 18, 18, COL_GREEN);
-        fb.fillEllipse(rx, eyeY, 18, 18, COL_GREEN);
-        for (int dx = -22; dx <= 22; dx++) {
-            float ft = (float)dx / 22.0;
-            int dy = (int)(10.0 * ft * ft);
-            fb.drawPixel(cx + dx, cy + 28 + dy, COL_GREEN);
-            fb.drawPixel(cx + dx, cy + 29 + dy, COL_GREEN);
+        // Mandorle grandi + sorriso
+        drawMandorlaEye(lx, eyeY, 20, 11, COL_GREEN);
+        drawMandorlaEye(rx, eyeY, 20, 11, COL_GREEN);
+        drawSigil(cx, cy - 38, COL_RED);
+        for (int dx = -18; dx <= 18; dx++) {
+            float ft = (float)dx / 18.0;
+            int dy = (int)(8.0 * ft * ft);
+            fb.drawPixel(cx + dx, cy + 25 + dy, COL_GREEN);
         }
         fb.setTextColor(COL_DIM);
-        fb.drawString("buona giornata", cx, cy + 52, 1);
+        fb.drawString("buona giornata", cx, cy + 48, 1);
     } else if (toughDay) {
-        // Occhi stanchi (semi-chiusi) + bocca neutra
-        fb.fillEllipse(lx, eyeY, 18, 5, COL_DIM);
-        fb.fillEllipse(rx, eyeY, 18, 5, COL_DIM);
-        fb.fillRect(cx - 18, cy + 30, 36, 2, COL_DIM);
+        // Mandorle semi-chiuse
+        drawMandorlaEye(lx, eyeY, 20, 4, COL_DIM);
+        drawMandorlaEye(rx, eyeY, 20, 4, COL_DIM);
+        drawSigil(cx, cy - 38, tft.color565(80, 0, 20));
+        fb.drawWideLine(cx - 12, cy + 27, cx + 12, cy + 27, 1, COL_DIM);
         fb.setTextColor(COL_DIM);
-        fb.drawString("giornata tosta", cx, cy + 52, 1);
+        fb.drawString("giornata tosta", cx, cy + 48, 1);
     } else {
-        // Espressione neutra
-        fb.fillEllipse(lx, eyeY, 18, 18, COL_DIM);
-        fb.fillEllipse(rx, eyeY, 18, 18, COL_DIM);
-        fb.fillRect(cx - 18, cy + 30, 36, 2, COL_DIM);
+        // Mandorle neutre
+        drawMandorlaEye(lx, eyeY, 20, 11, COL_DIM);
+        drawMandorlaEye(rx, eyeY, 20, 11, COL_DIM);
+        drawSigil(cx, cy - 38, tft.color565(80, 0, 20));
+        fb.drawWideLine(cx - 12, cy + 27, cx + 12, cy + 27, 1, COL_DIM);
         fb.setTextColor(COL_DIM);
-        fb.drawString("giornata ok", cx, cy + 52, 1);
+        fb.drawString("giornata ok", cx, cy + 48, 1);
     }
 
     // Contatori in basso
@@ -568,19 +764,6 @@ void renderStats() {
     fb.drawString("ST  ", 10, 78, 1);
     fb.setTextColor(COL_DIM);
     fb.drawString(currentState, 40, 78, 1);
-
-    // Crypto se disponibile
-    if (cryptoAvailable) {
-        fb.drawFastHLine(10, 96, 200, COL_DIM);
-        char btcBuf[28], ethBuf[28];
-        char bs = (cryptoBtcChange >= 0) ? '+' : ' ';
-        char es = (cryptoEthChange >= 0) ? '+' : ' ';
-        snprintf(btcBuf, sizeof(btcBuf), "BTC $%.0f %c%.1f%%", cryptoBtc, bs, cryptoBtcChange);
-        snprintf(ethBuf, sizeof(ethBuf), "ETH $%.0f %c%.1f%%", cryptoEth, es, cryptoEthChange);
-        fb.setTextColor(COL_DIM);
-        fb.drawString(btcBuf, 10, 102, 1);
-        fb.drawString(ethBuf, 10, 116, 1);
-    }
 
     drawConnectionIndicator();
     drawScanlines();
@@ -805,9 +988,16 @@ void updateBlink(unsigned long now) {
             if (blink.openness >= 1.0) {
                 blink.openness = 1.0;
                 blink.phase    = BLINK_NONE;
-                blink.nextBlinkAt = (random(100) < 15)
-                    ? now + random(200, 450)
-                    : now + random(2000, 6000);
+                // Intervallo blink modulato per livello Deep Idle
+                if (random(100) < 15) {
+                    blink.nextBlinkAt = now + random(200, 450);  // double blink
+                } else if (currentIdleDepth == IDLE_DROWSY) {
+                    blink.nextBlinkAt = now + random(6000, 12000);
+                } else if (currentIdleDepth == IDLE_DOZING) {
+                    blink.nextBlinkAt = now + random(15000, 25000);
+                } else {
+                    blink.nextBlinkAt = now + random(2000, 6000);  // AWAKE
+                }
             }
             break;
     }
@@ -855,8 +1045,15 @@ void renderResult();
 void sendCommand(const char* cmd);
 
 void onLeftShort() {
+    resetInteraction();
     switch (currentView) {
         case VIEW_FACE:
+            // Se ci sono notifiche non lette, mostra prima quelle
+            if (unreadNotifs > 0 && !notifShowing) {
+                peekUnreadNotification();
+                renderState();
+                return;
+            }
             // Entra nel menu Pi Control
             currentView = VIEW_MENU_PI;
             menu.selectedIdx = menu.piIdx;
@@ -887,6 +1084,7 @@ void onLeftShort() {
 }
 
 void onLeftLong() {
+    resetInteraction();
     switch (currentView) {
         case VIEW_FACE:
             // Forza riconnessione WS
@@ -921,8 +1119,15 @@ void onLeftLong() {
 }
 
 void onRightShort() {
+    resetInteraction();
     switch (currentView) {
         case VIEW_FACE:
+            // Se ci sono notifiche non lette, mostra prima quelle
+            if (unreadNotifs > 0 && !notifShowing) {
+                peekUnreadNotification();
+                renderState();
+                return;
+            }
             // Entra nel menu Vessel Control
             currentView = VIEW_MENU_VESSEL;
             menu.selectedIdx = menu.vesselIdx;
@@ -949,6 +1154,7 @@ void onRightShort() {
 }
 
 void onRightLong() {
+    resetInteraction();
     switch (currentView) {
         case VIEW_FACE:
             // Reconnect WS
@@ -1035,7 +1241,7 @@ void bootAnimation() {
     unsigned long wifiStart = millis();
     float op = 0.0f;
     unsigned long stepTimer = millis();
-    const int cx = 160, eyeY = 65;
+    const int cx = 160, eyeY = 70;
 
     while (op < 1.0f || WiFi.status() != WL_CONNECTED) {
         unsigned long now = millis();
@@ -1048,16 +1254,24 @@ void bootAnimation() {
             if (op < 1.0f) op += 0.04f;
             if (op > 1.0f) op = 1.0f;
             fb.fillSprite(COL_BG);
-            int halfH = max(1, (int)(20.0f * op));
+            // Cappuccio appare gradualmente
+            if (op > 0.3f) drawHood(cx, 85, COL_DIM);
+            // Mandorle si aprono
+            int halfH = max(1, (int)(12.0f * op));
             if (op > 0.05f) {
-                fb.fillEllipse(cx - 40, eyeY, 20, halfH, COL_GREEN);
-                fb.fillEllipse(cx + 40, eyeY, 20, halfH, COL_GREEN);
+                drawMandorlaEye(cx - 40, eyeY, 22, halfH, COL_GREEN);
+                drawMandorlaEye(cx + 40, eyeY, 22, halfH, COL_GREEN);
             } else {
-                fb.drawWideLine(cx - 60, eyeY, cx - 20, eyeY, 2, COL_GREEN);
-                fb.drawWideLine(cx + 20, eyeY, cx + 60, eyeY, 2, COL_GREEN);
+                fb.drawWideLine(cx - 62, eyeY, cx - 18, eyeY, 2, COL_GREEN);
+                fb.drawWideLine(cx + 18, eyeY, cx + 62, eyeY, 2, COL_GREEN);
+            }
+            // Sigil flash rosso alla fine
+            if (op >= 0.8f) {
+                uint8_t r = (uint8_t)(255 * (op - 0.8f) / 0.2f);
+                drawSigil(cx, 43, tft.color565(r, 0, (uint8_t)(64 * (op - 0.8f) / 0.2f)));
             }
             if (op >= 1.0f)
-                fb.fillRoundRect(cx - 20, 95, 40, 10, 5, COL_GREEN);
+                fb.drawWideLine(cx - 15, 100, cx + 15, 100, 1, COL_GREEN);
             if (WiFi.status() != WL_CONNECTED) {
                 fb.setTextColor(COL_DIM);
                 fb.setTextDatum(MC_DATUM);
@@ -1196,6 +1410,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
             blink.openness    = 1.0;
             blink.nextBlinkAt = millis() + random(1000, 3000);
             transition.anim   = TRANS_NONE;
+            resetInteraction();
             renderState();
             webSocket.sendTXT("Connected");
             break;
@@ -1241,17 +1456,6 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
                     const char* st = data["status"] | "unknown";
                     menu.resultLines[0] = "Bridge: " + String(st);
                     menu.resultLineCount = 1;
-                } else if (resp == "refresh_crypto") {
-                    float btc = data["btc"] | 0.0f;
-                    float eth = data["eth"] | 0.0f;
-                    float bc  = data["btc_change"] | 0.0f;
-                    float ec  = data["eth_change"] | 0.0f;
-                    char buf[40];
-                    snprintf(buf, sizeof(buf), "BTC $%.0f (%+.1f%%)", btc, bc);
-                    menu.resultLines[0] = String(buf);
-                    snprintf(buf, sizeof(buf), "ETH $%.0f (%+.1f%%)", eth, ec);
-                    menu.resultLines[1] = String(buf);
-                    menu.resultLineCount = 2;
                 } else {
                     // Generico: mostra msg
                     const char* msg = data["msg"] | "Done";
@@ -1276,18 +1480,6 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
                     currentState = "THINKING";
                     renderState();
                     performOTA();
-                    break;
-                }
-                if (action == "crypto_update") {
-                    cryptoBtc       = doc["btc"]        | 0.0f;
-                    cryptoEth       = doc["eth"]        | 0.0f;
-                    cryptoBtcChange = doc["btc_change"] | 0.0f;
-                    cryptoEthChange = doc["eth_change"] | 0.0f;
-                    if (cryptoBtc > 0) {
-                        cryptoAvailable = true;
-                        buildCryptoText();
-                        Serial.printf("[Crypto] BTC:%.0f ETH:%.0f\n", cryptoBtc, cryptoEth);
-                    }
                     break;
                 }
             }
@@ -1326,6 +1518,9 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
 
             currentState = ns;
 
+            // Reset idle depth su qualsiasi cambio stato attivo (non SLEEPING)
+            if (ns != "SLEEPING") resetInteraction();
+
             if (currentState == "IDLE") {
                 blink.phase       = BLINK_NONE;
                 blink.openness    = 1.0;
@@ -1335,10 +1530,18 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
             if (currentState == "PROUD")  proudStartedAt = millis();
 
             if (detailRaw || textRaw) {
-                notifDetail    = detailRaw ? String(detailRaw) : "";
-                notifText      = textRaw   ? String(textRaw)   : "";
-                notifStartedAt = millis();
-                notifActive    = true;
+                String d = detailRaw ? String(detailRaw) : "";
+                String t = textRaw   ? String(textRaw)   : "";
+                pushNotification(d, t);
+                // Mostra subito se utente è attivo (AWAKE/DROWSY)
+                if (currentIdleDepth <= IDLE_DROWSY) {
+                    int idx = getOldestUnread();
+                    if (idx >= 0) {
+                        showNotification(notifQueue[idx].detail, notifQueue[idx].text, false);
+                        markNotifRead(idx);
+                    }
+                }
+                // Se in deep idle: resta in coda, indicatore lo segnala
             }
 
             renderState();
@@ -1381,6 +1584,7 @@ void setup() {
 
     randomSeed(analogRead(0));
     blink.nextBlinkAt = millis() + random(2000, 5000);
+    lastInteractionAt = millis();
 }
 
 // ─── Loop ────────────────────────────────────────────────────────────────────
@@ -1466,20 +1670,28 @@ void loop() {
         Serial.println("[Standalone] Pi offline da 60s — modalità screensaver");
     }
 
-    // ── Crypto ticker scroll ─────────────────────────────────────────────────
-    if (cryptoAvailable && now - lastTickerStep >= 40) {
-        lastTickerStep = now;
-        cryptoScrollX--;
-        if (cryptoScrollX < -(cryptoTextW + 30))
-            cryptoScrollX = 320;
-    }
-
-    // ── IDLE: blink + breathing ──────────────────────────────────────────────
+    // ── IDLE: blink + breathing + deep idle ──────────────────────────────────
     if (currentState == "IDLE") {
+        IdleDepth depth = getIdleDepth(now);
+        if (depth != currentIdleDepth) {
+            currentIdleDepth = depth;
+            Serial.printf("[DeepIdle] Livello: %d\n", (int)depth);
+        }
+        // DEEP e ABYSS: rendering speciale, niente blink normale
+        if (depth == IDLE_DEEP || depth == IDLE_ABYSS) {
+            static unsigned long lastDeepDraw = 0;
+            unsigned long interval = (depth == IDLE_ABYSS) ? 200 : 100;
+            if (now - lastDeepDraw >= interval) {
+                lastDeepDraw = now;
+                renderState();
+            }
+            return;
+        }
         updateBlink(now);
         if (breathingEnabled && blink.phase == BLINK_NONE) {
             static unsigned long lastBreath = 0;
-            if (now - lastBreath >= 50) {
+            unsigned long breathInterval = (depth == IDLE_DROWSY) ? 80 : (depth == IDLE_DOZING) ? 120 : 50;
+            if (now - lastBreath >= breathInterval) {
                 lastBreath = now;
                 renderState();
             }
@@ -1566,9 +1778,5 @@ void loop() {
         return;
     }
 
-    // ── Notifica: scadenza overlay ──────────────────────────────────────────
-    if (notifActive && now - notifStartedAt >= NOTIF_DURATION) {
-        notifActive = false;
-        renderState();
-    }
+    // ── Notifica: scadenza overlay (gestita in drawNotifOverlay) ─────────────
 }

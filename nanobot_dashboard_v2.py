@@ -3043,24 +3043,6 @@ async def _handle_tamagotchi_cmd(ws: WebSocket, cmd: str, req_id: int):
             await ws.send_json({"resp": "warmup_ollama", "req_id": req_id, "ok": True,
                                 "data": {"msg": "Modello precaricato"}})
 
-        elif cmd == "refresh_crypto":
-            cp = await bg(get_crypto_prices)
-            btc = cp.get("btc") or {}
-            eth = cp.get("eth") or {}
-            crypto_data = {
-                "btc": btc.get("usd"), "eth": eth.get("usd"),
-                "btc_change": btc.get("change_24h"), "eth_change": eth.get("change_24h"),
-            }
-            if btc.get("usd"):
-                await broadcast_tamagotchi_raw({
-                    "action": "crypto_update",
-                    "btc": btc["usd"], "eth": eth.get("usd", 0),
-                    "btc_change": btc.get("change_24h", 0),
-                    "eth_change": eth.get("change_24h", 0),
-                })
-            await ws.send_json({"resp": "refresh_crypto", "req_id": req_id, "ok": True,
-                                "data": crypto_data})
-
         else:
             await ws.send_json({"resp": cmd, "req_id": req_id, "ok": False,
                                 "data": {"msg": f"Comando sconosciuto: {cmd}"}})
