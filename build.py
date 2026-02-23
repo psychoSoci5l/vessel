@@ -48,9 +48,21 @@ def build():
         "config.py",
         "database.py",
         "providers.py",
-        "services.py",
-        "routes.py",
-        "main.py"
+        "services/helpers.py",
+        "services/system.py",
+        "services/crypto.py",
+        "services/tokens.py",
+        "services/knowledge.py",
+        "services/telegram.py",
+        "services/chat.py",
+        "services/bridge.py",
+        "services/monitor.py",
+        "services/cleanup.py",
+        "routes/tamagotchi.py",
+        "routes/telegram.py",
+        "routes/ws_handlers.py",
+        "routes/core.py",
+        "main.py",
     ]
     
     backend_content = ""

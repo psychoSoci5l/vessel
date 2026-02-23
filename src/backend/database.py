@@ -112,6 +112,15 @@ def init_db():
                 stats TEXT NOT NULL DEFAULT '{}'
             );
             CREATE INDEX IF NOT EXISTS idx_weekly_ts ON weekly_summaries(ts);
+
+            CREATE TABLE IF NOT EXISTS saved_prompts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                title TEXT NOT NULL,
+                prompt TEXT NOT NULL,
+                provider TEXT NOT NULL DEFAULT '',
+                use_loop INTEGER NOT NULL DEFAULT 0
+            );
         """)
         # Schema version
         row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -546,3 +555,32 @@ def db_get_latest_weekly_summary() -> dict | None:
                 "stats": json.loads(row["stats"]),
             }
         return None
+
+
+# ─── Saved Prompts ───────────────────────────────────────────────────────────
+
+def db_get_saved_prompts() -> list:
+    """Ritorna tutti i prompt salvati, ordinati per titolo."""
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, ts, title, prompt, provider, use_loop FROM saved_prompts ORDER BY title"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def db_save_prompt(title: str, prompt: str, provider: str = "", use_loop: bool = False) -> int:
+    """Salva un prompt. Ritorna l'id."""
+    with _db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO saved_prompts (ts, title, prompt, provider, use_loop) VALUES (?, ?, ?, ?, ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%S"), title[:100], prompt[:10000],
+             provider[:30], 1 if use_loop else 0)
+        )
+        return cur.lastrowid
+
+
+def db_delete_saved_prompt(prompt_id: int) -> bool:
+    """Elimina un prompt salvato per id."""
+    with _db_conn() as conn:
+        cur = conn.execute("DELETE FROM saved_prompts WHERE id = ?", (prompt_id,))
+        return cur.rowcount > 0

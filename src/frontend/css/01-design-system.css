@@ -1,0 +1,73 @@
+/* Font caricato via <link> in index.html con preconnect + font-display:swap */
+
+/* ═══════════════════════════════════════════
+   VESSEL DASHBOARD — Design System v3
+   Verde LED + Flexbox + Mobile-first
+   ═══════════════════════════════════════════ */
+
+:root {
+  /* Base — più scuro per contrasto LED */
+  --bg: #020502;
+  --bg2: #081208;
+  --card: #0a1a0a;
+  --card2: #0f220f;
+  --border: #162816;
+  --border2: #1e3a1e;
+
+  /* Verde LED — più vivido */
+  --green: #00ff41;
+  --green2: #00dd38;
+  --green3: #00aa2a;
+  --green-dim: #002a0e;
+
+  /* Glow presets */
+  --glow-sm: 0 0 4px rgba(0,255,65,0.4);
+  --glow-md: 0 0 8px rgba(0,255,65,0.3), 0 0 20px rgba(0,255,65,0.12);
+  --glow-text: 0 0 6px rgba(0,255,65,0.5), 0 0 14px rgba(0,255,65,0.2);
+
+  /* Accenti */
+  --amber: #ffb000;
+  --red: #ff3333;
+  --red-dim: #3a0808;
+  --cyan: #00ffcc;
+
+  /* Testo */
+  --text: #c8ffc8;
+  --text2: #7ab87a;
+  --muted: #3d6b3d;
+
+  /* Font */
+  --font: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Safe areas iOS */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+}
+
+/* Scan-line CRT sottile */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0px, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px);
+  z-index: 9999;
+}

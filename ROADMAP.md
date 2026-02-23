@@ -331,6 +331,40 @@
 
 ---
 
+## Fase 36 — Security Hardening (23/02/2026)
+
+**Obiettivo:** guardrail operativi su Pi autonomo e Bridge PC.
+
+- [x] **36A** Bridge health: rimosso leak `cli_path` dall'endpoint `/health`
+- [x] **36B** Cron allowlist: sostituita blacklist con prefix allowlist (python3, nanobot, scripts)
+- [x] **36C** Plugin hash audit: SHA256 logging all'avvio per ogni handler.py caricato
+
+---
+
+## Fase 37 — Dashboard UX (23/02/2026)
+
+**Obiettivo:** qualita' della vita — layout, autenticazione, animazioni, template.
+
+- [x] **37A** Code tab desktop ribilanciato: `2fr 1fr` (67/33 chat/task) al posto di `3fr 2fr`
+- [x] **37B** Logoff: `POST /auth/logout` + bottone rosso in Profile tab + audit log
+- [x] **37C** Animazione CRT power-on: scaleY/scaleX + glow verde al login riuscito
+- [x] **37D** Prompt salvati: tabella `saved_prompts` in SQLite, WS handlers (list/save/delete), dropdown select + bottoni save/delete nel Code tab
+
+---
+
+## Fase 38 — Vessel ↔ Sigil Emotion Bridge ✅ (23/02/2026)
+
+**Obiettivo:** Sigil reagisce al contenuto emotivo delle risposte chat.
+
+- [x] **38A** `EMOTION_PATTERNS` — keyword mapping IT+EN per 5 stati: PROUD, HAPPY, CURIOUS, ALERT, ERROR
+- [x] **38B** `detect_emotion(text)` — scoring keyword-based con soglie (ERROR/ALERT richiedono 2+ match)
+- [x] **38C** `_stream_chat` ritorna `full_reply`; `handle_chat` usa `detect_emotion()` al posto di HAPPY fisso
+- [x] **38C** `broadcast_tamagotchi()` notifica anche dashboard WS clients con `sigil_state` message
+- [x] **38C** `handle_get_sigil_state` — handler WS per stato iniziale alla connessione
+- [x] **38D** Indicatore Sigil live nell'header dashboard: dot + label, colori per stato (green/cyan/amber/red)
+
+---
+
 ## Visione futura (no timeline, complessità crescente)
 
 **Medio termine:**

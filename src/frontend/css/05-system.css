@@ -1,0 +1,83 @@
+/* ══════════════════════════════
+   SYSTEM TAB
+   ══════════════════════════════ */
+
+.sys-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 14px;
+}
+
+.sys-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--green);
+  letter-spacing: 2px;
+  text-shadow: var(--glow-text);
+}
+
+.version-badge {
+  font-size: 10px;
+  background: var(--green-dim);
+  border: 1px solid var(--green3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: var(--green2);
+}
+
+.sys-section {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.sys-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.sys-section-title {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+}
+
+.sys-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+/* Sessions */
+.session-list { display: flex; flex-direction: column; gap: 6px; }
+
+.session-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.session-name {
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.session-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green); box-shadow: var(--glow-sm);
+  animation: pulse 2s infinite;
+}

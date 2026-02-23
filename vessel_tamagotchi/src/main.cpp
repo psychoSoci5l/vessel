@@ -108,13 +108,16 @@ struct BlinkState {
     unsigned long phaseStart  = 0;
     unsigned long nextBlinkAt = 0;
     float         openness    = 1.0;
+    bool          isWink      = false;   // wink: solo occhio destro chiude
 } blink;
 
-// ─── HAPPY / PROUD auto-return ───────────────────────────────────────────────
-unsigned long happyStartedAt = 0;
-unsigned long proudStartedAt = 0;
-const unsigned long HAPPY_DURATION = 3000;
-const unsigned long PROUD_DURATION = 5000;
+// ─── HAPPY / PROUD / CURIOUS auto-return ─────────────────────────────────────
+unsigned long happyStartedAt   = 0;
+unsigned long proudStartedAt   = 0;
+unsigned long curiousStartedAt = 0;
+const unsigned long HAPPY_DURATION   = 3000;
+const unsigned long PROUD_DURATION   = 5000;
+const unsigned long CURIOUS_DURATION = 5000;
 
 // ─── Breathing ───────────────────────────────────────────────────────────────
 bool breathingEnabled = true;
@@ -228,6 +231,7 @@ const unsigned long LONG_PRESS_MS = 1500;
 const unsigned long DEBOUNCE_MS   = 50;
 
 // ─── Forward declarations ─────────────────────────────────────────────────────
+void connectWS();
 void renderState();
 void renderTransition(unsigned long now);
 void renderMoodSummary();
@@ -382,7 +386,7 @@ void renderState() {
         fb.drawWideLine(cx - 12, mouthY, cx + 12, mouthY, 1, COL_DIM);
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("vessel offline", cx, cy + 55, 1);
+        fb.drawString("sigil offline", cx, cy + 55, 1);
 
     } else if (currentState == "IDLE") {
         // ── IDLE: rendering varia per livello di profondità ───────────────────
@@ -435,13 +439,27 @@ void renderState() {
                 eyeCol = tft.color565(0, (uint8_t)(255 * b), (uint8_t)(65 * b));
             }
             float maxOpen = (currentIdleDepth == IDLE_DROWSY) ? 0.85 : 1.0;
-            int halfH = max(1, (int)(12 * min(maxOpen, blink.openness)));
-            if (blink.openness > 0.05) {
-                drawMandorlaEye(lx, eyeY, 22, halfH, eyeCol);
-                drawMandorlaEye(rx, eyeY, 22, halfH, eyeCol);
+            // Wink: occhio sinistro resta aperto, destro blink
+            float leftOpen  = min(maxOpen, blink.isWink ? maxOpen : blink.openness);
+            float rightOpen = min(maxOpen, blink.openness);
+            int leftHalfH  = max(1, (int)(12 * leftOpen));
+            int rightHalfH = max(1, (int)(12 * rightOpen));
+            if (leftOpen > 0.05) {
+                drawMandorlaEye(lx, eyeY, 22, leftHalfH, eyeCol);
             } else {
                 fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, eyeCol);
+            }
+            if (rightOpen > 0.05) {
+                drawMandorlaEye(rx, eyeY, 22, rightHalfH, eyeCol);
+            } else {
                 fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, eyeCol);
+            }
+            // Pupille micro-drift (AWAKE, no blink attivo)
+            if (currentIdleDepth == IDLE_AWAKE && blink.phase == BLINK_NONE) {
+                float driftX = 2.0 * sin((float)now / 5000.0);
+                float driftY = 1.0 * cos((float)now / 7000.0);
+                fb.fillCircle(lx + (int)driftX, eyeY + (int)driftY, 4, COL_BG);
+                fb.fillCircle(rx + (int)driftX, eyeY + (int)driftY, 4, COL_BG);
             }
             drawSigil(cx, sigilY, getSigilBreathingColor(now));
             fb.drawWideLine(cx - 15, mouthY, cx + 15, mouthY, 1, eyeCol);
@@ -458,12 +476,10 @@ void renderState() {
         drawSigil(cx, sigilY, COL_RED);
         fb.drawWideLine(cx - 12, mouthY, cx + 12, mouthY, 1, COL_GREEN);
         // Dots animati
-        int dots = (now / 400) % 4;
+        static const char* dotLookup[] = {"", ".", "..", "..."};
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
-        String dotStr = "";
-        for (int i = 0; i < dots; i++) dotStr += ".";
-        fb.drawString(dotStr, cx, cy + 50, 2);
+        fb.drawString(dotLookup[(now / 400) % 4], cx, cy + 50, 2);
 
     } else if (currentState == "WORKING") {
         // ── WORKING: occhi semi-chiusi, sopracciglia, sigil dim, dots lenti ───
@@ -477,12 +493,10 @@ void renderState() {
         drawSigil(cx, sigilY, COL_DIM);
         fb.drawWideLine(cx - 8, mouthY, cx + 8, mouthY, 1, COL_DIM);
         // Dots lenti
-        int dots = (now / 600) % 4;
+        static const char* dotLookup2[] = {"", ".", "..", "..."};
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
-        String dotStr = "";
-        for (int i = 0; i < dots; i++) dotStr += ".";
-        fb.drawString(dotStr, cx, cy + 50, 2);
+        fb.drawString(dotLookup2[(now / 600) % 4], cx, cy + 50, 2);
 
     } else if (currentState == "PROUD") {
         // ── PROUD: mandorle larghe, sigil bright, arco sorriso, "OK" sale ────
@@ -544,6 +558,29 @@ void renderState() {
         fb.drawString("*", cx - 75, cy - 35, 2);
         fb.drawString("*", cx + 70, cy - 35, 2);
 
+    } else if (currentState == "CURIOUS") {
+        // ── CURIOUS: occhi larghi, pupille scannerizzanti, "?" ──────────
+        drawHood(cx, cy, COL_GREEN);
+        drawMandorlaEye(lx, eyeY, 24, 14, COL_GREEN);
+        drawMandorlaEye(rx, eyeY, 24, 14, COL_GREEN);
+        // Pupille che scannerizzano lentamente
+        float scanX = 8.0 * sin((float)now / 1500.0);
+        fb.fillCircle(lx + (int)scanX, eyeY, 5, COL_BG);
+        fb.fillCircle(rx + (int)scanX, eyeY, 5, COL_BG);
+        // Sopracciglia alzate (curiosità)
+        fb.drawWideLine(lx - 20, eyeY - 20, lx + 15, eyeY - 16, 2, COL_GREEN);
+        fb.drawWideLine(rx - 15, eyeY - 16, rx + 20, eyeY - 20, 2, COL_GREEN);
+        // Sigil pulse veloce
+        float sp = 0.5 + 0.5 * sin((float)now / 1000.0 * 2.0 * PI);
+        drawSigil(cx, sigilY, tft.color565((uint8_t)(255 * sp), 0, (uint8_t)(64 * sp)));
+        // Bocca: piccola "o"
+        fb.drawCircle(cx, mouthY, 5, COL_GREEN);
+        // "?" flottante
+        float qY = 3.0 * sin((float)now / 800.0);
+        fb.setTextColor(COL_DIM);
+        fb.setTextDatum(MC_DATUM);
+        fb.drawString("?", cx + 80, cy - 30 + (int)qY, 4);
+
     } else if (currentState == "ALERT") {
         // ── ALERT: mandorle gialle con pupilla, sigil lampeggia, zig-zag ─────
         drawHood(cx, cy, COL_YELLOW);
@@ -587,7 +624,7 @@ void renderState() {
         // BOOTING fallback
         fb.setTextColor(COL_GREEN);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("VESSEL", cx, cy - 15, 4);
+        fb.drawString("SIGIL", cx, cy - 15, 4);
         fb.setTextColor(COL_DIM);
         fb.drawString("booting...", cx, cy + 15, 2);
     }
@@ -745,7 +782,7 @@ void renderStats() {
 
     // Header
     fb.setTextColor(COL_DIM);
-    fb.drawString("VESSEL STATS", 10, 8, 1);
+    fb.drawString("SIGIL", 10, 8, 1);
     fb.drawFastHLine(10, 22, 200, COL_DIM);
 
     // IP WiFi
@@ -800,7 +837,7 @@ void renderInfoOverlay() {
 
     fb.setTextColor(COL_GREEN);
     fb.setTextDatum(MC_DATUM);
-    fb.drawString("INFO", 160, by + 10, 1);
+    fb.drawString("SIGIL", 160, by + 10, 1);
 
     fb.setTextColor(COL_DIM);
     fb.setTextDatum(TL_DATUM);
@@ -874,12 +911,10 @@ void renderMenu() {
 
             // Dots animati se in attesa risposta
             if (menu.waitingResp) {
-                int dots = (millis() / 400) % 4;
-                String dotStr = "";
-                for (int d = 0; d < dots; d++) dotStr += ".";
+                static const char* dotLookup3[] = {"", ".", "..", "..."};
                 fb.setTextColor(COL_BG);
                 fb.setTextDatum(MR_DATUM);
-                fb.drawString(dotStr, 312, textY, 4);
+                fb.drawString(dotLookup3[(millis() / 400) % 4], 312, textY, 4);
             }
         } else {
             // ── Item non selezionato ──
@@ -987,6 +1022,7 @@ void updateBlink(unsigned long now) {
             if (now >= blink.nextBlinkAt) {
                 blink.phase      = BLINK_CLOSING;
                 blink.phaseStart = now;
+                blink.isWink     = (random(100) < 5);  // 5% wink
             }
             return;
         case BLINK_CLOSING:
@@ -1057,12 +1093,6 @@ void updateButton(ButtonSM& btn, int pin, unsigned long now,
         }
     }
 }
-
-// ─── Forward declarations per menu ──────────────────────────────────────────
-void renderMenu();
-void renderConfirm();
-void renderResult();
-void sendCommand(const char* cmd);
 
 void onLeftShort() {
     resetInteraction();
@@ -1271,17 +1301,22 @@ void bootAnimation() {
     }
     delay(100);
 
-    const char* word = "VESSEL";
+    const char* word = "SIGIL";
+    char buf[6] = {0};
     fb.setTextDatum(MC_DATUM);
-    for (int i = 0; i < 6; i++) {
+    fb.setTextSize(3);
+    for (int i = 0; i < 5; i++) {
+        buf[i] = word[i];
         fb.fillSprite(COL_BG);
         fb.setTextColor(COL_GREEN);
-        fb.drawString(String(word).substring(0, i + 1), 160, 75, 6);
+        fb.drawString(buf, 160, 50, 1);
+        if (i == 4) drawSigil(160, 115, COL_RED);
         drawScanlines();
         fb.pushSprite(0, 0);
-        delay(260);
+        delay(280);
     }
-    delay(150);
+    fb.setTextSize(1);
+    delay(200);
 
     unsigned long wifiStart = millis();
     float op = 0.0f;
@@ -1319,12 +1354,10 @@ void bootAnimation() {
             if (op >= 1.0f)
                 fb.drawWideLine(cx - 15, 100, cx + 15, 100, 1, COL_GREEN);
             if (WiFi.status() != WL_CONNECTED) {
+                static const char* wifiDots[] = {"wifi", "wifi.", "wifi..", "wifi..."};
                 fb.setTextColor(COL_DIM);
                 fb.setTextDatum(MC_DATUM);
-                int dots = (now / 400) % 4;
-                String dotStr = "wifi";
-                for (int i = 0; i < dots; i++) dotStr += ".";
-                fb.drawString(dotStr, 160, 145, 2);
+                fb.drawString(wifiDots[(now / 400) % 4], 160, 145, 2);
             }
             drawScanlines();
             fb.pushSprite(0, 0);
@@ -1581,8 +1614,9 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
                 blink.openness    = 1.0;
                 blink.nextBlinkAt = millis() + random(1000, 3000);
             }
-            if (currentState == "HAPPY")  happyStartedAt = millis();
-            if (currentState == "PROUD")  proudStartedAt = millis();
+            if (currentState == "HAPPY")   happyStartedAt   = millis();
+            if (currentState == "PROUD")   proudStartedAt   = millis();
+            if (currentState == "CURIOUS") curiousStartedAt = millis();
 
             if (detailRaw || textRaw) {
                 String d = detailRaw ? String(detailRaw) : "";
@@ -1611,7 +1645,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
 
 void setup() {
     Serial.begin(115200);
-    Serial.println("Vessel Tamagotchi avvio...");
+    Serial.println("Sigil avvio...");
 
     tft.init();
     tft.setRotation(1);
@@ -1784,6 +1818,24 @@ void loop() {
         blink.openness    = 1.0;
         blink.nextBlinkAt = now + random(1000, 3000);
         renderState();
+        return;
+    }
+
+    // ── CURIOUS: torna a IDLE dopo 5s ──────────────────────────────────────
+    if (currentState == "CURIOUS") {
+        if (now - curiousStartedAt >= CURIOUS_DURATION) {
+            currentState      = "IDLE";
+            blink.phase       = BLINK_NONE;
+            blink.openness    = 1.0;
+            blink.nextBlinkAt = now + random(1000, 3000);
+            renderState();
+        } else {
+            static unsigned long lastCuriousDraw = 0;
+            if (now - lastCuriousDraw >= 50) {
+                lastCuriousDraw = now;
+                renderState();
+            }
+        }
         return;
     }
 

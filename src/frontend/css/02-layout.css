@@ -1,0 +1,79 @@
+/* ── App Layout ── */
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.app-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ── Tab Views ── */
+.tab-view {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tab-view.active {
+  display: flex;
+}
+
+.tab-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 14px;
+  padding-top: calc(10px + var(--safe-top));
+  padding-bottom: 12px;
+}
+
+/* ── Bottom Nav ── */
+.bottom-nav {
+  display: flex;
+  background: var(--card);
+  border-top: 1px solid var(--border2);
+  padding-bottom: var(--safe-bot);
+  flex-shrink: 0;
+}
+
+.nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 0 8px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font);
+  font-size: 9px;
+  cursor: pointer;
+  transition: color .15s;
+  min-height: 0;
+  letter-spacing: 0.5px;
+}
+
+.nav-item .nav-icon {
+  font-size: 24px;
+  line-height: 1;
+  transition: text-shadow .2s;
+}
+
+.nav-item.active {
+  color: var(--green);
+}
+
+.nav-item.active .nav-icon {
+  text-shadow: var(--glow-text);
+}
