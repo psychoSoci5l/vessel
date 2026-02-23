@@ -113,6 +113,20 @@ def save_to_db(briefing_text, weather, stories, events_today=None, events_tomorr
              briefing_text)
         )
 
+def set_tamagotchi_state(state: str):
+    """Imposta lo stato del tamagotchi ESP32 via REST locale."""
+    try:
+        url = "http://127.0.0.1:8090/api/tamagotchi/state"
+        data = json.dumps({"state": state}).encode("utf-8")
+        req = urllib.request.Request(url, data=data,
+                                     headers={"Content-Type": "application/json"},
+                                     method="POST")
+        urllib.request.urlopen(req, timeout=5)
+        print(f"[Briefing] Tamagotchi → {state}")
+    except Exception as e:
+        print(f"[Briefing] Tamagotchi error: {e}")
+
+
 def main():
     print("⏳ Generating morning briefing...")
     stories = fetch_hn_stories()
@@ -147,6 +161,7 @@ def main():
     save_to_db(briefing, weather, stories, events_today, events_tomorrow)
     if not send_to_telegram(briefing):
         send_to_discord(briefing)
+    set_tamagotchi_state("IDLE")
 
 if __name__ == "__main__":
     main()

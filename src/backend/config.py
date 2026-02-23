@@ -308,6 +308,7 @@ def _rate_limit(ip: str, action: str, max_requests: int, window_seconds: int) ->
 async def lifespan(app):
     init_db()
     asyncio.create_task(stats_broadcaster())
+    asyncio.create_task(crypto_push_task())
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
         asyncio.create_task(telegram_polling_task())
         asyncio.create_task(heartbeat_task())

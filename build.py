@@ -1,5 +1,7 @@
 import re
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 def build():
@@ -67,6 +69,33 @@ def build():
     out_file.write_text(backend_content, "utf-8")
     
     print(f" Build completata! File generato: {out_file.name} ({len(backend_content)} bytes)")
+
+    # 3. FIRMWARE ESP32 (opzionale — richiede PlatformIO nel PATH)
+    pio_dir = root / "vessel_tamagotchi"
+    if (pio_dir / "platformio.ini").exists():
+        print(" Compilando firmware ESP32 (PlatformIO)...")
+        # Prova prima 'pio', poi 'python -m platformio'
+        for pio_cmd in [["pio", "run"], ["python", "-m", "platformio", "run"]]:
+            try:
+                result = subprocess.run(pio_cmd, cwd=str(pio_dir),
+                                        capture_output=True, text=True)
+            except FileNotFoundError:
+                continue  # comando non trovato, prova il prossimo
+            if result.returncode == 0:
+                bin_path = pio_dir / ".pio" / "build" / "lilygo-t-display-s3" / "firmware.bin"
+                if bin_path.exists():
+                    fw_dir = root / "firmware"
+                    fw_dir.mkdir(exist_ok=True)
+                    shutil.copy(bin_path, fw_dir / "tamagotchi.bin")
+                    size_kb = (fw_dir / "tamagotchi.bin").stat().st_size // 1024
+                    print(f" Firmware copiato: firmware/tamagotchi.bin ({size_kb} KB)")
+                    print("   Deploy: scp firmware/tamagotchi.bin pi:~/.nanobot/firmware/")
+                else:
+                    print(" [!].bin non trovato dopo compilazione (board diversa?)")
+                break
+            # pio non trovato: prova il secondo comando
+        else:
+            print(" [!]PlatformIO non trovato nel PATH - skip firmware. Installa con: pip install platformio")
 
 if __name__ == "__main__":
     build()

@@ -200,14 +200,39 @@ async def stats_broadcaster():
 # ─── Tamagotchi ESP32 ─────────────────────────────────────────────────────────
 _tamagotchi_connections: set = set()
 _tamagotchi_state: str = "IDLE"
+_mood_counter: dict = {"happy": 0, "alert": 0, "error": 0}
 
-async def broadcast_tamagotchi(state: str):
-    global _tamagotchi_state
+async def broadcast_tamagotchi(state: str, detail: str = "", text: str = "", mood: dict | None = None):
+    global _tamagotchi_state, _mood_counter
     _tamagotchi_state = state
+    # Aggiorna mood counter
+    if state in ("HAPPY", "PROUD"): _mood_counter["happy"] += 1
+    elif state == "ALERT":         _mood_counter["alert"] += 1
+    elif state == "ERROR":         _mood_counter["error"] += 1
+    elif state == "SLEEPING":
+        # Reset counter dopo invio (fine giornata)
+        pass
+    payload: dict = {"state": state}
+    if detail:
+        payload["detail"] = detail
+    if text:
+        payload["text"] = text
+    if mood is not None:
+        payload["mood"] = mood
     dead = set()
     for ws in _tamagotchi_connections.copy():
         try:
-            await ws.send_json({"state": state})
+            await ws.send_json(payload)
+        except Exception:
+            dead.add(ws)
+    _tamagotchi_connections.difference_update(dead)
+
+async def broadcast_tamagotchi_raw(payload: dict):
+    """Invia payload arbitrario (es. crypto_update) all'ESP32 senza modificare _tamagotchi_state."""
+    dead = set()
+    for ws in _tamagotchi_connections.copy():
+        try:
+            await ws.send_json(payload)
         except Exception:
             dead.add(ws)
     _tamagotchi_connections.difference_update(dead)
@@ -236,7 +261,7 @@ async def handle_chat(websocket, msg, ctx):
     else:
         raw_model = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
         await _stream_chat(websocket, text, ctx["cloud"], "anthropic", _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM), _resolve_model(raw_model), memory_enabled=mem)
-    await broadcast_tamagotchi("IDLE")
+    await broadcast_tamagotchi("HAPPY")
 
 async def handle_clear_chat(websocket, msg, ctx):
     for history in ctx.values():
@@ -370,9 +395,9 @@ async def handle_claude_task(websocket, msg, ctx):
         return
     db_log_audit("claude_task", actor=ip, resource=prompt[:100])
     await websocket.send_json({"type": "claude_thinking"})
-    await broadcast_tamagotchi("THINKING")
+    await broadcast_tamagotchi("WORKING")   # task bridge = WORKING (occhi semi-chiusi)
     await run_claude_task_stream(websocket, prompt, use_loop=use_loop)
-    await broadcast_tamagotchi("IDLE")
+    await broadcast_tamagotchi("PROUD")     # completamento task = PROUD
 
 async def handle_claude_cancel(websocket, msg, ctx):
     try:
@@ -581,21 +606,62 @@ async def auth_login(request: Request):
 
 @app.post("/api/tamagotchi/state")
 async def set_tamagotchi_state(request: Request):
-    """Aggiorna lo stato del tamagotchi ESP32. Chiamabile da cron/script locali."""
+    """Aggiorna lo stato del tamagotchi ESP32. Chiamabile da cron/script locali.
+    Body opzionale: {"state":"ALERT","detail":"calendar","text":"Meeting 15min"}
+    """
     try:
         data = await request.json()
     except Exception:
         return JSONResponse({"ok": False, "error": "JSON non valido"}, status_code=400)
-    state = data.get("state", "")
-    valid_states = {"IDLE", "THINKING", "SLEEPING", "ERROR", "BOOTING"}
+    global _mood_counter
+    state  = data.get("state", "")
+    detail = data.get("detail", "")
+    text   = data.get("text", "")
+    mood   = data.get("mood", None)   # es. {"happy":5,"alert":2,"error":1}
+    valid_states = {"IDLE", "THINKING", "WORKING", "PROUD", "SLEEPING", "ERROR", "BOOTING", "HAPPY", "ALERT"}
     if state not in valid_states:
         return JSONResponse({"ok": False, "error": f"Stato non valido. Validi: {valid_states}"}, status_code=400)
-    await broadcast_tamagotchi(state)
+    await broadcast_tamagotchi(state, detail, text, mood)
+    # Reset counter dopo SLEEPING (fine giornata)
+    if state == "SLEEPING":
+        _mood_counter = {"happy": 0, "alert": 0, "error": 0}
     return {"ok": True, "state": state, "clients": len(_tamagotchi_connections)}
+
+
+@app.get("/api/tamagotchi/firmware")
+async def get_tamagotchi_firmware():
+    """Serve il firmware .bin per OTA update ESP32.
+    Il file viene copiato in ~/.nanobot/firmware/tamagotchi.bin durante il deploy.
+    """
+    from pathlib import Path as _Path
+    from fastapi.responses import FileResponse
+    fw = _Path.home() / ".nanobot" / "firmware" / "tamagotchi.bin"
+    if not fw.exists():
+        return JSONResponse({"error": "Firmware non trovato. Esegui il deploy prima."}, status_code=404)
+    return FileResponse(str(fw), media_type="application/octet-stream", filename="tamagotchi.bin")
+
+
+@app.post("/api/tamagotchi/ota")
+async def trigger_tamagotchi_ota(request: Request):
+    """Invia comando OTA all'ESP32 via WebSocket. L'ESP32 scaricherà /api/tamagotchi/firmware."""
+    dead = set()
+    for ws in _tamagotchi_connections.copy():
+        try:
+            await ws.send_json({"action": "ota_update"})
+        except Exception:
+            dead.add(ws)
+    _tamagotchi_connections.difference_update(dead)
+    clients = len(_tamagotchi_connections) - len(dead)
+    return {"ok": True, "notified": clients}
 
 @app.get("/api/tamagotchi/state")
 async def get_tamagotchi_state():
     return {"state": _tamagotchi_state, "clients": len(_tamagotchi_connections)}
+
+@app.get("/api/tamagotchi/mood")
+async def get_tamagotchi_mood():
+    """Restituisce il contatore mood giornaliero (HAPPY/ALERT/ERROR). Usato da goodnight.py."""
+    return dict(_mood_counter)
 
 @app.get("/api/health")
 async def api_health():

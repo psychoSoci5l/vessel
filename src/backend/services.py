@@ -340,6 +340,19 @@ def _provider_defaults(provider_id: str) -> tuple:
         return OLLAMA_PC_DEEP_MODEL, OLLAMA_PC_DEEP_SYSTEM
     return OLLAMA_MODEL, OLLAMA_SYSTEM
 
+# ─── Tamagotchi helper (REST locale, evita import circolari) ──────────────────
+def _set_tamagotchi_local(state: str):
+    """Imposta stato tamagotchi via REST locale (non importa routes)."""
+    try:
+        data = json.dumps({"state": state}).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8090/api/tamagotchi/state",
+            data=data, headers={"Content-Type": "application/json"}, method="POST"
+        )
+        urllib.request.urlopen(req, timeout=3)
+    except Exception:
+        pass
+
 # ─── Heartbeat Monitor (Fase 17B) ────────────────────────────────────────────
 _heartbeat_last_alert: dict[str, float] = {}
 
@@ -384,6 +397,13 @@ async def heartbeat_task():
                     db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
                     print(f"[Heartbeat] ALERT: {alert_msg}")
 
+            # Tamagotchi: ALERT se ci sono problemi, IDLE se risolti
+            if alerts:
+                _set_tamagotchi_local("ALERT")
+            elif _heartbeat_last_alert:
+                # Problemi appena rientrati — riporta a IDLE
+                _set_tamagotchi_local("IDLE")
+
             # Pulisci alert risolti (per ri-alertare se il problema ritorna)
             active_keys = {k for k, _ in alerts}
             for key in list(_heartbeat_last_alert.keys()):
@@ -394,6 +414,35 @@ async def heartbeat_task():
             print(f"[Heartbeat] Error: {e}")
         await asyncio.sleep(HEARTBEAT_INTERVAL)
 
+
+async def crypto_push_task():
+    """Loop background: push prezzi BTC/ETH all'ESP32 ogni 15 minuti via broadcast_raw.
+    Usa globals() per accedere a broadcast_tamagotchi_raw definita in routes.py
+    (nel file compilato unico tutto è nello stesso namespace globale).
+    """
+    print("[Crypto] Push task avviato")
+    await asyncio.sleep(60)  # attendi boot completo
+    while True:
+        try:
+            _conns    = globals().get("_tamagotchi_connections", set())
+            _bcast    = globals().get("broadcast_tamagotchi_raw")
+            if _conns and _bcast:
+                data = await bg(get_crypto_prices)
+                btc  = data.get("btc")
+                eth  = data.get("eth")
+                if not data.get("error") and btc and btc.get("usd", 0) > 0:
+                    payload = {
+                        "action":     "crypto_update",
+                        "btc":        btc["usd"],
+                        "eth":        eth["usd"]        if eth else 0,
+                        "btc_change": btc["change_24h"] if btc else 0,
+                        "eth_change": eth["change_24h"] if eth else 0,
+                    }
+                    await _bcast(payload)
+                    print(f"[Crypto] Push → BTC ${btc['usd']:.0f} ({btc['change_24h']:+.1f}%)")
+        except Exception as e:
+            print(f"[Crypto] Push error: {e}")
+        await asyncio.sleep(900)  # 15 minuti
 
 def check_ollama_health() -> bool:
     """Verifica se Ollama è raggiungibile."""

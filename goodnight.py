@@ -110,6 +110,35 @@ def build_goodnight_message() -> str:
     return "Buonanotte Filippo!\n\n" + "\n\n".join(sections) + "\n\nBuon riposo!"
 
 
+def get_mood_counter() -> dict:
+    """Legge il contatore mood giornaliero dal backend (HAPPY/ALERT/ERROR)."""
+    try:
+        req = urllib.request.Request("http://127.0.0.1:8090/api/tamagotchi/mood")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        print(f"[Goodnight] Mood fetch error: {e}")
+        return {}
+
+def set_tamagotchi_state(state: str, mood: dict | None = None):
+    """Imposta lo stato del tamagotchi ESP32 via REST locale.
+    Se mood è fornito, viene incluso nel payload (es. {"happy":5,"alert":2,"error":1}).
+    """
+    try:
+        url  = "http://127.0.0.1:8090/api/tamagotchi/state"
+        body: dict = {"state": state}
+        if mood:
+            body["mood"] = mood
+        data = json.dumps(body).encode("utf-8")
+        req  = urllib.request.Request(url, data=data,
+                                      headers={"Content-Type": "application/json"},
+                                      method="POST")
+        urllib.request.urlopen(req, timeout=5)
+        print(f"[Goodnight] Tamagotchi → {state}" + (f" mood={mood}" if mood else ""))
+    except Exception as e:
+        print(f"[Goodnight] Tamagotchi error: {e}")
+
+
 def main():
     now = datetime.now()
     print(f"[Goodnight] {now.strftime('%Y-%m-%d %H:%M')}")
@@ -123,6 +152,9 @@ def main():
         print(f"[Goodnight] Inviato ({len(msg)} chars)")
     else:
         print("[Goodnight] Invio fallito")
+
+    mood = get_mood_counter()
+    set_tamagotchi_state("SLEEPING", mood=mood if mood else None)
 
 
 if __name__ == "__main__":
