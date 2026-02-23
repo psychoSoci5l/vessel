@@ -1,23 +1,28 @@
-let ws = null;
+  // ═══════════════════════════════════════════
+  // VESSEL DASHBOARD — JS Core v3
+  // Tab navigation + WebSocket + All widgets
+  // ═══════════════════════════════════════════
+
+  let ws = null;
   let reconnectTimer = null;
   let memoryEnabled = false;
+  let currentTab = 'dashboard';
+  let chatProvider = 'local';
+  let streamDiv = null;
+  let activeDrawer = null;
+  let claudeRunning = false;
 
+  // ── WebSocket ──
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.onopen = () => {
-      ['home-conn-dot', 'chat-conn-dot'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.add('on');
-      });
-      // Ripristina health dot home (sarà aggiornato dal prossimo stats)
       const hhd = document.getElementById('home-health-dot');
       if (hhd && hhd.classList.contains('ws-offline')) {
         hhd.classList.remove('ws-offline', 'red');
         hhd.className = 'health-dot';
       }
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
-      // Auto-fetch dati live per home + widget tiles preview
       setTimeout(() => {
         send({ action: 'get_crypto' });
         send({ action: 'plugin_weather' });
@@ -30,11 +35,6 @@ let ws = null;
       }, 500);
     };
     ws.onclose = (e) => {
-      ['home-conn-dot', 'chat-conn-dot'].forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.classList.remove('on');
-      });
-      // Health dot home diventa rosso quando WS disconnesso
       const hhd = document.getElementById('home-health-dot');
       if (hhd) { hhd.className = 'health-dot red ws-offline'; hhd.title = 'Disconnesso'; }
       if (e.code === 4001) { window.location.href = '/'; return; }
@@ -53,15 +53,19 @@ let ws = null;
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
   }
 
+  // ── Message handler ──
   function handleMessage(msg) {
     if (msg.type === 'init') {
       updateStats(msg.data.pi);
       updateSessions(msg.data.tmux);
-      document.getElementById('version-badge').textContent = msg.data.version;
-      document.getElementById('memory-content').textContent = msg.data.memory;
+      const vb = document.getElementById('version-badge');
+      if (vb) vb.textContent = msg.data.version;
+      const mc = document.getElementById('memory-content');
+      if (mc) mc.textContent = msg.data.memory;
     }
     else if (msg.type === 'stats') {
-      updateStats(msg.data.pi); updateSessions(msg.data.tmux);
+      updateStats(msg.data.pi);
+      updateSessions(msg.data.tmux);
       ['home-clock', 'chat-clock'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.textContent = msg.data.time;
@@ -71,10 +75,9 @@ let ws = null;
     else if (msg.type === 'chat_chunk') { removeThinking(); appendChunk(msg.text); }
     else if (msg.type === 'chat_done') { finalizeStream(); document.getElementById('chat-send').disabled = false; }
     else if (msg.type === 'chat_reply') { removeThinking(); appendMessage(msg.text, 'bot'); document.getElementById('chat-send').disabled = false; }
-    else if (msg.type === 'ollama_status') { /* ollama status ricevuto — info disponibile via provider dropdown */ }
-    else if (msg.type === 'memory')   { document.getElementById('memory-content').textContent = msg.text; }
-    else if (msg.type === 'history')  { document.getElementById('history-content').textContent = msg.text; }
-    else if (msg.type === 'quickref') { document.getElementById('quickref-content').textContent = msg.text; }
+    else if (msg.type === 'memory')   { const el = document.getElementById('memory-content'); if (el) el.textContent = msg.text; }
+    else if (msg.type === 'history')  { const el = document.getElementById('history-content'); if (el) el.textContent = msg.text; }
+    else if (msg.type === 'quickref') { const el = document.getElementById('quickref-content'); if (el) el.textContent = msg.text; }
     else if (msg.type === 'memory_search') { renderMemorySearch(msg.results); }
     else if (msg.type === 'knowledge_graph') { renderKnowledgeGraph(msg.entities, msg.relations); }
     else if (msg.type === 'entity_deleted') { if (msg.success) loadEntities(); }
@@ -146,7 +149,6 @@ let ws = null;
     else if (msg.type && msg.type.startsWith('plugin_')) {
       const hName = 'pluginRender_' + msg.type.replace('plugin_', '');
       if (window[hName]) { try { window[hName](msg); } catch(e) { console.error('[Plugin] render:', e); } }
-      // Popola home meteo da plugin weather
       if (msg.type === 'plugin_weather' && msg.data) {
         const hw = document.getElementById('home-weather-text');
         if (hw) {
@@ -155,17 +157,55 @@ let ws = null;
           if (d.city) parts.push(d.city);
           if (d.temp != null) parts.push(d.temp + '°C');
           if (d.condition) parts.push(d.condition);
-          const wText = parts.join(' · ') || '--';
-          hw.textContent = wText;
-          const hdrW = document.getElementById('hdr-weather');
-          if (hdrW) hdrW.textContent = wText;
+          hw.textContent = parts.join(' · ') || '--';
         }
       }
     }
   }
 
-  // ── Storico campioni per grafico ──
-  const MAX_SAMPLES = 180; // 180 campioni x 5s = 15 minuti di storia
+  // ── Tab Navigation ──
+  function switchView(tabName) {
+    if (currentTab === tabName) return;
+    currentTab = tabName;
+
+    document.querySelectorAll('.tab-view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+    const view = document.getElementById('tab-' + tabName);
+    if (view) view.classList.add('active');
+
+    const navBtn = document.querySelector(`.nav-item[data-tab="${tabName}"]`);
+    if (navBtn) navBtn.classList.add('active');
+
+    // Ridisegna chart quando torniamo a dashboard
+    if (tabName === 'dashboard') requestAnimationFrame(() => drawChart());
+  }
+
+  function scrollToSys(sectionId) {
+    setTimeout(() => {
+      const el = document.getElementById(sectionId);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+  }
+
+  // ── Code Panel toggle ──
+  function switchCodePanel(panel, btn) {
+    document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.code-panel').forEach(p => p.classList.remove('active'));
+
+    btn.classList.add('active');
+    const el = document.getElementById('code-' + panel);
+    if (el) el.classList.add('active');
+
+    // Auto-load bridge status quando si apre Task
+    if (panel === 'task') {
+      send({ action: 'check_bridge' });
+      send({ action: 'get_claude_tasks' });
+    }
+  }
+
+  // ── Stats ──
+  const MAX_SAMPLES = 180;
   const cpuHistory = [];
   const tempHistory = [];
 
@@ -174,7 +214,6 @@ let ws = null;
     const tempC = pi.temp_val || 0;
     const memPct = pi.mem_pct || 0;
 
-    // ── Home cards ──
     const hcCpu = document.getElementById('hc-cpu-val');
     if (hcCpu) hcCpu.textContent = pi.cpu ? cpuPct.toFixed(1) + '%' : '--';
     const hcRam = document.getElementById('hc-ram-val');
@@ -186,7 +225,7 @@ let ws = null;
     const hcUptime = document.getElementById('hc-uptime-val');
     if (hcUptime) hcUptime.textContent = pi.uptime || '--';
 
-    // Barre progresso
+    // Bars
     const cpuBar = document.getElementById('hc-cpu-bar');
     if (cpuBar) {
       cpuBar.style.width = cpuPct + '%';
@@ -201,10 +240,8 @@ let ws = null;
     if (tempBar) {
       const tPct = Math.min(100, (tempC / 85) * 100);
       tempBar.style.width = tPct + '%';
-      tempBar.style.background = tempC > 70 ? 'var(--red)' : tempC > 55 ? 'var(--amber)' : 'var(--amber)';
+      tempBar.style.background = tempC > 70 ? 'var(--red)' : 'var(--amber)';
     }
-
-    // ── Disk card ──
     const diskPct = pi.disk_pct || 0;
     const hcDisk = document.getElementById('hc-disk-val');
     if (hcDisk) hcDisk.textContent = diskPct + '%';
@@ -216,7 +253,7 @@ let ws = null;
       diskBar.style.background = diskPct > 85 ? 'var(--red)' : diskPct > 70 ? 'var(--amber)' : 'var(--green)';
     }
 
-    // ── Health dots (tutti) ──
+    // Health dots
     ['home-health-dot', 'chat-health-dot'].forEach(id => {
       const el = document.getElementById(id);
       if (el) {
@@ -225,13 +262,13 @@ let ws = null;
       }
     });
 
-    // ── Temp (chat + home header) ──
+    // Temp in headers
     const chatTemp = document.getElementById('chat-temp');
     if (chatTemp) chatTemp.textContent = pi.temp || '--';
     const homeTemp = document.getElementById('home-temp');
     if (homeTemp) homeTemp.textContent = pi.temp || '--';
 
-    // ── Storico per grafico ──
+    // History
     cpuHistory.push(cpuPct);
     tempHistory.push(tempC);
     if (cpuHistory.length > MAX_SAMPLES) cpuHistory.shift();
@@ -250,14 +287,12 @@ let ws = null;
     ctx.scale(dpr, dpr);
     const w = rect.width, h = rect.height;
     ctx.clearRect(0, 0, w, h);
-    // Griglia
     ctx.strokeStyle = 'rgba(0,255,65,0.08)';
     ctx.lineWidth = 1;
     for (let y = 0; y <= h; y += h / 4) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
     if (cpuHistory.length < 2) return;
-    // Disegna linea
     function drawLine(data, maxVal, color) {
       ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
       ctx.beginPath();
@@ -276,145 +311,63 @@ let ws = null;
 
   function updateSessions(sessions) {
     const el = document.getElementById('session-list');
-    const drawerEl = document.getElementById('drawer-session-list');
     const countEl = document.getElementById('hc-sessions-sub');
-    const tmuxPreview = document.getElementById('wt-tmux-preview');
     if (!sessions || !sessions.length) {
       const empty = '<div class="no-items">// nessuna sessione attiva</div>';
       if (el) el.innerHTML = empty;
-      if (drawerEl) drawerEl.innerHTML = empty;
       if (countEl) countEl.textContent = '0 sessioni';
-      if (tmuxPreview) tmuxPreview.textContent = '0 sessioni';
       return;
     }
     const html = sessions.map(s => `
       <div class="session-item">
         <div class="session-name"><div class="session-dot"></div><code>${esc(s.name)}</code></div>
-        <button class="btn-red" onclick="killSession('${esc(s.name)}')">✕ Kill</button>
+        <button class="btn-red btn-sm" onclick="killSession('${esc(s.name)}')">✕</button>
       </div>`).join('');
     if (el) el.innerHTML = html;
-    if (drawerEl) drawerEl.innerHTML = html;
     if (countEl) countEl.textContent = sessions.length + ' session' + (sessions.length !== 1 ? 'i' : 'e');
-    if (tmuxPreview) tmuxPreview.textContent = sessions.map(s => '● ' + s.name).join('\n');
   }
 
-  // ── Vista corrente + Chat ──
-  let currentView = 'home';
-  let chatProvider = 'local';
-  let streamDiv = null;
-
-  // ── Transizione Home → Chat ──
-  function switchToChat() {
-    if (currentView === 'chat') return;
-    currentView = 'chat';
-
-    const homeView = document.getElementById('home-view');
-    const chatView = document.getElementById('chat-view');
-
-    // Sposta input + provider + send nel chat view
-    const chatInputRow = document.getElementById('chat-input-row-v2');
-    chatInputRow.appendChild(document.getElementById('chat-input'));
-    chatInputRow.appendChild(document.getElementById('provider-dropdown'));
-    chatInputRow.appendChild(document.getElementById('chat-send'));
-
-    // Switch viste
-    homeView.style.display = 'none';
-    chatView.style.display = 'flex';
-    chatView.classList.add('active');
-    chatView.classList.add('entering');
-    setTimeout(() => chatView.classList.remove('entering'), 250);
-
-    const msgs = document.getElementById('chat-messages');
-    msgs.scrollTop = msgs.scrollHeight;
-    document.getElementById('chat-input').focus();
+  // ── Chat ──
+  function sendChat() {
+    const input = document.getElementById('chat-input');
+    const text = (input.value || '').trim();
+    if (!text) return;
+    // Auto-switch to Code tab > Chat panel if not there
+    if (currentTab !== 'code') switchView('code');
+    appendMessage(text, 'user');
+    send({ action: 'chat', text, provider: chatProvider });
+    input.value = '';
+    input.style.height = 'auto';
+    document.getElementById('chat-send').disabled = true;
   }
 
-  // ── Transizione Chat → Home ──
-  function goHome() {
-    if (currentView === 'home') return;
-    currentView = 'home';
-
-    const homeView = document.getElementById('home-view');
-    const chatView = document.getElementById('chat-view');
-
-    // Sposta input + provider + send nella home
-    const homeInputRow = document.getElementById('home-input-row');
-    homeInputRow.appendChild(document.getElementById('chat-input'));
-    homeInputRow.appendChild(document.getElementById('provider-dropdown'));
-    homeInputRow.appendChild(document.getElementById('chat-send'));
-
-    // Switch viste
-    chatView.style.display = 'none';
-    chatView.classList.remove('active');
-    homeView.style.display = '';
-
-    // Ridisegna il canvas (potrebbe aver perso dimensioni)
-    requestAnimationFrame(() => drawChart());
+  function autoResizeInput(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
   }
 
-  // ── Memory toggle ──
-  function toggleMemory() {
-    send({ action: 'toggle_memory' });
-  }
-
-  // ── Provider dropdown ──
-  function toggleProviderMenu() {
-    document.getElementById('provider-dropdown').classList.toggle('open');
-  }
-  function switchProvider(provider) {
-    chatProvider = provider;
-    const dot = document.getElementById('provider-dot');
-    const label = document.getElementById('provider-short');
-    const names = { cloud: 'Haiku', local: 'Local', pc_coder: 'PC Coder', pc_deep: 'PC Deep', deepseek: 'Deep' };
-    const dotClass = { cloud: 'dot-cloud', local: 'dot-local', pc_coder: 'dot-pc-coder', pc_deep: 'dot-pc-deep', deepseek: 'dot-deepseek' };
-    dot.className = 'provider-dot ' + (dotClass[provider] || 'dot-local');
-    label.textContent = names[provider] || 'Local';
-    document.getElementById('provider-dropdown').classList.remove('open');
-  }
-  // Chiudi dropdown quando click fuori
-  document.addEventListener('click', (e) => {
-    const dd = document.getElementById('provider-dropdown');
-    if (dd && !dd.contains(e.target)) dd.classList.remove('open');
-  });
-
-  // ── Home services toggle ──
-  function toggleHomeServices() {
-    const svc = document.getElementById('home-services');
-    const btn = document.getElementById('home-svc-toggle');
-    const wasOpen = svc.classList.contains('open');
-    svc.classList.toggle('open');
-    btn.classList.toggle('open');
-    if (!wasOpen) {
-      setTimeout(() => svc.scrollIntoView({ behavior: 'smooth', block: 'start' }), 150);
+  function appendMessage(text, role) {
+    const box = document.getElementById('chat-messages');
+    if (role === 'bot') {
+      const wrap = document.createElement('div');
+      wrap.className = 'copy-wrap';
+      wrap.style.cssText = 'align-self:flex-start;max-width:85%;';
+      const div = document.createElement('div');
+      div.className = 'msg msg-bot';
+      div.style.maxWidth = '100%';
+      div.textContent = text;
+      const btn = document.createElement('button');
+      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';
+      btn.onclick = () => copyToClipboard(div.textContent);
+      wrap.appendChild(div); wrap.appendChild(btn);
+      box.appendChild(wrap);
+    } else {
+      const div = document.createElement('div');
+      div.className = `msg msg-${role}`;
+      div.textContent = text;
+      box.appendChild(div);
     }
-  }
-
-  // ── Focus input → chat mode ──
-  document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('chat-input').addEventListener('focus', () => {
-      switchToChat();
-    });
-  });
-
-  // ── Tastiera virtuale: mantieni input visibile (stile Claude iOS) ──
-  if (window.visualViewport) {
-    const appLayout = document.querySelector('.app-layout');
-    let pendingVV = null;
-    const handleVV = () => {
-      if (pendingVV) return;
-      pendingVV = requestAnimationFrame(() => {
-        pendingVV = null;
-        const vvh = window.visualViewport.height;
-        const vvTop = window.visualViewport.offsetTop;
-        appLayout.style.height = vvh + 'px';
-        appLayout.style.transform = 'translateY(' + vvTop + 'px)';
-        // Scrolla chat ai messaggi più recenti
-        const msgs = document.getElementById('chat-messages');
-        if (msgs) msgs.scrollTop = msgs.scrollHeight;
-      });
-    };
-    window.visualViewport.addEventListener('resize', handleVV);
-    window.visualViewport.addEventListener('scroll', handleVV);
+    box.scrollTop = box.scrollHeight;
   }
 
   function appendChunk(text) {
@@ -446,54 +399,6 @@ let ws = null;
     streamDiv = null;
   }
 
-  function sendChat() {
-    const input = document.getElementById('chat-input');
-    const text = (input.value || '').trim();
-    if (!text) return;
-    switchToChat();
-    appendMessage(text, 'user');
-    send({ action: 'chat', text, provider: chatProvider });
-    input.value = '';
-    input.style.height = 'auto';
-    document.getElementById('chat-send').disabled = true;
-  }
-  function autoResizeInput(el) {
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
-  }
-  document.addEventListener('DOMContentLoaded', () => {
-    const chatInput = document.getElementById('chat-input');
-    chatInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
-    });
-    chatInput.addEventListener('input', () => autoResizeInput(chatInput));
-    document.getElementById('mem-search-keyword')?.addEventListener('keydown', e => {
-      if (e.key === 'Enter') searchMemory();
-    });
-  });
-  function appendMessage(text, role) {
-    const box = document.getElementById('chat-messages');
-    if (role === 'bot') {
-      const wrap = document.createElement('div');
-      wrap.className = 'copy-wrap';
-      wrap.style.cssText = 'align-self:flex-start;max-width:85%;';
-      const div = document.createElement('div');
-      div.className = 'msg msg-bot';
-      div.style.maxWidth = '100%';
-      div.textContent = text;
-      const btn = document.createElement('button');
-      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';
-      btn.onclick = () => copyToClipboard(div.textContent);
-      wrap.appendChild(div); wrap.appendChild(btn);
-      box.appendChild(wrap);
-    } else {
-      const div = document.createElement('div');
-      div.className = `msg msg-${role}`;
-      div.textContent = text;
-      box.appendChild(div);
-    }
-    box.scrollTop = box.scrollHeight;
-  }
   function appendThinking() {
     const box = document.getElementById('chat-messages');
     const div = document.createElement('div');
@@ -502,59 +407,62 @@ let ws = null;
     box.appendChild(div); box.scrollTop = box.scrollHeight;
   }
   function removeThinking() { const el = document.getElementById('thinking'); if (el) el.remove(); }
+
   function clearChat() {
     document.getElementById('chat-messages').innerHTML =
       '<div class="msg msg-bot">Chat pulita 🧹</div>';
     send({ action: 'clear_chat' });
   }
 
-  // ── Drawer (bottom sheet) ──
-  let activeDrawer = null;
+  // ── Provider ──
+  function toggleProviderMenu() {
+    document.getElementById('provider-dropdown').classList.toggle('open');
+  }
+  function switchProvider(provider) {
+    chatProvider = provider;
+    const dot = document.getElementById('provider-dot');
+    const label = document.getElementById('provider-short');
+    const names = { cloud: 'Haiku', local: 'Local', pc_coder: 'PC Coder', pc_deep: 'PC Deep', deepseek: 'Deep' };
+    const dotClass = { cloud: 'dot-cloud', local: 'dot-local', pc_coder: 'dot-pc-coder', pc_deep: 'dot-pc-deep', deepseek: 'dot-deepseek' };
+    dot.className = 'provider-dot ' + (dotClass[provider] || 'dot-local');
+    label.textContent = names[provider] || 'Local';
+    document.getElementById('provider-dropdown').classList.remove('open');
+  }
+  document.addEventListener('click', (e) => {
+    const dd = document.getElementById('provider-dropdown');
+    if (dd && !dd.contains(e.target)) dd.classList.remove('open');
+  });
+
+  // ── Memory toggle ──
+  function toggleMemory() { send({ action: 'toggle_memory' }); }
+
+  // ── Drawer (bottom sheet per Briefing/Token/Crypto) ──
   const DRAWER_CFG = {
-    briefing: { title: '▤ Morning Briefing', actions: '<button class="btn-ghost" onclick="loadBriefing(this)">Carica</button><button class="btn-green" onclick="runBriefing(this)">▶ Genera</button>' },
-    crypto:   { title: '₿ Crypto', actions: '<button class="btn-ghost" onclick="loadCrypto(this)">Carica</button>' },
-    tokens:   { title: '¤ Token & API', actions: '<button class="btn-ghost" onclick="loadTokens(this)">Carica</button>' },
-    logs:     { title: '≡ Log Nanobot', actions: '<button class="btn-ghost" onclick="loadLogs(this)">Carica</button>' },
-    cron:     { title: '◇ Task schedulati', actions: '<button class="btn-ghost" onclick="loadCron(this)">Carica</button>' },
-    claude:   { title: '>_ Remote Code', actions: '<span id="bridge-dot" class="health-dot" title="Bridge" style="width:8px;height:8px;"></span><button class="btn-ghost" onclick="loadBridge(this)">Carica</button>' },
-    tmux:     { title: '● Sessioni Tmux', actions: '' },
-    memoria:  { title: '◎ Memoria', actions: '' }
+    briefing: { title: '▤ Morning Briefing', actions: '<button class="btn-ghost btn-sm" onclick="loadBriefing(this)">Carica</button><button class="btn-green btn-sm" onclick="runBriefing(this)">▶ Genera</button>' },
+    tokens:   { title: '¤ Token & API', actions: '<button class="btn-ghost btn-sm" onclick="loadTokens(this)">Carica</button>' },
+    crypto:   { title: '₿ Crypto', actions: '<button class="btn-ghost btn-sm" onclick="loadCrypto(this)">Carica</button>' },
   };
+
   function openDrawer(widgetId) {
-    // Toggle: se clicchi lo stesso tab, chiudi
     if (activeDrawer === widgetId) { closeDrawer(); return; }
-    // Hide all, show target
     document.querySelectorAll('.drawer-widget').forEach(w => w.classList.remove('active'));
     const dw = document.getElementById('dw-' + widgetId);
     if (dw) dw.classList.add('active');
-    // Header
     const cfg = DRAWER_CFG[widgetId];
     document.getElementById('drawer-title').textContent = cfg ? cfg.title : widgetId;
     document.getElementById('drawer-actions').innerHTML =
       (cfg ? cfg.actions : '') +
-      '<button class="btn-ghost" onclick="closeDrawer()" style="min-height:28px;padding:3px 8px;">✕</button>';
-    // Show overlay + enable two-column on desktop
+      '<button class="btn-ghost btn-sm" onclick="closeDrawer()">✕</button>';
     document.getElementById('drawer-overlay').classList.add('show');
-    document.querySelector('.app-content').classList.add('has-drawer');
-    // Drawer wide per Remote Code e plugin con wide=true
-    const dOverlay = document.getElementById('drawer-overlay');
-    const isWide = widgetId === 'claude' || (cfg && cfg.wide);
-    if (isWide) dOverlay.classList.add('drawer-wide');
-    else dOverlay.classList.remove('drawer-wide');
-    // Widget tile highlight
-    document.querySelectorAll('.widget-tile').forEach(t =>
-      t.classList.toggle('active', t.dataset.widget === widgetId));
     activeDrawer = widgetId;
   }
+
   function closeDrawer() {
-    document.getElementById('drawer-overlay').classList.remove('show', 'drawer-wide');
-    document.querySelector('.app-content').classList.remove('has-drawer');
-    document.getElementById('drawer-overlay').classList.remove('drawer-wide');
-    document.querySelectorAll('.widget-tile').forEach(t => t.classList.remove('active'));
+    document.getElementById('drawer-overlay').classList.remove('show');
     activeDrawer = null;
   }
 
-  // ── Drawer swipe-down to close (mobile) ──
+  // Swipe-down to close
   (function() {
     const drawer = document.querySelector('.drawer');
     if (!drawer) return;
@@ -568,86 +476,53 @@ let ws = null;
     }, { passive: true });
   })();
 
-  // Escape chiude chat view / drawer / overlay
+  // Escape
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (currentView === 'chat') goHome();
-      else if (activeDrawer) closeDrawer();
+      if (activeDrawer) closeDrawer();
       const outFs = document.getElementById('output-fullscreen');
       if (outFs && outFs.classList.contains('show')) closeOutputFullscreen();
     }
   });
 
-  // ── On-demand widget loaders ──
-  function loadTokens(btn) {
-    if (btn) btn.textContent = '…';
-    send({ action: 'get_tokens' });
-  }
+  // ── Widget loaders ──
+  function loadTokens(btn) { if (btn) btn.textContent = '…'; send({ action: 'get_tokens' }); }
   function loadLogs(btn) {
     if (btn) btn.textContent = '…';
     const dateEl = document.getElementById('log-date-filter');
     const searchEl = document.getElementById('log-search-filter');
-    const dateVal = dateEl ? dateEl.value : '';
-    const searchVal = searchEl ? searchEl.value.trim() : '';
-    send({ action: 'get_logs', date: dateVal, search: searchVal });
+    send({ action: 'get_logs', date: dateEl ? dateEl.value : '', search: searchEl ? searchEl.value.trim() : '' });
   }
-  function loadCron(btn) {
-    if (btn) btn.textContent = '…';
-    send({ action: 'get_cron' });
-  }
-  function loadBriefing(btn) {
-    if (btn) btn.textContent = '…';
-    send({ action: 'get_briefing' });
-  }
-  function runBriefing(btn) {
-    if (btn) btn.textContent = '…';
-    send({ action: 'run_briefing' });
-  }
+  function loadCron(btn) { if (btn) btn.textContent = '…'; send({ action: 'get_cron' }); }
+  function loadBriefing(btn) { if (btn) btn.textContent = '…'; send({ action: 'get_briefing' }); }
+  function runBriefing(btn) { if (btn) btn.textContent = '…'; send({ action: 'run_briefing' }); }
+  function loadCrypto(btn) { if (btn) btn.textContent = '…'; send({ action: 'get_crypto' }); }
 
-  function loadCrypto(btn) {
-    if (btn) btn.textContent = '…';
-    send({ action: 'get_crypto' });
-  }
-
+  // ── Renderers ──
   function renderCrypto(data) {
     const el = document.getElementById('crypto-body');
     if (data.error && !data.btc) {
-      el.innerHTML = `<div class="no-items">// errore: ${esc(data.error)}</div>
-        <div style="margin-top:8px;text-align:center;"><button class="btn-ghost" onclick="loadCrypto()">↻ Riprova</button></div>`;
+      el.innerHTML = `<div class="no-items">// errore: ${esc(data.error)}</div><div style="margin-top:8px;text-align:center;"><button class="btn-ghost btn-sm" onclick="loadCrypto()">↻ Riprova</button></div>`;
       return;
     }
     function coinRow(symbol, label, d) {
       if (!d) return '';
       const arrow = d.change_24h >= 0 ? '▲' : '▼';
       const color = d.change_24h >= 0 ? 'var(--green)' : 'var(--red)';
-      return `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:10px 12px;margin-bottom:6px;">
-          <div>
-            <div style="font-size:13px;font-weight:700;color:var(--amber);">${symbol} ${label}</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px;">€${d.eur.toLocaleString()}</div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-size:15px;font-weight:700;color:var(--green);">$${d.usd.toLocaleString()}</div>
-            <div style="font-size:11px;color:${color};margin-top:2px;">${arrow} ${Math.abs(d.change_24h)}%</div>
-          </div>
-        </div>`;
+      return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:6px;">
+        <div><div style="font-size:13px;font-weight:700;color:var(--amber);">${symbol} ${label}</div><div style="font-size:10px;color:var(--muted);margin-top:2px;">€${d.eur.toLocaleString()}</div></div>
+        <div style="text-align:right;"><div style="font-size:15px;font-weight:700;color:var(--green);">$${d.usd.toLocaleString()}</div><div style="font-size:11px;color:${color};margin-top:2px;">${arrow} ${Math.abs(d.change_24h)}%</div></div>
+      </div>`;
     }
     el.innerHTML = coinRow('₿', 'Bitcoin', data.btc) + coinRow('Ξ', 'Ethereum', data.eth) +
-      '<div style="margin-top:4px;"><button class="btn-ghost" onclick="loadCrypto()">↻ Aggiorna</button></div>';
-    // Popola anche home crypto compatto
+      '<div style="margin-top:4px;"><button class="btn-ghost btn-sm" onclick="loadCrypto()">↻ Aggiorna</button></div>';
     const hBtc = document.getElementById('home-btc-price');
     if (hBtc && data.btc) hBtc.textContent = '$' + data.btc.usd.toLocaleString();
     const hEth = document.getElementById('home-eth-price');
     if (hEth && data.eth) hEth.textContent = '$' + data.eth.usd.toLocaleString();
-    // Header badges (desktop)
-    const hdrBtc = document.getElementById('hdr-btc');
-    if (hdrBtc && data.btc) hdrBtc.textContent = '$' + data.btc.usd.toLocaleString();
-    const hdrEth = document.getElementById('hdr-eth');
-    if (hdrEth && data.eth) hdrEth.textContent = '$' + data.eth.usd.toLocaleString();
   }
 
   function renderBriefing(data) {
-    // Preview tile
     const bp = document.getElementById('wt-briefing-preview');
     if (bp) {
       if (data.last) {
@@ -658,14 +533,11 @@ let ws = null;
         const cal = (data.last.calendar_today || []).length;
         if (cal > 0) parts.push(cal + ' eventi oggi');
         bp.textContent = parts.join(' · ') || 'Caricato';
-      } else {
-        bp.textContent = 'Nessun briefing';
-      }
+      } else { bp.textContent = 'Nessun briefing'; }
     }
     const el = document.getElementById('briefing-body');
     if (!data.last) {
-      el.innerHTML = '<div class="no-items">// nessun briefing generato ancora</div>' +
-        '<div style="margin-top:8px;text-align:center;"><button class="btn-green" onclick="runBriefing()">▶ Genera ora</button></div>';
+      el.innerHTML = '<div class="no-items">// nessun briefing</div><div style="margin-top:8px;text-align:center;"><button class="btn-green btn-sm" onclick="runBriefing()">▶ Genera</button></div>';
       return;
     }
     const b = data.last;
@@ -674,42 +546,33 @@ let ws = null;
     const calToday = b.calendar_today || [];
     const calTomorrow = b.calendar_tomorrow || [];
     const calTodayHtml = calToday.length > 0
-      ? calToday.map(e => {
-          const loc = e.location ? ` <span style="color:var(--muted)">@ ${esc(e.location)}</span>` : '';
-          return `<div style="margin:3px 0;font-size:11px;"><span style="color:var(--cyan);font-weight:600">${esc(e.time)}</span> <span style="color:var(--text2)">${esc(e.summary)}</span>${loc}</div>`;
-        }).join('')
-      : '<div style="font-size:11px;color:var(--muted);font-style:italic">Nessun evento oggi</div>';
+      ? calToday.map(e => { const loc = e.location ? ` <span style="color:var(--muted)">@ ${esc(e.location)}</span>` : ''; return `<div style="margin:3px 0;font-size:11px;"><span style="color:var(--cyan);font-weight:600">${esc(e.time)}</span> <span style="color:var(--text2)">${esc(e.summary)}</span>${loc}</div>`; }).join('')
+      : '<div style="font-size:11px;color:var(--muted);font-style:italic">Nessun evento</div>';
     const calTomorrowHtml = calTomorrow.length > 0
-      ? `<div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px">📅 DOMANI (${calTomorrow.length} eventi)</div>` +
-        calTomorrow.map(e =>
-          `<div style="margin:2px 0;font-size:10px;color:var(--text2)"><span style="color:var(--cyan)">${esc(e.time)}</span> ${esc(e.summary)}</div>`
-        ).join('')
+      ? `<div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px">📅 DOMANI</div>` +
+        calTomorrow.map(e => `<div style="margin:2px 0;font-size:10px;color:var(--text2)"><span style="color:var(--cyan)">${esc(e.time)}</span> ${esc(e.summary)}</div>`).join('')
       : '';
-    const stories = (b.stories || []).map((s, i) =>
-      `<div style="margin:4px 0;font-size:11px;color:var(--text2);">${i+1}. ${esc(s.title)}</div>`
-    ).join('');
+    const stories = (b.stories || []).map((s, i) => `<div style="margin:4px 0;font-size:11px;color:var(--text2);">${i+1}. ${esc(s.title)}</div>`).join('');
     el.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
         <div style="font-size:10px;color:var(--muted);">ULTIMO: <span style="color:var(--amber)">${ts}</span></div>
         <div style="font-size:10px;color:var(--muted);">PROSSIMO: <span style="color:var(--cyan)">${data.next_run || '07:30'}</span></div>
       </div>
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:9px 11px;margin-bottom:8px;">
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px 12px;margin-bottom:8px;">
         <div style="font-size:11px;color:var(--amber);margin-bottom:8px;">🌤 ${esc(weather)}</div>
-        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">📅 CALENDARIO OGGI</div>
-        ${calTodayHtml}
-        ${calTomorrowHtml}
-        <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px;">📰 TOP HACKERNEWS</div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;">📅 OGGI</div>
+        ${calTodayHtml}${calTomorrowHtml}
+        <div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px;">📰 NEWS</div>
         ${stories}
       </div>
       <div style="display:flex;gap:6px;">
-        <button class="btn-ghost" onclick="loadBriefing()">↻ Aggiorna</button>
-        <button class="btn-green" onclick="runBriefing()">▶ Genera nuovo</button>
-        <button class="btn-ghost" onclick="copyToClipboard(document.getElementById('briefing-body').textContent)">📋 Copia</button>
+        <button class="btn-ghost btn-sm" onclick="loadBriefing()">↻ Aggiorna</button>
+        <button class="btn-green btn-sm" onclick="runBriefing()">▶ Genera</button>
+        <button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('briefing-body').textContent)">📋</button>
       </div>`;
   }
 
   function renderTokens(data) {
-    // Preview tile
     const tp = document.getElementById('wt-tokens-preview');
     if (tp) {
       const inTok = (data.today_input || 0);
@@ -718,23 +581,21 @@ let ws = null;
       const model = (data.last_model || '').split('-').pop() || '';
       tp.textContent = fmt(inTok) + ' in / ' + fmt(outTok) + ' out' + (model ? ' · ' + model : '');
     }
-    const src = data.source === 'api' ? '🌐 Anthropic API' : '📁 Log locale';
+    const src = data.source === 'api' ? '🌐 API' : '📁 Local';
     document.getElementById('tokens-body').innerHTML = `
       <div class="token-grid">
-        <div class="token-item"><div class="token-label">Input oggi</div><div class="token-value">${(data.today_input||0).toLocaleString()}</div></div>
-        <div class="token-item"><div class="token-label">Output oggi</div><div class="token-value">${(data.today_output||0).toLocaleString()}</div></div>
-        <div class="token-item"><div class="token-label">Chiamate</div><div class="token-value">${data.total_calls||0}</div></div>
+        <div class="token-item"><div class="token-label">Input</div><div class="token-value">${(data.today_input||0).toLocaleString()}</div></div>
+        <div class="token-item"><div class="token-label">Output</div><div class="token-value">${(data.today_output||0).toLocaleString()}</div></div>
+        <div class="token-item"><div class="token-label">Calls</div><div class="token-value">${data.total_calls||0}</div></div>
       </div>
       <div style="margin-bottom:6px;font-size:10px;color:var(--muted);">
-        MODELLO: <span style="color:var(--cyan)">${esc(data.last_model||'N/A')}</span>
-        &nbsp;·&nbsp; FONTE: <span style="color:var(--text2)">${src}</span>
+        MODELLO: <span style="color:var(--cyan)">${esc(data.last_model||'N/A')}</span> · FONTE: <span style="color:var(--text2)">${src}</span>
       </div>
-      <div class="mono-block" style="max-height:100px;">${(data.log_lines||[]).map(l=>esc(l)).join('\n')||'// nessun log disponibile'}</div>
-      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadTokens()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.getElementById('tokens-body').textContent)">📋 Copia</button></div>`;
+      <div class="mono-block" style="max-height:100px;">${(data.log_lines||[]).map(l=>esc(l)).join('\n')||'// nessun log'}</div>
+      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost btn-sm" onclick="loadTokens()">↻</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('tokens-body').textContent)">📋</button></div>`;
   }
 
   function renderLogs(data) {
-    // Preview tile
     const lp = document.getElementById('wt-logs-preview');
     if (lp) {
       const lines = (typeof data === 'object' && data.lines) ? data.lines : [];
@@ -742,10 +603,9 @@ let ws = null;
       lp.textContent = last ? last.substring(0, 60) : 'Nessun log';
     }
     const el = document.getElementById('logs-body');
-    // data può essere stringa (vecchio formato) o oggetto {lines, total, filtered}
     if (typeof data === 'string') {
-      el.innerHTML = `<div class="mono-block" style="max-height:200px;">${esc(data)||'(nessun log)'}</div>
-        <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">📋 Copia</button></div>`;
+      el.innerHTML = `<div class="mono-block">${esc(data)||'(nessun log)'}</div>
+        <div style="margin-top:8px;"><button class="btn-ghost btn-sm" onclick="loadLogs()">↻</button></div>`;
       return;
     }
     const dateVal = document.getElementById('log-date-filter')?.value || '';
@@ -755,28 +615,24 @@ let ws = null;
     const filtered = data.filtered || 0;
     const countInfo = (dateVal || searchVal)
       ? `<span style="color:var(--amber)">${filtered}</span> / ${total} righe`
-      : `${total} righe totali`;
-    // Evidenzia testo cercato nelle righe
+      : `${total} righe`;
     let content = lines.length ? lines.map(l => {
       if (searchVal) {
         const re = new RegExp('(' + searchVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
         return l.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(re, '<span style="background:var(--green-dim);color:var(--green);font-weight:700;">$1</span>');
       }
       return l.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    }).join('\n') : '(nessun log corrispondente)';
+    }).join('\n') : '(nessun log)';
     el.innerHTML = `
-      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">
-        <input type="date" id="log-date-filter" value="${dateVal}"
-          style="background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--amber);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;">
-        <input type="text" id="log-search-filter" placeholder="🔍 cerca…" value="${searchVal}"
-          style="flex:1;min-width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;">
-        <button class="btn-green" onclick="loadLogs()" style="min-height:32px;">🔍 Filtra</button>
-        <button class="btn-ghost" onclick="clearLogFilters()" style="min-height:32px;">✕ Reset</button>
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
+        <input type="date" id="log-date-filter" value="${dateVal}" class="input-field input-date" style="min-width:130px;flex:0;">
+        <input type="text" id="log-search-filter" placeholder="🔍 cerca…" value="${searchVal}" class="input-field">
+        <button class="btn-green btn-sm" onclick="loadLogs()">🔍</button>
+        <button class="btn-ghost btn-sm" onclick="clearLogFilters()">✕</button>
       </div>
       <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">${countInfo}</div>
       <div class="mono-block" style="max-height:240px;">${content}</div>
-      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost" onclick="loadLogs()">↻ Aggiorna</button><button class="btn-ghost" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">📋 Copia</button></div>`;
-    // Enter su campo ricerca = filtra
+      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost btn-sm" onclick="loadLogs()">↻</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">📋</button></div>`;
     document.getElementById('log-search-filter')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') loadLogs();
     });
@@ -790,30 +646,26 @@ let ws = null;
   }
 
   function renderCron(jobs) {
-    // Preview tile
     const cp = document.getElementById('wt-cron-preview');
-    if (cp) {
-      const count = (jobs && jobs.length) || 0;
-      cp.textContent = count + ' job attivi';
-    }
+    if (cp) cp.textContent = ((jobs && jobs.length) || 0) + ' job attivi';
     const el = document.getElementById('cron-body');
     const jobList = (jobs && jobs.length) ? '<div class="cron-list">' + jobs.map((j, i) => `
       <div class="cron-item" style="align-items:center;">
         <div class="cron-schedule">${j.schedule}</div>
         <div style="flex:1;"><div class="cron-cmd">${j.command}</div>${j.desc?`<div class="cron-desc">// ${j.desc}</div>`:''}</div>
-        <button class="btn-red" style="padding:3px 8px;font-size:10px;min-height:28px;" onclick="deleteCron(${i})">✕</button>
+        <button class="btn-red btn-sm" style="padding:3px 8px;" onclick="deleteCron(${i})">✕</button>
       </div>`).join('') + '</div>'
-      : '<div class="no-items">// nessun cron job configurato</div>';
+      : '<div class="no-items">// nessun cron job</div>';
     el.innerHTML = jobList + `
       <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:10px;">
-        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">AGGIUNGI TASK</div>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">AGGIUNGI</div>
         <div style="display:flex;gap:6px;margin-bottom:6px;">
-          <input id="cron-schedule" placeholder="30 7 * * *" style="width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;">
-          <input id="cron-command" placeholder="python3.13 /path/to/script.py" style="flex:1;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;">
+          <input id="cron-schedule" placeholder="30 7 * * *" class="input-field" style="width:120px;flex:0;">
+          <input id="cron-command" placeholder="python3.13 /path/script.py" class="input-field">
         </div>
         <div style="display:flex;gap:6px;">
-          <button class="btn-green" onclick="addCron()">+ Aggiungi</button>
-          <button class="btn-ghost" onclick="loadCron()">↻ Aggiorna</button>
+          <button class="btn-green btn-sm" onclick="addCron()">+ Aggiungi</button>
+          <button class="btn-ghost btn-sm" onclick="loadCron()">↻</button>
         </div>
       </div>`;
   }
@@ -823,13 +675,9 @@ let ws = null;
     if (!sched || !cmd) { showToast('⚠️ Compila schedule e comando'); return; }
     send({ action: 'add_cron', schedule: sched, command: cmd });
   }
-  function deleteCron(index) {
-    send({ action: 'delete_cron', index: index });
-  }
+  function deleteCron(index) { send({ action: 'delete_cron', index: index }); }
 
   // ── Remote Code ──
-  let claudeRunning = false;
-
   const TASK_CATEGORIES = [
     { id: 'debug',    label: 'DEBUG',    color: '#ff5555', loop: true,
       keywords: ['debug','errore','crash','fix','correggi','problema','risolvi','broken','traceback','exception','fallisce','non funziona'] },
@@ -862,11 +710,8 @@ let ws = null;
     badge.textContent = cat.label;
     badge.style.color = cat.color;
     badge.style.borderColor = cat.color;
-    badge.title = willLoop ? 'Usa Ralph Loop (iterativo)' : 'Esecuzione one-shot';
     const loopBadge = document.getElementById('task-loop-badge');
-    if (loopBadge) {
-      loopBadge.style.display = willLoop ? 'inline-block' : 'none';
-    }
+    if (loopBadge) loopBadge.style.display = willLoop ? 'inline-block' : 'none';
   }
 
   const promptTemplates = [
@@ -909,9 +754,7 @@ let ws = null;
     send({ action: 'claude_task', prompt: prompt, use_loop: useLoop });
   }
 
-  function cancelClaudeTask() {
-    send({ action: 'claude_cancel' });
-  }
+  function cancelClaudeTask() { send({ action: 'claude_cancel' }); }
 
   function finalizeClaudeTask(data) {
     claudeRunning = false;
@@ -919,31 +762,25 @@ let ws = null;
     const cb = document.getElementById('claude-cancel-btn');
     if (rb) rb.disabled = false;
     if (cb) cb.style.display = 'none';
-    const status = data.completed ? '✅ completato' : (data.exit_code === 0 ? '⚠️ incompleto' : '⚠️ errore');
+    const status = data.completed ? '✅' : '⚠️';
     const dur = (data.duration_ms / 1000).toFixed(1);
     const iter = data.iterations > 1 ? ` (${data.iterations} iter)` : '';
-    showToast(`Task ${status} in ${dur}s${iter}`);
+    showToast(`${status} Task in ${dur}s${iter}`);
     send({ action: 'get_claude_tasks' });
   }
 
   function renderBridgeStatus(data) {
-    // Preview tile
     const codePrev = document.getElementById('wt-code-preview');
     if (codePrev) {
       const isOnline = data.status === 'ok';
-      codePrev.innerHTML = '<span class="wt-dot ' + (isOnline ? 'online' : 'offline') + '"></span>' +
+      codePrev.innerHTML = '<span class="dot ' + (isOnline ? 'dot-local' : '') + '" style="display:inline-block;width:6px;height:6px;margin-right:4px;vertical-align:middle;' + (!isOnline ? 'background:var(--red);box-shadow:0 0 4px var(--red);' : '') + '"></span>' +
         (isOnline ? 'Bridge online' : 'Bridge offline');
     }
     const dot = document.getElementById('bridge-dot');
-    if (!dot) return;
-    if (data.status === 'ok') {
-      dot.className = 'health-dot green';
-      dot.title = 'Bridge online';
-    } else {
-      dot.className = 'health-dot red';
-      dot.title = 'Bridge offline';
+    if (dot) {
+      dot.className = data.status === 'ok' ? 'health-dot green' : 'health-dot red';
+      dot.title = data.status === 'ok' ? 'Bridge online' : 'Bridge offline';
     }
-    // Se il body è ancora il placeholder, renderizza il form
     const body = document.getElementById('claude-body');
     if (body && body.querySelector('.widget-placeholder')) {
       renderClaudeUI(data.status === 'ok');
@@ -956,37 +793,27 @@ let ws = null;
     const opts = promptTemplates.map(t => `<option value="${t.value.replace(/"/g,'&quot;')}">${t.label}</option>`).join('');
     body.innerHTML = `
       <div style="margin-bottom:10px;">
-        <select onchange="applyTemplate(this)" style="width:100%;margin-bottom:6px;background:var(--bg2);
-          border:1px solid var(--border);border-radius:4px;color:var(--text2);padding:6px 8px;
-          font-family:var(--font);font-size:11px;outline:none;cursor:pointer;">${opts}</select>
-        <textarea id="claude-prompt" rows="3" placeholder="Descrivi il task per Claude Code..."
+        <select onchange="applyTemplate(this)" style="width:100%;margin-bottom:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;cursor:pointer;">${opts}</select>
+        <textarea id="claude-prompt" rows="3" placeholder="Descrivi il task..."
           oninput="updateCategoryBadge()"
-          style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;
-          color:var(--green);padding:9px 12px;font-family:var(--font);font-size:13px;
-          outline:none;resize:vertical;caret-color:var(--green);min-height:60px;box-sizing:border-box;"></textarea>
+          style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;color:var(--green);padding:10px 12px;font-family:var(--font);font-size:13px;outline:none;resize:vertical;caret-color:var(--green);min-height:60px;box-sizing:border-box;"></textarea>
         <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;">
-          <button class="btn-green" id="claude-run-btn" onclick="runClaudeTask()"
-            ${!isOnline ? 'disabled title="Bridge offline"' : ''}>▶ Esegui</button>
-          <button class="btn-red" id="claude-cancel-btn" onclick="cancelClaudeTask()"
-            style="display:none;">■ Stop</button>
-          <span id="task-category-badge" style="font-size:9px;font-weight:700;letter-spacing:1px;
-            border:1px solid #666;border-radius:3px;padding:1px 6px;color:#666;">GENERICO</span>
-          <span id="task-loop-badge" style="display:none;font-size:9px;font-weight:700;letter-spacing:1px;
-            border:1px solid #ffaa00;border-radius:3px;padding:1px 6px;color:#ffaa00;">⟳ LOOP</span>
+          <button class="btn-green" id="claude-run-btn" onclick="runClaudeTask()" ${!isOnline ? 'disabled title="Bridge offline"' : ''}>▶ Esegui</button>
+          <button class="btn-red" id="claude-cancel-btn" onclick="cancelClaudeTask()" style="display:none;">■ Stop</button>
+          <span id="task-category-badge" style="font-size:9px;font-weight:700;letter-spacing:1px;border:1px solid #666;border-radius:3px;padding:1px 6px;color:#666;">GENERICO</span>
+          <span id="task-loop-badge" style="display:none;font-size:9px;font-weight:700;letter-spacing:1px;border:1px solid #ffaa00;border-radius:3px;padding:1px 6px;color:#ffaa00;">⟳ LOOP</span>
           <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-left:auto;cursor:pointer;">
-            <input type="checkbox" id="ralph-toggle" style="accent-color:var(--green);cursor:pointer;"
-              onchange="updateCategoryBadge()">
-            Ralph Loop
+            <input type="checkbox" id="ralph-toggle" style="accent-color:var(--green);cursor:pointer;" onchange="updateCategoryBadge()"> Ralph Loop
           </label>
-          <button class="btn-ghost" onclick="loadBridge()">↻</button>
+          <button class="btn-ghost btn-sm" onclick="loadBridge()">↻</button>
         </div>
       </div>
       <div id="claude-output-wrap" style="display:none;margin-bottom:10px;">
         <div class="claude-output-header">
           <span>OUTPUT</span>
           <div style="display:flex;gap:4px;">
-            <button class="btn-ghost" style="padding:2px 8px;font-size:10px;min-height:24px;" onclick="copyClaudeOutput()">📋 Copia</button>
-            <button class="btn-ghost" style="padding:2px 8px;font-size:10px;min-height:24px;" onclick="openOutputFullscreen()">⛶ Espandi</button>
+            <button class="btn-ghost btn-sm" onclick="copyClaudeOutput()">📋</button>
+            <button class="btn-ghost btn-sm" onclick="openOutputFullscreen()">⛶</button>
           </div>
         </div>
         <div id="claude-output" class="claude-output"></div>
@@ -995,7 +822,6 @@ let ws = null;
   }
 
   function renderClaudeTasks(tasks) {
-    // Se il body è ancora placeholder, renderizza prima il form
     const body = document.getElementById('claude-body');
     if (body && body.querySelector('.widget-placeholder')) {
       renderClaudeUI(document.getElementById('bridge-dot')?.classList.contains('green'));
@@ -1003,7 +829,7 @@ let ws = null;
     const el = document.getElementById('claude-tasks-list');
     if (!el) return;
     if (!tasks || !tasks.length) {
-      el.innerHTML = '<div class="no-items">// nessun task eseguito</div>';
+      el.innerHTML = '<div class="no-items">// nessun task</div>';
       return;
     }
     const list = tasks.slice().reverse();
@@ -1015,48 +841,32 @@ let ws = null;
           <div class="claude-task-prompt" title="${esc(t.prompt)}">${esc(t.prompt)}</div>
           <div class="claude-task-meta">
             <span class="claude-task-status ${esc(t.status)}">${esc(t.status)}</span>
-            <span>${esc(ts)}</span>
-            <span>${dur}</span>
+            <span>${esc(ts)}</span><span>${dur}</span>
           </div>
         </div>`;
       }).join('');
   }
 
-  // ── Knowledge Graph (Fase 18D) ──
-  function loadEntities(btn) {
-    if (btn) btn.textContent = '...';
-    send({ action: 'get_entities' });
-  }
-
-  function deleteEntity(id) {
-    send({ action: 'delete_entity', id: id });
-  }
+  // ── Knowledge Graph ──
+  function loadEntities(btn) { if (btn) btn.textContent = '...'; send({ action: 'get_entities' }); }
+  function deleteEntity(id) { send({ action: 'delete_entity', id: id }); }
 
   function renderKnowledgeGraph(entities, relations) {
-    // Preview tile
     const mp = document.getElementById('wt-mem-preview');
-    if (mp) {
-      const eCount = entities ? entities.length : 0;
-      const rCount = relations ? relations.length : 0;
-      mp.textContent = eCount + ' entita · ' + rCount + ' relazioni';
-    }
+    if (mp) mp.textContent = (entities ? entities.length : 0) + ' entità · ' + (relations ? relations.length : 0) + ' relazioni';
     const el = document.getElementById('grafo-body');
     if (!entities || entities.length === 0) {
-      el.innerHTML = '<div class="no-items">// nessuna entit\u00e0 nel Knowledge Graph</div>' +
-        '<div style="margin-top:8px;"><button class="btn-ghost" onclick="loadEntities()">&#x21BB; Aggiorna</button></div>';
+      el.innerHTML = '<div class="no-items">// nessuna entità</div><div style="margin-top:8px;"><button class="btn-ghost btn-sm" onclick="loadEntities()">↻</button></div>';
       return;
     }
     const groups = { tech: [], person: [], place: [] };
     entities.forEach(e => {
       if (groups[e.type]) groups[e.type].push(e);
-      else {
-        if (!groups.other) groups.other = [];
-        groups.other.push(e);
-      }
+      else { if (!groups.other) groups.other = []; groups.other.push(e); }
     });
     const labels = { tech: 'Tech', person: 'Persone', place: 'Luoghi', other: 'Altro' };
-    const colors = { tech: 'var(--cyan, #0ff)', person: 'var(--green)', place: 'var(--amber)', other: 'var(--text2)' };
-    let html = '<div style="font-size:10px;color:var(--muted);margin-bottom:8px;">' + entities.length + ' entit\u00e0 totali</div>';
+    const colors = { tech: 'var(--cyan)', person: 'var(--green)', place: 'var(--amber)', other: 'var(--text2)' };
+    let html = '<div style="font-size:10px;color:var(--muted);margin-bottom:8px;">' + entities.length + ' entità</div>';
     for (const [type, items] of Object.entries(groups)) {
       if (!items.length) continue;
       html += '<div style="margin-bottom:12px;">';
@@ -1064,43 +874,30 @@ let ws = null;
       items.forEach(e => {
         const since = e.first_seen ? e.first_seen.split('T')[0] : '';
         const last = e.last_seen ? e.last_seen.split('T')[0] : '';
-        html += '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:6px 10px;margin-bottom:3px;">';
-        html += '<div style="flex:1;min-width:0;">';
-        html += '<span style="color:var(--text2);font-size:12px;font-weight:600;">' + esc(e.name) + '</span>';
-        html += ' <span style="color:var(--muted);font-size:10px;">freq:' + e.frequency + '</span>';
-        html += '<div style="font-size:9px;color:var(--muted);">' + since + ' \u2192 ' + last + '</div>';
-        html += '</div>';
-        html += '<button class="btn-red" style="padding:2px 6px;font-size:9px;min-height:22px;margin-left:6px;flex-shrink:0;" onclick="deleteEntity(' + e.id + ')">&#x2715;</button>';
-        html += '</div>';
+        html += '<div style="display:flex;align-items:center;justify-content:space-between;background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:3px;">';
+        html += '<div style="flex:1;min-width:0;"><span style="color:var(--text2);font-size:12px;font-weight:600;">' + esc(e.name) + '</span> <span style="color:var(--muted);font-size:10px;">freq:' + e.frequency + '</span>';
+        html += '<div style="font-size:9px;color:var(--muted);">' + since + ' → ' + last + '</div></div>';
+        html += '<button class="btn-red btn-sm" style="padding:2px 6px;font-size:9px;margin-left:6px;flex-shrink:0;" onclick="deleteEntity(' + e.id + ')">✕</button></div>';
       });
       html += '</div>';
     }
-    html += '<div style="display:flex;gap:6px;"><button class="btn-ghost" onclick="loadEntities()">&#x21BB; Aggiorna</button></div>';
+    html += '<div><button class="btn-ghost btn-sm" onclick="loadEntities()">↻</button></div>';
     el.innerHTML = html;
   }
 
-  // ── Tabs ──
-  function switchTab(name, btn) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  // ── Memory Tabs ──
+  function switchMemTab(name, btn) {
+    const section = btn.closest('.prof-section');
+    section.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    section.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
-    document.getElementById('tab-' + name).classList.add('active');
+    document.getElementById('tab-' + name)?.classList.add('active');
     if (name === 'history') send({ action: 'get_history' });
     if (name === 'quickref') send({ action: 'get_quickref' });
     if (name === 'grafo') loadEntities();
   }
 
   // ── Misc ──
-  // ── Collapsible cards ──
-  function toggleCard(id) {
-    const card = document.getElementById(id);
-    if (card) card.classList.toggle('collapsed');
-  }
-  function expandCard(id) {
-    const card = document.getElementById(id);
-    if (card) card.classList.remove('collapsed');
-  }
-
   function requestStats() { send({ action: 'get_stats' }); }
   function refreshMemory() { send({ action: 'get_memory' }); }
   function refreshHistory() { send({ action: 'get_history' }); }
@@ -1108,119 +905,82 @@ let ws = null;
   function searchMemory() {
     const keyword = document.getElementById('mem-search-keyword')?.value.trim() || '';
     const date = document.getElementById('mem-search-date')?.value || '';
-    if (!keyword && !date) { showToast('Inserisci almeno una keyword o una data'); return; }
-    document.getElementById('search-results').innerHTML = '<span style="color:var(--dim)">Ricerca…</span>';
+    if (!keyword && !date) { showToast('Inserisci almeno una keyword o data'); return; }
+    document.getElementById('search-results').innerHTML = '<span style="color:var(--muted)">Ricerca…</span>';
     send({ action: 'search_memory', keyword: keyword, date_from: date, date_to: date });
   }
 
   function renderMemorySearch(results) {
     const el = document.getElementById('search-results');
-    if (!results || results.length === 0) {
-      el.innerHTML = '<span style="color:var(--dim)">Nessun risultato</span>';
-      return;
-    }
+    if (!results || results.length === 0) { el.innerHTML = '<span style="color:var(--muted)">Nessun risultato</span>'; return; }
     const keyword = document.getElementById('mem-search-keyword')?.value.trim() || '';
     el.innerHTML = '<div style="color:var(--amber);margin-bottom:6px;">' + results.length + ' risultati</div>' +
       results.map(r => {
         const ts = r.ts.replace('T', ' ');
-        const role = r.role === 'user' ? '<span style="color:var(--green)">user</span>' : '<span style="color:var(--cyan,#0ff)">bot</span>';
+        const role = r.role === 'user' ? '<span style="color:var(--green)">user</span>' : '<span style="color:var(--cyan)">bot</span>';
         let snippet = (r.content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         if (snippet.length > 200) snippet = snippet.substring(0, 200) + '…';
         if (keyword) {
           const re = new RegExp('(' + keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
           snippet = snippet.replace(re, '<span style="background:var(--green-dim);color:var(--green);font-weight:700;">$1</span>');
         }
-        return '<div style="border-bottom:1px solid var(--border);padding:4px 0;">' +
-          '<div style="display:flex;gap:8px;font-size:10px;color:var(--dim);margin-bottom:2px;">' +
-          '<span>' + ts + '</span><span>' + r.provider + '</span>' + role + '</div>' +
-          '<div style="font-size:11px;">' + snippet + '</div></div>';
+        return '<div style="border-bottom:1px solid var(--border);padding:4px 0;"><div style="display:flex;gap:8px;font-size:10px;color:var(--muted);margin-bottom:2px;"><span>' + ts + '</span>' + role + '</div><div style="font-size:11px;">' + snippet + '</div></div>';
       }).join('');
   }
+
   function killSession(name) { send({ action: 'tmux_kill', session: name }); }
   function gatewayRestart() { showToast('⏳ Riavvio gateway…'); send({ action: 'gateway_restart' }); }
 
-  // ── Reboot / Shutdown ──
-  function showHelpModal() {
-    document.getElementById('help-modal').classList.add('show');
-  }
-  function closeHelpModal() {
-    document.getElementById('help-modal').classList.remove('show');
-  }
-  function showRebootModal() {
-    document.getElementById('reboot-modal').classList.add('show');
-  }
-  function hideRebootModal() {
-    document.getElementById('reboot-modal').classList.remove('show');
-  }
-  function confirmReboot() {
-    hideRebootModal();
-    send({ action: 'reboot' });
-  }
-  function showShutdownModal() {
-    document.getElementById('shutdown-modal').classList.add('show');
-  }
-  function hideShutdownModal() {
-    document.getElementById('shutdown-modal').classList.remove('show');
-  }
-  function confirmShutdown() {
-    hideShutdownModal();
-    send({ action: 'shutdown' });
-  }
+  // ── Modals ──
+  function showHelpModal() { document.getElementById('help-modal').classList.add('show'); }
+  function closeHelpModal() { document.getElementById('help-modal').classList.remove('show'); }
+  function showRebootModal() { document.getElementById('reboot-modal').classList.add('show'); }
+  function hideRebootModal() { document.getElementById('reboot-modal').classList.remove('show'); }
+  function confirmReboot() { hideRebootModal(); send({ action: 'reboot' }); }
+  function showShutdownModal() { document.getElementById('shutdown-modal').classList.add('show'); }
+  function hideShutdownModal() { document.getElementById('shutdown-modal').classList.remove('show'); }
+  function confirmShutdown() { hideShutdownModal(); send({ action: 'shutdown' }); }
+
   function startRebootWait() {
     document.getElementById('reboot-overlay').classList.add('show');
     const statusEl = document.getElementById('reboot-status');
     let seconds = 0;
-    const timer = setInterval(() => {
-      seconds++;
-      statusEl.textContent = `Attesa: ${seconds}s — tentativo riconnessione…`;
-    }, 1000);
-    // Tenta di riconnettersi ogni 3 secondi
+    const timer = setInterval(() => { seconds++; statusEl.textContent = `Attesa: ${seconds}s`; }, 1000);
     const tryReconnect = setInterval(() => {
       fetch('/', { method: 'HEAD', cache: 'no-store' })
         .then(r => {
           if (r.ok) {
-            clearInterval(timer);
-            clearInterval(tryReconnect);
+            clearInterval(timer); clearInterval(tryReconnect);
             document.getElementById('reboot-overlay').classList.remove('show');
-            showToast('✅ Pi riavviato con successo');
-            // Riconnetti WebSocket
+            showToast('✅ Pi riavviato');
             if (ws) { try { ws.close(); } catch(e) {} }
             connect();
           }
-        })
-        .catch(() => {});
+        }).catch(() => {});
     }, 3000);
-    // Timeout massimo: 2 minuti
-    setTimeout(() => {
-      clearInterval(timer);
-      clearInterval(tryReconnect);
-      statusEl.textContent = 'Timeout — il Pi potrebbe non essere raggiungibile. Ricarica la pagina manualmente.';
-    }, 120000);
+    setTimeout(() => { clearInterval(timer); clearInterval(tryReconnect); statusEl.textContent = 'Timeout — ricarica manualmente.'; }, 120000);
   }
 
   function showToast(text) {
     const el = document.getElementById('toast');
     el.textContent = text; el.classList.add('show');
-    const ms = Math.max(2500, Math.min(text.length * 60, 6000));
-    setTimeout(() => el.classList.remove('show'), ms);
+    setTimeout(() => el.classList.remove('show'), Math.max(2500, Math.min(text.length * 60, 6000)));
   }
 
   function copyToClipboard(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => showToast('📋 Copiato'))
-        .catch(() => _fallbackCopy(text));
+      navigator.clipboard.writeText(text).then(() => showToast('📋 Copiato')).catch(() => _fallbackCopy(text));
     } else { _fallbackCopy(text); }
   }
   function _fallbackCopy(text) {
     const ta = document.createElement('textarea');
     ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
     document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); showToast('📋 Copiato'); }
-    catch(e) { showToast('Copia non riuscita'); }
+    try { document.execCommand('copy'); showToast('📋 Copiato'); } catch(e) { showToast('Copia non riuscita'); }
     document.body.removeChild(ta);
   }
 
-  // ── Remote Code output helpers ──
+  // ── Claude output helpers ──
   let _claudeLineBuf = '';
   const _toolPattern = /^[⏺●▶►•]\s*(Read|Edit|Write|Bash|Glob|Grep|Task|Search|WebFetch|WebSearch|NotebookEdit)\b/;
   const _toolStartPattern = /^[⏺●▶►•]\s/;
@@ -1232,13 +992,11 @@ let ws = null;
     for (const line of lines) {
       if (_toolPattern.test(line)) {
         const el = document.createElement('div');
-        el.className = 'claude-tool-use';
-        el.textContent = line;
+        el.className = 'claude-tool-use'; el.textContent = line;
         out.appendChild(el);
       } else if (_toolStartPattern.test(line) && line.length < 200) {
         const el = document.createElement('div');
-        el.className = 'claude-tool-info';
-        el.textContent = line;
+        el.className = 'claude-tool-info'; el.textContent = line;
         out.appendChild(el);
       } else {
         out.appendChild(document.createTextNode(line + '\n'));
@@ -1264,6 +1022,7 @@ let ws = null;
     document.getElementById('output-fullscreen').classList.remove('show');
   }
 
+  // ── Clock ──
   setInterval(() => {
     const t = new Date().toLocaleTimeString('it-IT');
     ['home-clock', 'chat-clock'].forEach(id => {
@@ -1272,10 +1031,44 @@ let ws = null;
     });
   }, 1000);
 
+  // ── Input handlers ──
+  document.addEventListener('DOMContentLoaded', () => {
+    const chatInput = document.getElementById('chat-input');
+    chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }
+    });
+    chatInput.addEventListener('input', () => autoResizeInput(chatInput));
+    document.getElementById('mem-search-keyword')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') searchMemory();
+    });
+  });
+
+  // ── iOS virtual keyboard ──
+  if (window.visualViewport) {
+    const appLayout = document.querySelector('.app-layout');
+    let pendingVV = null;
+    const handleVV = () => {
+      if (pendingVV) return;
+      pendingVV = requestAnimationFrame(() => {
+        pendingVV = null;
+        const vvh = window.visualViewport.height;
+        const vvTop = window.visualViewport.offsetTop;
+        appLayout.style.height = vvh + 'px';
+        appLayout.style.transform = 'translateY(' + vvTop + 'px)';
+        const msgs = document.getElementById('chat-messages');
+        if (msgs) msgs.scrollTop = msgs.scrollHeight;
+      });
+    };
+    window.visualViewport.addEventListener('resize', handleVV);
+    window.visualViewport.addEventListener('scroll', handleVV);
+  }
+
+  // ── Service Worker ──
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }
 
+  // ── Connect ──
   connect();
 
   // ── Plugin System ──
@@ -1287,55 +1080,24 @@ let ws = null;
       if (!plugins.length) return;
       plugins.forEach(p => {
         const pid = 'plugin_' + p.id;
-        // Registra in DRAWER_CFG
         const actHtml = p.actions === 'load'
-          ? '<button class="btn-ghost" onclick="pluginLoad_' + p.id + '(this)">Carica</button>'
+          ? '<button class="btn-ghost btn-sm" onclick="pluginLoad_' + p.id + '(this)">Carica</button>'
           : '';
         DRAWER_CFG[pid] = { title: p.icon + ' ' + p.title, actions: actHtml, wide: p.wide || false };
-        // Crea drawer widget container
         const body = document.querySelector('.drawer-body');
         if (body) {
           const dw = document.createElement('div');
           dw.className = 'drawer-widget';
           dw.id = 'dw-' + pid;
-          dw.innerHTML = '<div id="plugin-' + p.id + '-body"><div class="widget-placeholder"><span class="ph-icon">' + p.icon + '</span><span>Premi Carica per ' + p.title + '</span></div></div>';
+          dw.innerHTML = '<div id="plugin-' + p.id + '-body"><div class="widget-placeholder"><span class="ph-icon">' + p.icon + '</span><span>' + p.title + '</span></div></div>';
           body.appendChild(dw);
         }
-        // Aggiungi widget tile alla home (skip plugin promossi in home)
-        const homePromoted = ['weather'];
-        if (!homePromoted.includes(p.id)) {
-          const homeWidgets = document.getElementById('home-widgets');
-          if (homeWidgets) {
-            const tile = document.createElement('div');
-            tile.className = 'widget-tile';
-            tile.dataset.widget = pid;
-            tile.onclick = function() { openDrawer(pid); };
-            tile.innerHTML = '<div class="wt-icon">' + p.icon + '</div>' +
-              '<div class="wt-content"><div class="wt-label">' + p.tab_label + '</div>' +
-              '<div class="wt-preview" id="wt-' + p.id + '-preview">--</div></div>';
-            homeWidgets.appendChild(tile);
-          }
-        }
-        // Inietta CSS opzionale
-        if (p.css) {
-          const st = document.createElement('style');
-          st.textContent = p.css;
-          document.head.appendChild(st);
-        }
-        // Esegui JS del plugin
-        if (p.js) {
-          try { (new Function(p.js))(); }
-          catch(e) { console.error('[Plugin] ' + p.id + ' JS:', e); }
-        }
-        // Funzione load di default
+        if (p.css) { const st = document.createElement('style'); st.textContent = p.css; document.head.appendChild(st); }
+        if (p.js) { try { (new Function(p.js))(); } catch(e) { console.error('[Plugin] ' + p.id + ':', e); } }
         if (p.actions === 'load' && !window['pluginLoad_' + p.id]) {
-          window['pluginLoad_' + p.id] = function(btn) {
-            if (btn) btn.textContent = '\u2026';
-            send({ action: pid });
-          };
+          window['pluginLoad_' + p.id] = function(btn) { if (btn) btn.textContent = '…'; send({ action: pid }); };
         }
       });
-      console.log('[Plugins] Caricati:', plugins.length);
-    } catch(e) { console.error('[Plugins] Load failed:', e); }
+    } catch(e) { console.error('[Plugins]', e); }
   }
   setTimeout(loadPlugins, 500);

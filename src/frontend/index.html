@@ -7,487 +7,411 @@
     content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#060a06">
+  <meta name="theme-color" content="#020502">
   <link rel="icon" type="image/jpeg"
     href="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k=">
   <link rel="apple-touch-icon" sizes="192x192"
-    href="data:image/jpeg;base64,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">
+    href="data:image/jpeg;base64,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">
   <link rel="manifest" href="/manifest.json">
   <title>Vessel Dashboard</title>
   <style>
-    <!-- {INJECT_CSS} 
+    <!-- {INJECT_CSS}
     -->
   </style>
 </head>
 
 <body>
   <div class="app-layout">
-
-    <!-- ─── App Content ─── -->
     <div class="app-content">
 
-      <!-- ═══ HOME VIEW (default) ═══ -->
-      <div id="home-view" class="home-view">
-        <div class="home-scroll">
-        <div class="home-header">
-          <img class="logo-icon"
-            src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k="
-            alt="V">
-          <span class="home-title">VESSEL</span>
-          <div id="home-health-dot" class="health-dot" title="Salute Pi"></div>
-          <span class="home-spacer"></span>
-          <span class="home-temp" id="home-temp" style="color:var(--amber);font-size:12px;">--</span>
-          <span id="home-clock" class="home-clock">--:--:--</span>
-          <button class="hdr-btn hdr-btn-help" onclick="showHelpModal()" title="Guida rapida">?</button>
-          <div class="hdr-controls desktop-only">
-            <button class="hdr-btn" onclick="requestStats()" title="Refresh">&#x21BB;</button>
-            <button class="hdr-btn hdr-btn-red" onclick="showRebootModal()" title="Reboot">&#x21BA;</button>
-            <button class="hdr-btn hdr-btn-red" onclick="showShutdownModal()" title="Off">&#x23FB;</button>
+      <!-- ═══ TAB: DASHBOARD ═══ -->
+      <div id="tab-dashboard" class="tab-view active">
+        <div class="tab-scroll">
+          <div class="dash-header">
+            <img class="logo-icon"
+              src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k="
+              alt="V">
+            <span class="dash-title">VESSEL</span>
+            <div id="home-health-dot" class="health-dot" title="Salute Pi"></div>
+            <span class="dash-spacer"></span>
+            <span class="dash-temp" id="home-temp">--</span>
+            <span id="home-clock" class="dash-clock">--:--:--</span>
           </div>
-        </div>
 
-        <div class="home-vitals">
-          <div class="home-stats">
-            <div class="home-card">
-              <div class="hc-label">CPU</div>
-              <div class="hc-value" id="hc-cpu-val">--</div>
-              <div class="hc-bar">
-                <div class="hc-bar-fill" id="hc-cpu-bar"></div>
-              </div>
+          <!-- Stats 2x2 -->
+          <div class="dash-stats">
+            <div class="stat-card">
+              <div class="stat-icon">&#x00A7;</div>
+              <div class="stat-label">CPU</div>
+              <div class="stat-value" id="hc-cpu-val">--</div>
+              <div class="stat-bar"><div class="stat-bar-fill" id="hc-cpu-bar"></div></div>
             </div>
-            <div class="home-card">
-              <div class="hc-label">RAM</div>
-              <div class="hc-value" id="hc-ram-val">--</div>
-              <div class="hc-sub" id="hc-ram-sub"></div>
-              <div class="hc-bar">
-                <div class="hc-bar-fill hc-bar-cyan" id="hc-ram-bar"></div>
-              </div>
+            <div class="stat-card">
+              <div class="stat-icon">&#x25C8;</div>
+              <div class="stat-label">RAM</div>
+              <div class="stat-value" id="hc-ram-val">--</div>
+              <div class="stat-sub" id="hc-ram-sub"></div>
+              <div class="stat-bar"><div class="stat-bar-fill stat-bar-cyan" id="hc-ram-bar"></div></div>
             </div>
-            <div class="home-card">
-              <div class="hc-label">Temp</div>
-              <div class="hc-value" id="hc-temp-val">--</div>
-              <div class="hc-bar">
-                <div class="hc-bar-fill hc-bar-amber" id="hc-temp-bar"></div>
-              </div>
+            <div class="stat-card">
+              <div class="stat-icon">&#x2321;</div>
+              <div class="stat-label">TEMP</div>
+              <div class="stat-value" id="hc-temp-val">--</div>
+              <div class="stat-bar"><div class="stat-bar-fill stat-bar-amber" id="hc-temp-bar"></div></div>
             </div>
-            <div class="home-card">
-              <div class="hc-label">Disco</div>
-              <div class="hc-value" id="hc-disk-val">--</div>
-              <div class="hc-sub" id="hc-disk-sub"></div>
-              <div class="hc-bar">
-                <div class="hc-bar-fill" id="hc-disk-bar"></div>
-              </div>
-            </div>
-            <div class="home-card">
-              <div class="hc-label">Uptime</div>
-              <div class="hc-value" id="hc-uptime-val" style="font-size:16px;">--</div>
-              <div class="hc-sub" id="hc-sessions-sub" style="color:var(--muted);font-size:10px;"></div>
+            <div class="stat-card">
+              <div class="stat-icon">&#x25A4;</div>
+              <div class="stat-label">DISK</div>
+              <div class="stat-value" id="hc-disk-val">--</div>
+              <div class="stat-sub" id="hc-disk-sub"></div>
+              <div class="stat-bar"><div class="stat-bar-fill" id="hc-disk-bar"></div></div>
             </div>
           </div>
 
-        </div>
+          <!-- Chart -->
+          <div class="dash-chart">
+            <div class="chart-header">
+              <span class="chart-label">SERVER ACTIVITY (Last 15 Min)</span>
+              <div class="chart-legend">
+                <span><div class="dot-cpu"></div> <span>CPU</span></span>
+                <span><div class="dot-temp"></div> <span>Temp</span></span>
+              </div>
+            </div>
+            <canvas id="pi-chart"></canvas>
+          </div>
 
-        <button class="home-services-toggle" id="home-svc-toggle" onclick="toggleHomeServices()">
-          <span>Servizi</span>
-          <span class="svc-arrow">&#x25BE;</span>
-        </button>
-        <div class="home-services" id="home-services">
-          <div class="home-services-inner">
-            <!-- Crypto + Meteo -->
-            <div class="svc-card">
-              <div class="svc-card-row">
-                <div class="svc-block">
-                  <div class="svc-label">Crypto</div>
-                  <div id="home-crypto-data" style="display:flex;gap:12px;font-size:13px;">
-                    <span style="color:var(--amber);">&#x20BF; <span id="home-btc-price">--</span></span>
-                    <span style="color:var(--cyan);">&#x039E; <span id="home-eth-price">--</span></span>
-                  </div>
-                </div>
-                <div class="svc-divider"></div>
-                <div class="svc-block">
-                  <div class="svc-label">Meteo</div>
-                  <div style="font-size:13px;color:var(--text2);">
-                    <span id="home-weather-text">--</span>
-                  </div>
-                </div>
-              </div>
+          <!-- Widget tiles 2x2 -->
+          <div class="dash-widgets">
+            <div class="widget-card" data-widget="briefing" onclick="openDrawer('briefing')">
+              <div class="wc-header"><span class="wc-label">BRIEFING</span><span class="wc-icon">&#x2630;</span></div>
+              <div class="wc-body" id="wt-briefing-preview">--</div>
             </div>
-            <!-- Sessioni tmux -->
-            <div class="svc-card">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-                <div class="svc-label" style="margin:0;">Sessioni tmux</div>
-                <button class="btn-green" onclick="gatewayRestart()"
-                  style="min-height:24px;padding:2px 8px;font-size:10px;">&#x21BA; Gateway</button>
-              </div>
-              <div class="session-list" id="session-list">
-                <div class="no-items">Caricamento…</div>
-              </div>
+            <div class="widget-card" data-widget="tokens" onclick="openDrawer('tokens')">
+              <div class="wc-header"><span class="wc-label">TOKEN</span><span class="wc-icon">&#x00A4;</span></div>
+              <div class="wc-body" id="wt-tokens-preview">--</div>
             </div>
-            <!-- Sistema -->
-            <div class="svc-card">
-              <div style="display:flex;gap:6px;justify-content:space-between;align-items:center;">
-                <div style="display:flex;gap:6px;align-items:center;">
-                  <button class="btn-ghost" onclick="requestStats()"
-                    style="min-height:26px;padding:2px 8px;font-size:10px;">&#x21BB; Refresh</button>
-                  <span id="version-badge" class="version-badge">—</span>
-                </div>
-                <div style="display:flex;gap:6px;">
-                  <button class="btn-red" onclick="showRebootModal()"
-                    style="min-height:26px;padding:2px 8px;font-size:10px;">&#x21BA; Reboot</button>
-                  <button class="btn-red" onclick="showShutdownModal()"
-                    style="min-height:26px;padding:2px 8px;font-size:10px;">&#x23FB; Off</button>
-                </div>
-              </div>
+            <div class="widget-card" data-widget="logs" onclick="switchView('system');scrollToSys('sys-logs')">
+              <div class="wc-header"><span class="wc-label">LOGS</span><span class="wc-icon">&#x2261;</span></div>
+              <div class="wc-body" id="wt-logs-preview">--</div>
             </div>
-          </div>
-        </div>
-
-        <div class="home-widgets" id="home-widgets">
-          <div class="widget-tile chart-tile">
-            <div class="wt-content" style="width:100%;">
-              <div class="chart-header">
-                <span class="chart-label">Ultimi 15 min</span>
-                <div class="chart-legend">
-                  <span>
-                    <div class="dot-cpu"></div> <span style="color:var(--text2)">CPU%</span>
-                  </span>
-                  <span>
-                    <div class="dot-temp"></div> <span style="color:var(--text2)">Temp</span>
-                  </span>
-                </div>
-              </div>
-              <canvas id="pi-chart"></canvas>
+            <div class="widget-card" data-widget="cron" onclick="switchView('system');scrollToSys('sys-cron')">
+              <div class="wc-header"><span class="wc-label">JOBS</span><span class="wc-icon">&#x25C7;</span></div>
+              <div class="wc-body" id="wt-cron-preview">--</div>
             </div>
-          </div>
-          <div class="widget-tile" data-widget="briefing" onclick="openDrawer('briefing')">
-            <div class="wt-icon">&#x25A4;</div>
-            <div class="wt-content">
-              <div class="wt-label">Briefing</div>
-              <div class="wt-preview" id="wt-briefing-preview">--</div>
-            </div>
-          </div>
-          <div class="widget-tile" data-widget="tokens" onclick="openDrawer('tokens')">
-            <div class="wt-icon">&#x00A4;</div>
-            <div class="wt-content">
-              <div class="wt-label">Token</div>
-              <div class="wt-preview" id="wt-tokens-preview">--</div>
-            </div>
-          </div>
-          <div class="widget-tile" data-widget="logs" onclick="openDrawer('logs')">
-            <div class="wt-icon">&#x2261;</div>
-            <div class="wt-content">
-              <div class="wt-label">Log</div>
-              <div class="wt-preview" id="wt-logs-preview">--</div>
-            </div>
-          </div>
-          <div class="widget-tile" data-widget="cron" onclick="openDrawer('cron')">
-            <div class="wt-icon">&#x25C7;</div>
-            <div class="wt-content">
-              <div class="wt-label">Cron</div>
-              <div class="wt-preview" id="wt-cron-preview">--</div>
-            </div>
-          </div>
-          <div class="widget-tile" data-widget="claude" onclick="openDrawer('claude')">
-            <div class="wt-icon">&gt;_</div>
-            <div class="wt-content">
-              <div class="wt-label">Code</div>
-              <div class="wt-preview" id="wt-code-preview">--</div>
-            </div>
-          </div>
-          <div class="widget-tile" data-widget="tmux" onclick="openDrawer('tmux')">
-            <div class="wt-icon">&#x25CF;</div>
-            <div class="wt-content">
-              <div class="wt-label">Tmux</div>
-              <div class="wt-preview" id="wt-tmux-preview">--</div>
-            </div>
-          </div>
-          <div class="widget-tile" data-widget="memoria" onclick="openDrawer('memoria')">
-            <div class="wt-icon">&#x25CE;</div>
-            <div class="wt-content">
-              <div class="wt-label">Memoria</div>
-              <div class="wt-preview" id="wt-mem-preview">--</div>
-            </div>
-          </div>
-        </div>
-
-        </div><!-- /.home-scroll -->
-        <div class="home-input-area">
-          <div class="home-input-row" id="home-input-row">
-            <textarea id="chat-input" placeholder="scrivi qui…" rows="1"
-              autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-            <div class="provider-dropdown" id="provider-dropdown">
-              <button class="provider-btn" id="provider-trigger" onclick="toggleProviderMenu()" type="button">
-                <span class="provider-dot dot-local" id="provider-dot"></span>
-                <span id="provider-short">Local</span>
-                <span class="provider-arrow">&#x25BE;</span>
-              </button>
-              <div class="provider-menu" id="provider-menu">
-                <button type="button" onclick="switchProvider('cloud')"><span class="dot dot-cloud"></span>
-                  Haiku</button>
-                <button type="button" onclick="switchProvider('local')"><span class="dot dot-local"></span> Local
-                  (Gemma)</button>
-                <button type="button" onclick="switchProvider('pc_coder')"><span class="dot dot-pc-coder"></span> PC
-                  Coder</button>
-                <button type="button" onclick="switchProvider('pc_deep')"><span class="dot dot-pc-deep"></span> PC
-                  Deep</button>
-                <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> Deep
-                  (DeepSeek)</button>
-              </div>
-            </div>
-            <button class="btn-green" id="chat-send" onclick="sendChat()">Invia &#x21B5;</button>
           </div>
         </div>
       </div>
 
-      <!-- ═══ CHAT VIEW (nascosto, attivato su invio messaggio) ═══ -->
-      <div id="chat-view" class="chat-view">
-        <div class="chat-compact-header">
-          <button class="back-home-btn" onclick="goHome()" type="button">&#x2190; Home</button>
-          <span class="chat-compact-title">VESSEL</span>
+      <!-- ═══ TAB: CODE ═══ -->
+      <div id="tab-code" class="tab-view">
+        <div class="code-header">
+          <div class="code-tabs">
+            <button class="code-tab active" onclick="switchCodePanel('chat', this)">Chat</button>
+            <button class="code-tab" onclick="switchCodePanel('task', this)">Task</button>
+          </div>
+          <span class="code-spacer"></span>
           <div id="chat-health-dot" class="health-dot" title="Salute Pi"></div>
-          <span class="chat-compact-temp" id="chat-temp">--</span>
-          <span class="chat-compact-spacer"></span>
-          <span id="chat-clock" class="home-clock">--:--:--</span>
-          <div id="chat-conn-dot" class="conn-dot-mini" title="WebSocket"></div>
-          <button class="btn-ghost memory-toggle" id="memory-toggle" onclick="toggleMemory()" title="Memoria persistente"
-            style="padding:3px 6px;min-height:28px;margin-left:4px;opacity:0.4;">&#x1F9E0;</button>
-          <button class="btn-ghost" onclick="clearChat()"
-            style="padding:3px 6px;min-height:28px;margin-left:4px;">&#x1F5D1;</button>
+          <span id="chat-temp" class="code-temp">--</span>
+          <span id="chat-clock" class="code-clock">--:--:--</span>
         </div>
-        <div id="chat-messages">
-          <div class="msg msg-bot">Eyyy, sono Vessel &#x1F408; — dimmi cosa vuoi, psychoSocial.</div>
+
+        <!-- Chat panel -->
+        <div id="code-chat" class="code-panel active">
+          <div id="chat-messages">
+            <div class="msg msg-bot">Eyyy, sono Vessel &#x1F408; &mdash; dimmi cosa vuoi, psychoSocial.</div>
+          </div>
+          <div class="code-input-area">
+            <div class="code-input-row">
+              <textarea id="chat-input" placeholder="scrivi qui&hellip;" rows="1"
+                autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+              <div class="provider-dropdown" id="provider-dropdown">
+                <button class="provider-btn" id="provider-trigger" onclick="toggleProviderMenu()" type="button">
+                  <span class="provider-dot dot-local" id="provider-dot"></span>
+                  <span id="provider-short">Local</span>
+                  <span class="provider-arrow">&#x25BE;</span>
+                </button>
+                <div class="provider-menu" id="provider-menu">
+                  <button type="button" onclick="switchProvider('cloud')"><span class="dot dot-cloud"></span> Haiku</button>
+                  <button type="button" onclick="switchProvider('local')"><span class="dot dot-local"></span> Local (Gemma)</button>
+                  <button type="button" onclick="switchProvider('pc_coder')"><span class="dot dot-pc-coder"></span> PC Coder</button>
+                  <button type="button" onclick="switchProvider('pc_deep')"><span class="dot dot-pc-deep"></span> PC Deep</button>
+                  <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> Deep (DeepSeek)</button>
+                </div>
+              </div>
+              <button class="btn-send" id="chat-send" onclick="sendChat()">&#x21B5;</button>
+            </div>
+            <div class="code-input-meta">
+              <button class="btn-icon" id="memory-toggle" onclick="toggleMemory()" title="Memoria persistente" style="opacity:0.4;">&#x1F9E0;</button>
+              <button class="btn-icon" onclick="clearChat()" title="Pulisci chat">&#x1F5D1;</button>
+            </div>
+          </div>
         </div>
-        <div class="chat-input-area">
-          <div class="chat-input-row-v2" id="chat-input-row-v2">
+
+        <!-- Task panel -->
+        <div id="code-task" class="code-panel">
+          <div class="task-scroll">
+            <div id="claude-body">
+              <div class="widget-placeholder"><span class="ph-icon">&gt;_</span><span>Carica per verificare lo stato del bridge</span></div>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- ─── Drawer (side panel on desktop, bottom sheet on mobile) ─── -->
-      <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()">
-        <div class="drawer" onclick="event.stopPropagation()">
-          <div class="drawer-handle"></div>
-          <div class="drawer-header">
-            <span class="card-title" id="drawer-title"></span>
-            <div style="display:flex;gap:6px;align-items:center;" id="drawer-actions"></div>
+      <!-- ═══ TAB: SYSTEM ═══ -->
+      <div id="tab-system" class="tab-view">
+        <div class="tab-scroll">
+          <div class="sys-header">
+            <span class="sys-title">SYSTEM</span>
+            <span id="version-badge" class="version-badge">&mdash;</span>
           </div>
-          <div class="drawer-body">
-            <div class="drawer-widget" id="dw-briefing">
-              <div id="briefing-body">
-                <div class="widget-placeholder"><span class="ph-icon">&#x25A4;</span><span>Premi Carica per vedere
-                    l'ultimo briefing</span></div>
-              </div>
+
+          <!-- Tmux -->
+          <div class="sys-section" id="sys-tmux">
+            <div class="sys-section-head">
+              <span class="sys-section-title">SESSIONI TMUX</span>
+              <button class="btn-ghost btn-sm" onclick="gatewayRestart()">&#x21BA; Gateway</button>
             </div>
-            <div class="drawer-widget" id="dw-crypto">
-              <div id="crypto-body">
-                <div class="widget-placeholder"><span class="ph-icon">&#x20BF;</span><span>Premi Carica per vedere
-                    BTC/ETH</span></div>
-              </div>
+            <div class="session-list" id="session-list">
+              <div class="no-items">Caricamento&hellip;</div>
             </div>
-            <div class="drawer-widget" id="dw-tokens">
-              <div id="tokens-body">
-                <div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Premi Carica per vedere i
-                    dati token di oggi</span></div>
-              </div>
+          </div>
+
+          <!-- Logs -->
+          <div class="sys-section" id="sys-logs">
+            <div class="sys-section-head">
+              <span class="sys-section-title">LOG</span>
+              <button class="btn-ghost btn-sm" onclick="loadLogs()">&#x21BB; Carica</button>
             </div>
-            <div class="drawer-widget" id="dw-logs">
-              <div id="logs-body">
-                <div class="widget-placeholder"><span class="ph-icon">&#x2261;</span><span>Premi Carica per vedere i log
-                    recenti</span></div>
-              </div>
+            <div id="logs-body">
+              <div class="widget-placeholder"><span class="ph-icon">&#x2261;</span><span>Premi Carica per i log</span></div>
             </div>
-            <div class="drawer-widget" id="dw-cron">
-              <div id="cron-body">
-                <div class="widget-placeholder"><span class="ph-icon">&#x25C7;</span><span>Premi Carica per vedere i
-                    cron job</span></div>
-              </div>
+          </div>
+
+          <!-- Cron -->
+          <div class="sys-section" id="sys-cron">
+            <div class="sys-section-head">
+              <span class="sys-section-title">CRON JOBS</span>
+              <button class="btn-ghost btn-sm" onclick="loadCron()">&#x21BB; Carica</button>
             </div>
-            <div class="drawer-widget" id="dw-claude">
-              <div id="claude-body">
-                <div class="widget-placeholder"><span class="ph-icon">&gt;_</span><span>Premi Carica per verificare lo
-                    stato del bridge</span></div>
-              </div>
+            <div id="cron-body">
+              <div class="widget-placeholder"><span class="ph-icon">&#x25C7;</span><span>Premi Carica per i cron</span></div>
             </div>
-            <div class="drawer-widget" id="dw-tmux">
-              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-                <span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Sessioni attive</span>
-                <button class="btn-green" onclick="gatewayRestart()" style="min-height:28px;padding:3px 10px;font-size:10px;">&#x21BA; Gateway</button>
-              </div>
-              <div class="session-list" id="drawer-session-list">
-                <div class="no-items">Caricamento…</div>
-              </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="sys-actions">
+            <button class="btn-ghost" onclick="requestStats()">&#x21BB; Refresh</button>
+            <button class="btn-red" onclick="showRebootModal()">&#x21BA; Reboot</button>
+            <button class="btn-red" onclick="showShutdownModal()">&#x23FB; Off</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ TAB: PROFILE ═══ -->
+      <div id="tab-profile" class="tab-view">
+        <div class="tab-scroll">
+          <div class="prof-header">
+            <span class="prof-title">PROFILE</span>
+            <button class="btn-ghost btn-sm" onclick="showHelpModal()">? Help</button>
+          </div>
+
+          <!-- Pi info -->
+          <div class="prof-section">
+            <div class="prof-section-title">RASPBERRY PI</div>
+            <div class="prof-grid">
+              <div class="prof-item"><span class="prof-label">Hostname</span><span class="prof-value">picoclaw.local</span></div>
+              <div class="prof-item"><span class="prof-label">Uptime</span><span class="prof-value" id="hc-uptime-val">--</span></div>
+              <div class="prof-item"><span class="prof-label">Sessions</span><span class="prof-value" id="hc-sessions-sub">--</span></div>
             </div>
-            <div class="drawer-widget" id="dw-memoria">
-              <div class="tab-row">
-                <button class="tab active" onclick="switchTab('memory', this)">MEMORY.md</button>
-                <button class="tab" onclick="switchTab('history', this)">HISTORY.md</button>
-                <button class="tab" onclick="switchTab('quickref', this)">Quick Ref</button>
-                <button class="tab" onclick="switchTab('search', this)">Cerca</button>
-                <button class="tab" onclick="switchTab('grafo', this)">Grafo</button>
+          </div>
+
+          <!-- Providers -->
+          <div class="prof-section">
+            <div class="prof-section-title">PROVIDER</div>
+            <div class="prof-providers">
+              <div class="prof-prov"><span class="dot dot-cloud"></span><span class="prof-prov-name">Haiku</span><span class="prof-prov-info">Claude &mdash; cloud</span></div>
+              <div class="prof-prov"><span class="dot dot-local"></span><span class="prof-prov-name">Local</span><span class="prof-prov-info">Gemma 3 4B &mdash; Pi</span></div>
+              <div class="prof-prov"><span class="dot dot-pc-coder"></span><span class="prof-prov-name">PC Coder</span><span class="prof-prov-info">Qwen 14B &mdash; LAN</span></div>
+              <div class="prof-prov"><span class="dot dot-pc-deep"></span><span class="prof-prov-name">PC Deep</span><span class="prof-prov-info">Qwen 30B &mdash; LAN</span></div>
+              <div class="prof-prov"><span class="dot dot-deepseek"></span><span class="prof-prov-name">Deep</span><span class="prof-prov-info">DeepSeek V3 &mdash; cloud</span></div>
+            </div>
+          </div>
+
+          <!-- Crypto + Meteo -->
+          <div class="prof-section">
+            <div class="prof-section-title">MERCATI &amp; METEO</div>
+            <div class="prof-market">
+              <span style="color:var(--amber);">&#x20BF; <span id="home-btc-price">--</span></span>
+              <span style="color:var(--cyan);">&#x039E; <span id="home-eth-price">--</span></span>
+              <span style="color:var(--text2);">&#x1F324; <span id="home-weather-text">--</span></span>
+            </div>
+          </div>
+
+          <!-- Memoria -->
+          <div class="prof-section prof-section-mem">
+            <div class="prof-section-title">MEMORIA</div>
+            <div class="tab-row">
+              <button class="tab active" onclick="switchMemTab('memory', this)">MEMORY</button>
+              <button class="tab" onclick="switchMemTab('history', this)">HISTORY</button>
+              <button class="tab" onclick="switchMemTab('quickref', this)">REF</button>
+              <button class="tab" onclick="switchMemTab('search', this)">CERCA</button>
+              <button class="tab" onclick="switchMemTab('grafo', this)">GRAFO</button>
+            </div>
+            <div class="mem-panels">
+              <div id="tab-memory" class="tab-content active">
+                <div class="mono-block" id="memory-content">Caricamento&hellip;</div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshMemory()">&#x21BB;</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('memory-content').textContent)">&#x1F4CB;</button></div>
               </div>
-              <div class="mem-content">
-                <div id="tab-memory" class="tab-content active">
-                  <div class="mono-block" id="memory-content">Caricamento…</div>
-                  <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost"
-                      onclick="refreshMemory()">&#x21BB; Aggiorna</button><button class="btn-ghost"
-                      onclick="copyToClipboard(document.getElementById('memory-content').textContent)">&#x25A4;
-                      Copia</button></div>
+              <div id="tab-history" class="tab-content">
+                <div class="mono-block" id="history-content">Premi Carica&hellip;</div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshHistory()">&#x21BB; Carica</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('history-content').textContent)">&#x1F4CB;</button></div>
+              </div>
+              <div id="tab-quickref" class="tab-content">
+                <div class="mono-block" id="quickref-content">Caricamento&hellip;</div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">&#x1F4CB;</button></div>
+              </div>
+              <div id="tab-search" class="tab-content">
+                <div class="search-row">
+                  <input type="text" id="mem-search-keyword" placeholder="keyword&hellip;" class="input-field">
+                  <input type="date" id="mem-search-date" class="input-field input-date">
+                  <button class="btn-green btn-sm" onclick="searchMemory()">Cerca</button>
                 </div>
-                <div id="tab-history" class="tab-content">
-                  <div class="mono-block" id="history-content">Premi Carica…</div>
-                  <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost"
-                      onclick="refreshHistory()">&#x21BB; Carica</button><button class="btn-ghost"
-                      onclick="copyToClipboard(document.getElementById('history-content').textContent)">&#x25A4;
-                      Copia</button></div>
-                </div>
-                <div id="tab-quickref" class="tab-content">
-                  <div class="mono-block" id="quickref-content">Caricamento…</div>
-                  <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost"
-                      onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">&#x25A4;
-                      Copia</button></div>
-                </div>
-                <div id="tab-search" class="tab-content">
-                  <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;">
-                    <input type="text" id="mem-search-keyword" placeholder="keyword…"
-                      style="flex:1;min-width:120px;background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--green);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;">
-                    <input type="date" id="mem-search-date"
-                      style="background:var(--bg2);border:1px solid var(--border2);border-radius:4px;color:var(--amber);padding:5px 8px;font-family:var(--font);font-size:11px;outline:none;min-height:32px;">
-                    <button class="btn-green" onclick="searchMemory()" style="min-height:32px;">Cerca</button>
-                  </div>
-                  <div class="mono-block" id="search-results" style="max-height:300px;">Inserisci una keyword per cercare nella chat history</div>
-                </div>
-                <div id="tab-grafo" class="tab-content">
-                  <div id="grafo-body">
-                    <div class="widget-placeholder"><span class="ph-icon">&#x25CE;</span><span>Premi Carica per vedere il Knowledge Graph</span></div>
-                  </div>
+                <div class="mono-block" id="search-results">Inserisci una keyword</div>
+              </div>
+              <div id="tab-grafo" class="tab-content">
+                <div id="grafo-body">
+                  <div class="widget-placeholder"><span class="ph-icon">&#x25CE;</span><span>Knowledge Graph</span></div>
                 </div>
               </div>
             </div>
           </div>
         </div>
       </div>
+
     </div><!-- /app-content -->
 
+    <!-- ═══ BOTTOM NAV ═══ -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-tab="dashboard" onclick="switchView('dashboard')">
+        <span class="nav-icon">&#x229E;</span><span class="nav-label">Dashboard</span>
+      </button>
+      <button class="nav-item" data-tab="code" onclick="switchView('code')">
+        <span class="nav-icon">&gt;_</span><span class="nav-label">Code</span>
+      </button>
+      <button class="nav-item" data-tab="system" onclick="switchView('system')">
+        <span class="nav-icon">&#x2699;</span><span class="nav-label">System</span>
+      </button>
+      <button class="nav-item" data-tab="profile" onclick="switchView('profile')">
+        <span class="nav-icon">&#x25C9;</span><span class="nav-label">Profile</span>
+      </button>
+    </nav>
 
   </div><!-- /app-layout -->
 
-  <!-- Modale conferma reboot -->
+  <!-- ─── Drawer (bottom sheet per Briefing/Token/Crypto) ─── -->
+  <div class="drawer-overlay" id="drawer-overlay" onclick="closeDrawer()">
+    <div class="drawer" onclick="event.stopPropagation()">
+      <div class="drawer-handle"></div>
+      <div class="drawer-header">
+        <span class="drawer-title" id="drawer-title"></span>
+        <div class="drawer-actions" id="drawer-actions"></div>
+      </div>
+      <div class="drawer-body">
+        <div class="drawer-widget" id="dw-briefing">
+          <div id="briefing-body"><div class="widget-placeholder"><span class="ph-icon">&#x25A4;</span><span>Premi Carica per il briefing</span></div></div>
+        </div>
+        <div class="drawer-widget" id="dw-tokens">
+          <div id="tokens-body"><div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Premi Carica per i token</span></div></div>
+        </div>
+        <div class="drawer-widget" id="dw-crypto">
+          <div id="crypto-body"><div class="widget-placeholder"><span class="ph-icon">&#x20BF;</span><span>Premi Carica per crypto</span></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale reboot -->
   <div class="modal-overlay" id="reboot-modal">
     <div class="modal-box">
-      <div class="modal-title">⏻ Reboot Raspberry Pi</div>
-      <div class="modal-text">Sei sicuro? Il Pi si riavvierà e la dashboard sarà offline per circa 30-60 secondi.</div>
+      <div class="modal-title">&#x23FB; Reboot Raspberry Pi</div>
+      <div class="modal-text">Sei sicuro? Il Pi si riavvier&agrave; e la dashboard sar&agrave; offline per circa 30-60 secondi.</div>
       <div class="modal-btns">
         <button class="btn-ghost" onclick="hideRebootModal()">Annulla</button>
-        <button class="btn-red" onclick="confirmReboot()">Conferma Reboot</button>
+        <button class="btn-red" onclick="confirmReboot()">Conferma</button>
       </div>
     </div>
   </div>
 
-  <!-- Modale conferma shutdown -->
+  <!-- Modale shutdown -->
   <div class="modal-overlay" id="shutdown-modal">
     <div class="modal-box">
-      <div class="modal-title">&#x23FB; Spegnimento Raspberry Pi</div>
-      <div class="modal-text">Sei sicuro? Il Pi si spegnerà completamente. Per riaccenderlo dovrai staccare e
-        riattaccare l'alimentazione.</div>
+      <div class="modal-title">&#x23FB; Spegnimento</div>
+      <div class="modal-text">Sei sicuro? Il Pi si spegner&agrave; completamente.</div>
       <div class="modal-btns">
         <button class="btn-ghost" onclick="hideShutdownModal()">Annulla</button>
-        <button class="btn-red" onclick="confirmShutdown()">Conferma Spegnimento</button>
+        <button class="btn-red" onclick="confirmShutdown()">Conferma</button>
       </div>
     </div>
   </div>
 
-  <!-- Overlay durante reboot -->
+  <!-- Overlay reboot -->
   <div class="reboot-overlay" id="reboot-overlay">
     <div class="reboot-spinner"></div>
-    <div class="reboot-text">Riavvio in corso…</div>
+    <div class="reboot-text">Riavvio in corso&hellip;</div>
     <div class="reboot-status" id="reboot-status">In attesa che il Pi torni online</div>
   </div>
 
   <!-- Overlay output fullscreen -->
   <div class="modal-overlay" id="output-fullscreen" onclick="closeOutputFullscreen()">
-    <div class="modal-box" onclick="event.stopPropagation()"
-      style="max-width:90%;width:900px;max-height:90vh;text-align:left;padding:16px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Output Remote
-          Code</span>
+    <div class="modal-box modal-wide" onclick="event.stopPropagation()">
+      <div class="modal-wide-header">
+        <span>OUTPUT</span>
         <div style="display:flex;gap:6px;">
-          <button class="btn-ghost" style="min-height:28px;"
-            onclick="copyToClipboard(document.getElementById('output-fs-content').textContent)">📋 Copia tutto</button>
-          <button class="btn-ghost" style="min-height:28px;" onclick="closeOutputFullscreen()">✕ Chiudi</button>
+          <button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('output-fs-content').textContent)">&#x1F4CB; Copia</button>
+          <button class="btn-ghost btn-sm" onclick="closeOutputFullscreen()">&#x2715; Chiudi</button>
         </div>
       </div>
       <div id="output-fs-content" class="output-fs-content"></div>
     </div>
   </div>
 
-  <!-- Modal Help -->
+  <!-- Help modal -->
   <div class="modal-overlay" id="help-modal" onclick="closeHelpModal()">
     <div class="help-modal-box" onclick="event.stopPropagation()">
       <div class="help-modal-header">
-        <span>// GUIDA RAPIDA VESSEL</span>
-        <button class="btn-ghost" style="min-height:28px;padding:2px 10px;" onclick="closeHelpModal()">✕</button>
+        <span>// GUIDA VESSEL</span>
+        <button class="btn-ghost btn-sm" onclick="closeHelpModal()">&#x2715;</button>
       </div>
       <div class="help-modal-body">
-
         <div class="help-section">
-          <div class="help-section-title">WIDGET CODE — ROUTING AUTOMATICO</div>
+          <div class="help-section-title">WIDGET CODE &mdash; ROUTING</div>
           <div class="help-table">
-            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">ANALIZZA</span><span class="help-kw">analizza · spiega · mostra · log · verifica · leggi · elenca</span><span class="help-mode">one-shot</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#00ff41;border-color:#00ff41;">CREA</span><span class="help-kw">crea · genera · scrivi · costruisci · implementa · progetta</span><span class="help-mode">one-shot</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">MODIFICA</span><span class="help-kw">modifica · aggiorna · cambia · refactor · aggiungi · rimuovi</span><span class="help-mode loop">⟳ loop</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#ff5555;border-color:#ff5555;">DEBUG</span><span class="help-kw">debug · errore · crash · fix · correggi · risolvi · problema</span><span class="help-mode loop">⟳ loop</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">DEPLOY</span><span class="help-kw">deploy · installa · avvia · configura · setup · pubblica</span><span class="help-mode loop">⟳ loop</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">ANALIZZA</span><span class="help-kw">analizza &middot; spiega &middot; mostra &middot; log</span><span class="help-mode">one-shot</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#00ff41;border-color:#00ff41;">CREA</span><span class="help-kw">crea &middot; genera &middot; scrivi &middot; implementa</span><span class="help-mode">one-shot</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">MODIFICA</span><span class="help-kw">modifica &middot; aggiorna &middot; cambia &middot; refactor</span><span class="help-mode loop">&#x27F3; loop</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#ff5555;border-color:#ff5555;">DEBUG</span><span class="help-kw">debug &middot; errore &middot; fix &middot; correggi</span><span class="help-mode loop">&#x27F3; loop</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">DEPLOY</span><span class="help-kw">deploy &middot; installa &middot; avvia &middot; setup</span><span class="help-mode loop">&#x27F3; loop</span></div>
           </div>
-          <div class="help-note">Ralph Loop: max 3 iter · 12 min · supervisore Ollama valuta + error_type</div>
         </div>
-
         <div class="help-section">
           <div class="help-section-title">PROVIDER CHAT</div>
           <div class="help-table">
-            <div class="help-row"><span class="help-badge" style="color:#00ff41;border-color:#00ff41;">Haiku</span><span class="help-kw">Claude Haiku — cloud Anthropic, veloce, a pagamento</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#888;border-color:#888;">Local</span><span class="help-kw">Gemma 3 4B sul Pi — lento (~3.85 tok/s), sempre gratis</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">PC Coder</span><span class="help-kw">Qwen2.5-Coder 14B su LAN — GPU RTX 3060, ottimo per codice</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">PC Deep</span><span class="help-kw">DeepSeek-R1 8B su LAN — ragionamento, gratis</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">Deep</span><span class="help-kw">DeepSeek V3 via OpenRouter — cloud, economico</span></div>
-          </div>
-          <div class="help-note">PC Coder/Deep richiedono PC acceso e Ollama avviato (LAN 192.168.178.34)</div>
-        </div>
-
-        <div class="help-section">
-          <div class="help-section-title">TEMPLATE WIDGET CODE</div>
-          <div class="help-table">
-            <div class="help-row"><span class="help-label">Build + Deploy</span><span class="help-kw">build.py → SCP → tmux restart</span></div>
-            <div class="help-row"><span class="help-label">Fix bug</span><span class="help-kw">incolla errore + "correggi il codice in src/"</span></div>
-            <div class="help-row"><span class="help-label">Git status</span><span class="help-kw">mostra stato repo senza commit</span></div>
-            <div class="help-row"><span class="help-label">Test dashboard</span><span class="help-kw">curl picoclaw.local:8090 + verifica risposta</span></div>
-            <div class="help-row"><span class="help-label">Log Pi</span><span class="help-kw">SSH → tail -50 ~/.nanobot/gateway.log</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#00ff41;border-color:#00ff41;">Haiku</span><span class="help-kw">Claude &mdash; cloud, veloce</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#888;border-color:#888;">Local</span><span class="help-kw">Gemma 3 4B &mdash; Pi, lento</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">PC Coder</span><span class="help-kw">Qwen 14B &mdash; GPU LAN</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">PC Deep</span><span class="help-kw">Qwen 30B &mdash; LAN</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">Deep</span><span class="help-kw">DeepSeek V3 &mdash; cloud</span></div>
           </div>
         </div>
-
-        <div class="help-section">
-          <div class="help-section-title">TELEGRAM</div>
-          <div class="help-table">
-            <div class="help-row"><span class="help-label">/voice &lt;msg&gt;</span><span class="help-kw">risposta testo + audio vocale (stile parlato)</span></div>
-            <div class="help-row"><span class="help-label">@coder &lt;msg&gt;</span><span class="help-kw">forza provider PC Coder (Qwen)</span></div>
-            <div class="help-row"><span class="help-label">@deep &lt;msg&gt;</span><span class="help-kw">forza provider PC Deep (DeepSeek-R1)</span></div>
-            <div class="help-row"><span class="help-label">@pc &lt;msg&gt;</span><span class="help-kw">alias @coder</span></div>
-            <div class="help-row"><span class="help-label">@status</span><span class="help-kw">stato sistema Pi (temp, RAM, uptime)</span></div>
-            <div class="help-row"><span class="help-label">vocale</span><span class="help-kw">STT Groq Whisper → LLM → risposta vocale (max 3 min)</span></div>
-          </div>
-        </div>
-
         <div class="help-section">
           <div class="help-section-title">INFRASTRUTTURA</div>
           <div class="help-table">
-            <div class="help-row"><span class="help-label">Dashboard live</span><span class="help-kw">picoclaw.local:8090 · tmux: nanobot-dashboard</span></div>
-            <div class="help-row"><span class="help-label">Dashboard test</span><span class="help-kw">porta 8091 (staging nanobot_dashboard_v2.py)</span></div>
-            <div class="help-row"><span class="help-label">Bridge Windows</span><span class="help-kw">porta 8095 · avvio auto da shell:startup</span></div>
-            <div class="help-row"><span class="help-label">Accesso remoto</span><span class="help-kw">Cloudflare Tunnel (configurato a OS level)</span></div>
-            <div class="help-row"><span class="help-label">DB</span><span class="help-kw">~/.nanobot/vessel.db · backup domenica 04:00</span></div>
-            <div class="help-row"><span class="help-label">Cron briefing</span><span class="help-kw">07:00 mattina · 22:00 buonanotte</span></div>
+            <div class="help-row"><span class="help-label">Dashboard</span><span class="help-kw">picoclaw.local:8090</span></div>
+            <div class="help-row"><span class="help-label">Bridge</span><span class="help-kw">porta 8095 &middot; auto-start</span></div>
+            <div class="help-row"><span class="help-label">Remoto</span><span class="help-kw">Cloudflare Tunnel</span></div>
+            <div class="help-row"><span class="help-label">DB</span><span class="help-kw">~/.nanobot/vessel.db</span></div>
           </div>
         </div>
-
       </div>
     </div>
   </div>
