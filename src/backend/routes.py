@@ -197,6 +197,21 @@ async def stats_broadcaster():
                 }
             })
 
+# ─── Tamagotchi ESP32 ─────────────────────────────────────────────────────────
+_tamagotchi_connections: set = set()
+_tamagotchi_state: str = "IDLE"
+
+async def broadcast_tamagotchi(state: str):
+    global _tamagotchi_state
+    _tamagotchi_state = state
+    dead = set()
+    for ws in _tamagotchi_connections.copy():
+        try:
+            await ws.send_json({"state": state})
+        except Exception:
+            dead.add(ws)
+    _tamagotchi_connections.difference_update(dead)
+
 # ─── WebSocket ────────────────────────────────────────────────────────────────
 # ─── WebSocket Dispatcher ───────────────────────────────────────────────────
 async def handle_chat(websocket, msg, ctx):
@@ -208,6 +223,7 @@ async def handle_chat(websocket, msg, ctx):
         await websocket.send_json({"type": "chat_reply", "text": "⚠️ Troppi messaggi. Attendi un momento."})
         return
     await websocket.send_json({"type": "chat_thinking"})
+    await broadcast_tamagotchi("THINKING")
     mem = ctx.get("_memory_enabled", False)
     if provider == "local":
         await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, memory_enabled=mem)
@@ -220,6 +236,7 @@ async def handle_chat(websocket, msg, ctx):
     else:
         raw_model = _get_config("config.json").get("agents", {}).get("defaults", {}).get("model", "claude-haiku-4-5-20251001")
         await _stream_chat(websocket, text, ctx["cloud"], "anthropic", _get_config("config.json").get("system_prompt", OLLAMA_SYSTEM), _resolve_model(raw_model), memory_enabled=mem)
+    await broadcast_tamagotchi("IDLE")
 
 async def handle_clear_chat(websocket, msg, ctx):
     for history in ctx.values():
@@ -353,7 +370,9 @@ async def handle_claude_task(websocket, msg, ctx):
         return
     db_log_audit("claude_task", actor=ip, resource=prompt[:100])
     await websocket.send_json({"type": "claude_thinking"})
+    await broadcast_tamagotchi("THINKING")
     await run_claude_task_stream(websocket, prompt, use_loop=use_loop)
+    await broadcast_tamagotchi("IDLE")
 
 async def handle_claude_cancel(websocket, msg, ctx):
     try:
@@ -499,6 +518,25 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+@app.websocket("/ws/tamagotchi")
+async def tamagotchi_ws(websocket: WebSocket):
+    await websocket.accept()
+    _tamagotchi_connections.add(websocket)
+    print(f"[Tamagotchi] ESP32 connesso da {websocket.client.host}")
+    try:
+        await websocket.send_json({"state": _tamagotchi_state})
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
+                # ping/keepalive dall'ESP32 — ignoriamo il contenuto
+            except asyncio.TimeoutError:
+                await websocket.send_json({"ping": True})
+    except WebSocketDisconnect:
+        _tamagotchi_connections.discard(websocket)
+        print("[Tamagotchi] ESP32 disconnesso")
+    except Exception:
+        _tamagotchi_connections.discard(websocket)
+
 # ─── HTML ─────────────────────────────────────────────────────────────────────
 VESSEL_ICON = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxAAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k="
 
@@ -540,6 +578,24 @@ async def auth_login(request: Request):
     resp.set_cookie("vessel_session", token, max_age=SESSION_TIMEOUT,
                     httponly=True, samesite="lax", secure=is_secure)
     return resp
+
+@app.post("/api/tamagotchi/state")
+async def set_tamagotchi_state(request: Request):
+    """Aggiorna lo stato del tamagotchi ESP32. Chiamabile da cron/script locali."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "JSON non valido"}, status_code=400)
+    state = data.get("state", "")
+    valid_states = {"IDLE", "THINKING", "SLEEPING", "ERROR", "BOOTING"}
+    if state not in valid_states:
+        return JSONResponse({"ok": False, "error": f"Stato non valido. Validi: {valid_states}"}, status_code=400)
+    await broadcast_tamagotchi(state)
+    return {"ok": True, "state": state, "clients": len(_tamagotchi_connections)}
+
+@app.get("/api/tamagotchi/state")
+async def get_tamagotchi_state():
+    return {"state": _tamagotchi_state, "clients": len(_tamagotchi_connections)}
 
 @app.get("/api/health")
 async def api_health():
