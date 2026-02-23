@@ -2985,6 +2985,94 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+async def _handle_tamagotchi_cmd(ws: WebSocket, cmd: str, req_id: int):
+    """Gestisce un comando inviato dall'ESP32 e risponde."""
+    try:
+        if cmd == "get_stats":
+            pi = await get_pi_stats()
+            await ws.send_json({"resp": "get_stats", "req_id": req_id, "ok": True, "data": {
+                "cpu": pi["cpu"], "mem": pi["mem"], "temp": pi["temp"],
+                "disk": pi["disk"], "uptime": pi["uptime"]}})
+
+        elif cmd == "gateway_restart":
+            subprocess.run(["tmux", "kill-session", "-t", "nanobot-gateway"],
+                           capture_output=True, text=True, timeout=10)
+            await asyncio.sleep(1)
+            subprocess.run(["tmux", "new-session", "-d", "-s", "nanobot-gateway", "nanobot", "gateway"],
+                           capture_output=True, text=True, timeout=10)
+            await ws.send_json({"resp": "gateway_restart", "req_id": req_id, "ok": True,
+                                "data": {"msg": "Gateway riavviato"}})
+
+        elif cmd == "tmux_list":
+            sessions = await bg(get_tmux_sessions)
+            names = [s["name"] for s in sessions]
+            await ws.send_json({"resp": "tmux_list", "req_id": req_id, "ok": True,
+                                "data": {"sessions": names}})
+
+        elif cmd == "reboot":
+            db_log_audit("reboot", actor="tamagotchi_esp32")
+            await ws.send_json({"resp": "reboot", "req_id": req_id, "ok": True,
+                                "data": {"msg": "Rebooting..."}})
+            await asyncio.sleep(0.5)
+            subprocess.run(["sudo", "reboot"])
+
+        elif cmd == "shutdown":
+            db_log_audit("shutdown", actor="tamagotchi_esp32")
+            await ws.send_json({"resp": "shutdown", "req_id": req_id, "ok": True,
+                                "data": {"msg": "Shutting down..."}})
+            await asyncio.sleep(0.5)
+            subprocess.run(["sudo", "shutdown", "-h", "now"])
+
+        elif cmd == "run_briefing":
+            await bg(run_briefing)
+            await ws.send_json({"resp": "run_briefing", "req_id": req_id, "ok": True,
+                                "data": {"msg": "Briefing generato"}})
+
+        elif cmd == "check_ollama":
+            alive = await bg(check_ollama_health)
+            await ws.send_json({"resp": "check_ollama", "req_id": req_id, "ok": True,
+                                "data": {"alive": alive}})
+
+        elif cmd == "check_bridge":
+            health = await bg(check_bridge_health)
+            await ws.send_json({"resp": "check_bridge", "req_id": req_id, "ok": True,
+                                "data": health})
+
+        elif cmd == "warmup_ollama":
+            await bg(warmup_ollama)
+            await ws.send_json({"resp": "warmup_ollama", "req_id": req_id, "ok": True,
+                                "data": {"msg": "Modello precaricato"}})
+
+        elif cmd == "refresh_crypto":
+            cp = await bg(get_crypto_prices)
+            btc = cp.get("btc") or {}
+            eth = cp.get("eth") or {}
+            crypto_data = {
+                "btc": btc.get("usd"), "eth": eth.get("usd"),
+                "btc_change": btc.get("change_24h"), "eth_change": eth.get("change_24h"),
+            }
+            if btc.get("usd"):
+                await broadcast_tamagotchi_raw({
+                    "action": "crypto_update",
+                    "btc": btc["usd"], "eth": eth.get("usd", 0),
+                    "btc_change": btc.get("change_24h", 0),
+                    "eth_change": eth.get("change_24h", 0),
+                })
+            await ws.send_json({"resp": "refresh_crypto", "req_id": req_id, "ok": True,
+                                "data": crypto_data})
+
+        else:
+            await ws.send_json({"resp": cmd, "req_id": req_id, "ok": False,
+                                "data": {"msg": f"Comando sconosciuto: {cmd}"}})
+
+    except Exception as e:
+        print(f"[Tamagotchi] Errore cmd '{cmd}': {e}")
+        try:
+            await ws.send_json({"resp": cmd, "req_id": req_id, "ok": False,
+                                "data": {"msg": str(e)[:60]}})
+        except Exception:
+            pass
+
 @app.websocket("/ws/tamagotchi")
 async def tamagotchi_ws(websocket: WebSocket):
     await websocket.accept()
@@ -2995,7 +3083,17 @@ async def tamagotchi_ws(websocket: WebSocket):
         while True:
             try:
                 data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-                # ping/keepalive dall'ESP32 — ignoriamo il contenuto
+                # Prova a parsare come comando JSON dall'ESP32
+                try:
+                    msg = json.loads(data)
+                    cmd = msg.get("cmd")
+                    if cmd:
+                        req_id = msg.get("req_id", 0)
+                        await _handle_tamagotchi_cmd(websocket, cmd, req_id)
+                        continue
+                except (json.JSONDecodeError, ValueError):
+                    pass
+                # ping/keepalive — ignora
             except asyncio.TimeoutError:
                 await websocket.send_json({"ping": True})
     except WebSocketDisconnect:

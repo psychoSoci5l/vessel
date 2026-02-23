@@ -38,9 +38,49 @@ unsigned long offlineSince    = 0;
 bool          standaloneMode  = false;
 const unsigned long STANDALONE_TIMEOUT = 60000;
 
-// ─── View (FACE / STATS) — cicla col bottone LEFT ────────────────────────────
-enum ViewMode { VIEW_FACE, VIEW_STATS };
+// ─── View & Menu ────────────────────────────────────────────────────────────
+enum ViewMode { VIEW_FACE, VIEW_MENU_PI, VIEW_MENU_VESSEL, VIEW_CONFIRM, VIEW_RESULT };
 ViewMode currentView = VIEW_FACE;
+
+struct MenuItem {
+    const char* label;
+    const char* cmd;
+    bool        dangerous;
+};
+
+const MenuItem MENU_PI[] = {
+    {"View Stats",       "get_stats",       false},
+    {"Restart Gateway",  "gateway_restart", false},
+    {"Tmux Sessions",    "tmux_list",       false},
+    {"Reboot Pi",        "reboot",          true},
+    {"Shutdown Pi",      "shutdown",        true},
+};
+const int MENU_PI_COUNT = 5;
+
+const MenuItem MENU_VESSEL[] = {
+    {"Run Briefing",     "run_briefing",    false},
+    {"Check Ollama",     "check_ollama",    false},
+    {"Check Bridge",     "check_bridge",    false},
+    {"Ollama Warmup",    "warmup_ollama",   false},
+    {"Refresh Crypto",   "refresh_crypto",  false},
+};
+const int MENU_VESSEL_COUNT = 5;
+
+struct MenuState {
+    int           selectedIdx   = 0;
+    int           piIdx         = 0;    // indice persistente menu Pi
+    int           vesselIdx     = 0;    // indice persistente menu Vessel
+    ViewMode      returnView    = VIEW_MENU_PI;
+    const char*   pendingCmd    = nullptr;
+    uint16_t      nextReqId     = 1;
+    bool          waitingResp   = false;
+    unsigned long waitingSince  = 0;
+    bool          resultOk      = false;
+    String        resultLines[8];
+    int           resultLineCount = 0;
+    bool          needsRedraw   = true;
+} menu;
+const unsigned long CMD_TIMEOUT_MS = 15000;
 
 // ─── Blink State Machine ─────────────────────────────────────────────────────
 enum BlinkPhase { BLINK_NONE, BLINK_CLOSING, BLINK_CLOSED, BLINK_OPENING };
@@ -582,6 +622,155 @@ void renderInfoOverlay() {
     fb.setTextDatum(MC_DATUM);
 }
 
+// ─── Menu Rendering ─────────────────────────────────────────────────────────
+
+void renderMenu() {
+    bool isPi = (currentView == VIEW_MENU_PI);
+    const MenuItem* items = isPi ? MENU_PI : MENU_VESSEL;
+    int count = isPi ? MENU_PI_COUNT : MENU_VESSEL_COUNT;
+    const char* title = isPi ? "PI CONTROL" : "VESSEL CONTROL";
+
+    fb.fillSprite(COL_BG);
+
+    // Header
+    fb.setTextDatum(TL_DATUM);
+    fb.setTextColor(COL_GREEN);
+    fb.drawString(title, 10, 4, 2);
+
+    // Separatore header
+    fb.drawFastHLine(8, 22, 304, COL_DIM);
+
+    // Items
+    for (int i = 0; i < count && i < 6; i++) {
+        int itemY = 26 + i * 20;
+
+        if (i == menu.selectedIdx) {
+            // Item selezionato — sfondo invertito (Bruce pattern)
+            fb.fillRect(5, itemY - 1, 310, 18, COL_DIM);
+            fb.setTextColor(COL_GREEN);
+            fb.drawString(">", 8, itemY, 2);
+        } else {
+            fb.setTextColor(COL_DIM);
+            fb.drawString(" ", 8, itemY, 2);
+        }
+
+        fb.drawString(items[i].label, 22, itemY, 2);
+
+        // Marker [!] per azioni pericolose
+        if (items[i].dangerous) {
+            fb.setTextColor(COL_RED);
+            fb.drawString("[!]", 280, itemY, 2);
+        }
+
+        // Dots animati se in attesa su questo item
+        if (menu.waitingResp && i == menu.selectedIdx) {
+            int dots = (millis() / 400) % 4;
+            String dotStr = "";
+            for (int d = 0; d < dots; d++) dotStr += ".";
+            fb.setTextColor(COL_GREEN);
+            fb.drawString(dotStr, 240, itemY, 2);
+        }
+    }
+
+    // Separatore footer
+    fb.drawFastHLine(8, 146, 304, COL_DIM);
+
+    // Footer hints
+    fb.setTextColor(COL_DIM);
+    fb.setTextDatum(MC_DATUM);
+    fb.drawString("[L hold] BACK    [R hold] OK", 160, 153, 1);
+    fb.setTextDatum(TL_DATUM);
+
+    drawScanlines();
+    drawCryptoTicker();
+    fb.pushSprite(0, 0);
+}
+
+void renderConfirm() {
+    fb.fillSprite(COL_BG);
+
+    // Bordo giallo
+    fb.drawRect(15, 10, 290, 120, COL_YELLOW);
+    fb.drawRect(16, 11, 288, 118, COL_YELLOW);
+
+    // Titolo
+    fb.setTextDatum(MC_DATUM);
+    fb.setTextColor(COL_YELLOW);
+    fb.drawString("CONFIRM", 160, 30, 2);
+
+    // Testo azione
+    fb.setTextColor(COL_GREEN);
+    String action = String(menu.pendingCmd ? menu.pendingCmd : "???");
+    action.toUpperCase();
+    fb.drawString(action + " ?", 160, 60, 2);
+
+    // Warning
+    fb.setTextColor(COL_DIM);
+    fb.drawString("Azione non reversibile", 160, 90, 1);
+
+    // Footer
+    fb.setTextColor(COL_DIM);
+    fb.drawString("[L] ANNULLA    [R hold] CONFERMA", 160, 153, 1);
+    fb.setTextDatum(TL_DATUM);
+
+    drawScanlines();
+    drawCryptoTicker();
+    fb.pushSprite(0, 0);
+}
+
+void renderResult() {
+    fb.fillSprite(COL_BG);
+
+    // Header OK/ERROR
+    fb.setTextDatum(TL_DATUM);
+    fb.setTextColor(menu.resultOk ? COL_GREEN : COL_RED);
+    fb.drawString(menu.resultOk ? "OK" : "ERROR", 10, 4, 2);
+
+    // Separatore
+    fb.drawFastHLine(8, 22, 304, COL_DIM);
+
+    // Righe dati
+    fb.setTextColor(COL_DIM);
+    for (int i = 0; i < menu.resultLineCount && i < 6; i++) {
+        fb.drawString(menu.resultLines[i], 10, 28 + i * 20, 2);
+    }
+
+    // Separatore footer
+    fb.drawFastHLine(8, 146, 304, COL_DIM);
+
+    // Footer
+    fb.setTextColor(COL_DIM);
+    fb.setTextDatum(MC_DATUM);
+    fb.drawString("[press to close]", 160, 153, 1);
+    fb.setTextDatum(TL_DATUM);
+
+    drawScanlines();
+    drawCryptoTicker();
+    fb.pushSprite(0, 0);
+}
+
+// ─── Send Command via WebSocket ─────────────────────────────────────────────
+
+void sendCommand(const char* cmd) {
+    if (!wsConnected || menu.waitingResp) return;
+
+    StaticJsonDocument<128> doc;
+    doc["cmd"] = cmd;
+    doc["req_id"] = menu.nextReqId;
+
+    char buf[128];
+    serializeJson(doc, buf);
+    webSocket.sendTXT(buf);
+
+    menu.waitingResp  = true;
+    menu.waitingSince = millis();
+    menu.resultLineCount = 0;
+    menu.nextReqId++;
+    menu.needsRedraw = true;
+
+    Serial.printf("[CMD] Inviato: %s (req_id=%d)\n", cmd, menu.nextReqId - 1);
+}
+
 // ─── Blink Logic (con double blink 15%) ──────────────────────────────────────
 
 void updateBlink(unsigned long now) {
@@ -654,40 +843,146 @@ void updateButton(ButtonSM& btn, int pin, unsigned long now,
     }
 }
 
+// ─── Forward declarations per menu ──────────────────────────────────────────
+void renderMenu();
+void renderConfirm();
+void renderResult();
+void sendCommand(const char* cmd);
+
 void onLeftShort() {
-    // Cicla view FACE ↔ STATS
-    currentView = (currentView == VIEW_FACE) ? VIEW_STATS : VIEW_FACE;
-    Serial.println("[BTN] LEFT short — cicla view");
-    if (currentView == VIEW_STATS) renderStats();
-    else renderState();
+    switch (currentView) {
+        case VIEW_FACE:
+            // Entra nel menu Pi Control
+            currentView = VIEW_MENU_PI;
+            menu.selectedIdx = menu.piIdx;
+            menu.needsRedraw = true;
+            Serial.println("[BTN] LEFT short — menu Pi");
+            break;
+        case VIEW_MENU_PI:
+        case VIEW_MENU_VESSEL: {
+            // UP — item precedente (wrap circolare)
+            int count = (currentView == VIEW_MENU_PI) ? MENU_PI_COUNT : MENU_VESSEL_COUNT;
+            menu.selectedIdx = (menu.selectedIdx - 1 + count) % count;
+            menu.needsRedraw = true;
+            break;
+        }
+        case VIEW_CONFIRM:
+            // ANNULLA — torna al menu
+            currentView = menu.returnView;
+            menu.pendingCmd = nullptr;
+            menu.needsRedraw = true;
+            break;
+        case VIEW_RESULT:
+            // Chiudi risultato — torna al menu
+            currentView = menu.returnView;
+            menu.resultLineCount = 0;
+            menu.needsRedraw = true;
+            break;
+    }
 }
 
 void onLeftLong() {
-    // Forza riconnessione WS
-    Serial.println("[BTN] LEFT long — reconnect WS");
-    webSocket.disconnect();
-    currentState = "ERROR";
-    standaloneMode = false;
-    offlineSince   = millis();
-    renderState();
+    switch (currentView) {
+        case VIEW_FACE:
+            // Forza riconnessione WS
+            Serial.println("[BTN] LEFT long — reconnect WS");
+            webSocket.disconnect();
+            currentState = "ERROR";
+            standaloneMode = false;
+            offlineSince   = millis();
+            renderState();
+            break;
+        case VIEW_MENU_PI:
+            menu.piIdx = menu.selectedIdx;  // salva indice
+            currentView = VIEW_FACE;
+            Serial.println("[BTN] LEFT long — BACK from Pi menu");
+            renderState();
+            break;
+        case VIEW_MENU_VESSEL:
+            menu.vesselIdx = menu.selectedIdx;  // salva indice
+            currentView = VIEW_FACE;
+            Serial.println("[BTN] LEFT long — BACK from Vessel menu");
+            renderState();
+            break;
+        case VIEW_CONFIRM:
+            // ANNULLA
+            currentView = menu.returnView;
+            menu.pendingCmd = nullptr;
+            menu.needsRedraw = true;
+            break;
+        default:
+            break;
+    }
 }
 
 void onRightShort() {
-    // Attiva info overlay 10s
-    infoActive     = true;
-    infoStartedAt  = millis();
-    Serial.println("[BTN] RIGHT short — info overlay");
-    renderState();  // ridisegna con overlay
+    switch (currentView) {
+        case VIEW_FACE:
+            // Entra nel menu Vessel Control
+            currentView = VIEW_MENU_VESSEL;
+            menu.selectedIdx = menu.vesselIdx;
+            menu.needsRedraw = true;
+            Serial.println("[BTN] RIGHT short — menu Vessel");
+            break;
+        case VIEW_MENU_PI:
+        case VIEW_MENU_VESSEL: {
+            // DOWN — item successivo (wrap circolare)
+            int count = (currentView == VIEW_MENU_PI) ? MENU_PI_COUNT : MENU_VESSEL_COUNT;
+            menu.selectedIdx = (menu.selectedIdx + 1) % count;
+            menu.needsRedraw = true;
+            break;
+        }
+        case VIEW_RESULT:
+            // Chiudi risultato
+            currentView = menu.returnView;
+            menu.resultLineCount = 0;
+            menu.needsRedraw = true;
+            break;
+        default:
+            break;
+    }
 }
 
 void onRightLong() {
-    // Stesso del left long: reconnect
-    Serial.println("[BTN] RIGHT long — reconnect WS");
-    webSocket.disconnect();
-    currentState = "ERROR";
-    standaloneMode = false;
-    offlineSince   = millis();
-    renderState();
+    switch (currentView) {
+        case VIEW_FACE:
+            // Reconnect WS
+            Serial.println("[BTN] RIGHT long — reconnect WS");
+            webSocket.disconnect();
+            currentState = "ERROR";
+            standaloneMode = false;
+            offlineSince   = millis();
+            renderState();
+            break;
+        case VIEW_MENU_PI:
+        case VIEW_MENU_VESSEL: {
+            // ENTER — esegui azione selezionata
+            if (menu.waitingResp) break;  // già in attesa
+            const MenuItem* items = (currentView == VIEW_MENU_PI) ? MENU_PI : MENU_VESSEL;
+            const MenuItem& item = items[menu.selectedIdx];
+            menu.returnView = currentView;
+            if (item.dangerous) {
+                menu.pendingCmd = item.cmd;
+                currentView = VIEW_CONFIRM;
+                menu.needsRedraw = true;
+                Serial.printf("[BTN] ENTER — confirm: %s\n", item.cmd);
+            } else {
+                sendCommand(item.cmd);
+                Serial.printf("[BTN] ENTER — exec: %s\n", item.cmd);
+            }
+            break;
+        }
+        case VIEW_CONFIRM:
+            // CONFERMA — esegui azione pericolosa
+            if (menu.pendingCmd) {
+                sendCommand(menu.pendingCmd);
+                menu.pendingCmd = nullptr;
+                Serial.println("[BTN] CONFIRM — eseguito");
+            }
+            break;
+        default:
+            break;
+    }
 }
 
 // ─── Boot Animation ───────────────────────────────────────────────────────────
@@ -902,8 +1197,71 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
 
         case WStype_TEXT: {
             Serial.printf("[WS] Ricevuto: %s\n", payload);
-            StaticJsonDocument<512> doc;
+            StaticJsonDocument<1024> doc;
             if (deserializeJson(doc, payload)) break;
+
+            // ── Risposta a comando menu ──────────────────────────────────────
+            const char* respType = doc["resp"];
+            if (respType) {
+                menu.waitingResp = false;
+                menu.resultOk = doc["ok"] | false;
+                menu.resultLineCount = 0;
+                JsonObject data = doc["data"];
+
+                String resp = String(respType);
+                if (resp == "get_stats") {
+                    menu.resultLines[0] = "CPU:  " + String((const char*)data["cpu"]);
+                    menu.resultLines[1] = "MEM:  " + String((const char*)data["mem"]);
+                    menu.resultLines[2] = "TEMP: " + String((const char*)data["temp"]);
+                    menu.resultLines[3] = "DISK: " + String((const char*)data["disk"]);
+                    menu.resultLines[4] = "UP:   " + String((const char*)data["uptime"]);
+                    menu.resultLineCount = 5;
+                } else if (resp == "tmux_list") {
+                    JsonArray sessions = data["sessions"];
+                    int i = 0;
+                    for (JsonVariant s : sessions) {
+                        if (i >= 8) break;
+                        menu.resultLines[i++] = String(s.as<const char*>());
+                    }
+                    menu.resultLineCount = i;
+                    if (i == 0) {
+                        menu.resultLines[0] = "Nessuna sessione";
+                        menu.resultLineCount = 1;
+                    }
+                } else if (resp == "check_ollama") {
+                    bool alive = data["alive"] | false;
+                    menu.resultLines[0] = alive ? "Ollama: ONLINE" : "Ollama: OFFLINE";
+                    menu.resultLineCount = 1;
+                } else if (resp == "check_bridge") {
+                    const char* st = data["status"] | "unknown";
+                    menu.resultLines[0] = "Bridge: " + String(st);
+                    menu.resultLineCount = 1;
+                } else if (resp == "refresh_crypto") {
+                    float btc = data["btc"] | 0.0f;
+                    float eth = data["eth"] | 0.0f;
+                    float bc  = data["btc_change"] | 0.0f;
+                    float ec  = data["eth_change"] | 0.0f;
+                    char buf[40];
+                    snprintf(buf, sizeof(buf), "BTC $%.0f (%+.1f%%)", btc, bc);
+                    menu.resultLines[0] = String(buf);
+                    snprintf(buf, sizeof(buf), "ETH $%.0f (%+.1f%%)", eth, ec);
+                    menu.resultLines[1] = String(buf);
+                    menu.resultLineCount = 2;
+                } else {
+                    // Generico: mostra msg
+                    const char* msg = data["msg"] | "Done";
+                    menu.resultLines[0] = String(msg);
+                    menu.resultLineCount = 1;
+                }
+
+                // Mostra risultato se siamo in un menu o nella conferma
+                if (currentView == VIEW_MENU_PI || currentView == VIEW_MENU_VESSEL ||
+                    currentView == VIEW_CONFIRM) {
+                    currentView = VIEW_RESULT;
+                    menu.needsRedraw = true;
+                }
+                break;
+            }
 
             // ── OTA trigger ───────────────────────────────────────────────────
             const char* actionRaw = doc["action"];
@@ -1039,11 +1397,38 @@ void loop() {
     updateButton(btnL, BTN_LEFT,  now, onLeftShort,  onLeftLong);
     updateButton(btnR, BTN_RIGHT, now, onRightShort, onRightLong);
 
-    // ── Info overlay scadenza ────────────────────────────────────────────────
-    if (infoActive && now - infoStartedAt >= INFO_DURATION) {
-        infoActive = false;
-        if (currentView == VIEW_FACE) renderState();
-        else renderStats();
+    // ── Menu views ─────────────────────────────────────────────────────────
+    if (currentView == VIEW_MENU_PI || currentView == VIEW_MENU_VESSEL) {
+        // Timeout risposta comando
+        if (menu.waitingResp && now - menu.waitingSince >= CMD_TIMEOUT_MS) {
+            menu.waitingResp = false;
+            menu.resultOk = false;
+            menu.resultLines[0] = "Timeout - no response";
+            menu.resultLineCount = 1;
+            currentView = VIEW_RESULT;
+            menu.needsRedraw = true;
+        }
+        if (menu.needsRedraw) {
+            menu.needsRedraw = false;
+            renderMenu();
+        }
+        return;
+    }
+
+    if (currentView == VIEW_CONFIRM) {
+        if (menu.needsRedraw) {
+            menu.needsRedraw = false;
+            renderConfirm();
+        }
+        return;
+    }
+
+    if (currentView == VIEW_RESULT) {
+        if (menu.needsRedraw) {
+            menu.needsRedraw = false;
+            renderResult();
+        }
+        return;
     }
 
     // ── Mood summary scadenza ────────────────────────────────────────────────
@@ -1069,16 +1454,6 @@ void loop() {
         now - offlineSince >= STANDALONE_TIMEOUT && !standaloneMode) {
         standaloneMode = true;
         Serial.println("[Standalone] Pi offline da 60s — modalità screensaver");
-    }
-
-    // ── View STATS: refresh ogni 2s ─────────────────────────────────────────
-    if (currentView == VIEW_STATS) {
-        static unsigned long lastStatsDraw = 0;
-        if (now - lastStatsDraw >= 2000) {
-            lastStatsDraw = now;
-            renderStats();
-        }
-        return;  // non processare stati face quando siamo in STATS
     }
 
     // ── Crypto ticker scroll ─────────────────────────────────────────────────
