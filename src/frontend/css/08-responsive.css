@@ -126,6 +126,9 @@
   /* ── Modal Desktop ── */
   .modal-box { max-width: 420px; }
 
+  /* ── Task prompt: testo non troncato ── */
+  .claude-task-prompt { white-space: normal; word-break: break-word; }
+
   /* ── Misc Desktop ── */
   button { min-height: 36px; }
   .btn-sm { min-height: 28px; }
@@ -170,9 +173,6 @@
   /* ── Stats compatte ── */
   .stat-value { font-size: 28px; }
   .stat-card { padding: 14px 18px; }
-
-  /* ── Code: task non truncato ── */
-  .claude-task-prompt { white-space: normal; }
 
   /* ── Cron: path visibili ── */
   .cron-cmd { white-space: normal; word-break: break-word; }

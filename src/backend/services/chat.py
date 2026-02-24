@@ -109,8 +109,8 @@ def _provider_worker(provider, queue):
                         if token:
                             queue.put_nowait(("chunk", token))
                         if data.get("done"):
-                            t_eval = data.get("eval_count", 0)
-                            queue.put_nowait(("meta", {"output_tokens": t_eval}))
+                            input_tokens = data.get("prompt_eval_count", 0)
+                            output_tokens = data.get("eval_count", 0)
                             conn.close()
                             return
                     except Exception:

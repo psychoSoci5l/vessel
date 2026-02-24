@@ -115,9 +115,9 @@
     body.innerHTML = `
       <div style="margin-bottom:10px;">
         <select onchange="applyTemplate(this)" style="width:100%;margin-bottom:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;cursor:pointer;">${opts}</select>
-        <textarea id="claude-prompt" rows="3" placeholder="Descrivi il task..."
+        <textarea id="claude-prompt" rows="6" placeholder="Descrivi il task..."
           oninput="updateCategoryBadge()"
-          style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;color:var(--green);padding:10px 12px;font-family:var(--font);font-size:13px;outline:none;resize:vertical;caret-color:var(--green);min-height:60px;box-sizing:border-box;"></textarea>
+          style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;color:var(--green);padding:10px 12px;font-family:var(--font);font-size:13px;outline:none;resize:vertical;caret-color:var(--green);min-height:120px;box-sizing:border-box;"></textarea>
         <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;">
           <button class="btn-green" id="claude-run-btn" onclick="runClaudeTask()" ${!isOnline ? 'disabled title="Bridge offline"' : ''}>▶ Esegui</button>
           <button class="btn-red" id="claude-cancel-btn" onclick="cancelClaudeTask()" style="display:none;">■ Stop</button>
@@ -153,19 +153,20 @@
       el.innerHTML = '<div class="no-items">// nessun task</div>';
       return;
     }
-    const list = tasks.slice().reverse();
+    const list = tasks.slice().reverse().slice(0, 8);
     el.innerHTML = '<div style="font-size:10px;color:var(--muted);margin-bottom:6px;">ULTIMI TASK</div>' +
+      '<div class="claude-tasks-scroll">' +
       list.map(t => {
         const dur = t.duration_ms ? (t.duration_ms/1000).toFixed(1)+'s' : '';
         const ts = (t.ts || '').replace('T', ' ');
-        return `<div class="claude-task-item">
-          <div class="claude-task-prompt" title="${esc(t.prompt)}">${esc(t.prompt)}</div>
+        return `<div class="claude-task-item" onclick="copyToClipboard(this.querySelector('.claude-task-prompt').textContent)" style="cursor:pointer;" title="Click per copiare">
+          <div class="claude-task-prompt">${esc(t.prompt)}</div>
           <div class="claude-task-meta">
             <span class="claude-task-status ${esc(t.status)}">${esc(t.status)}</span>
             <span>${esc(ts)}</span><span>${dur}</span>
           </div>
         </div>`;
-      }).join('');
+      }).join('') + '</div>';
   }
 
   // ── Claude output helpers ──

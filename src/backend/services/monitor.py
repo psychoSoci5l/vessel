@@ -1,9 +1,12 @@
 # ─── Heartbeat Monitor (Fase 17B) ────────────────────────────────────────────
 _heartbeat_last_alert: dict[str, float] = {}
+_heartbeat_known_down: set[str] = set()  # servizi noti come down (no re-alert)
+_BINARY_ALERT_KEYS = {"bridge_down", "ollama_down"}  # notifica solo cambio stato
 
 async def heartbeat_task():
     """Loop background: controlla salute del sistema ogni HEARTBEAT_INTERVAL secondi.
-    Alert via Telegram con cooldown per evitare spam."""
+    Servizi (bridge/ollama): notifica solo cambio stato (down/recovery).
+    Soglie (temp/RAM): cooldown per evitare spam."""
     print("[Heartbeat] Monitor avviato")
     await asyncio.sleep(30)  # attendi stabilizzazione post-boot
     while True:
@@ -37,24 +40,43 @@ async def heartbeat_task():
                 if bridge.get("status") == "offline":
                     alerts.append(("bridge_down", "🔴 Claude Bridge offline"))
 
-            # Invia alert con cooldown
+            # Invia alert con logica differenziata
+            active_keys = {k for k, _ in alerts}
             for alert_key, alert_msg in alerts:
-                last = _heartbeat_last_alert.get(alert_key, 0)
-                if now - last >= HEARTBEAT_ALERT_COOLDOWN:
-                    _heartbeat_last_alert[alert_key] = now
-                    telegram_send(f"[Heartbeat] {alert_msg}")
-                    db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
-                    print(f"[Heartbeat] ALERT: {alert_msg}")
+                if alert_key in _BINARY_ALERT_KEYS:
+                    # Servizi: notifica solo al cambio stato (up → down)
+                    if alert_key not in _heartbeat_known_down:
+                        _heartbeat_known_down.add(alert_key)
+                        telegram_send(f"[Heartbeat] {alert_msg}")
+                        db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
+                        print(f"[Heartbeat] ALERT: {alert_msg}")
+                else:
+                    # Soglie (temp/RAM): cooldown come prima
+                    last = _heartbeat_last_alert.get(alert_key, 0)
+                    if now - last >= HEARTBEAT_ALERT_COOLDOWN:
+                        _heartbeat_last_alert[alert_key] = now
+                        telegram_send(f"[Heartbeat] {alert_msg}")
+                        db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
+                        print(f"[Heartbeat] ALERT: {alert_msg}")
+
+            # Recovery: notifica quando servizi tornano online (down → up)
+            for key in list(_heartbeat_known_down):
+                if key not in active_keys:
+                    _heartbeat_known_down.discard(key)
+                    label = key.replace("_down", "").replace("_", " ").title()
+                    telegram_send(f"[Heartbeat] ✅ {label} tornato online")
+                    db_log_audit("heartbeat_recovery", resource=key)
+                    print(f"[Heartbeat] RECOVERY: {label} online")
 
             # Tamagotchi: ALERT se ci sono problemi, IDLE se risolti
             if alerts:
                 _set_tamagotchi_local("ALERT")
-            elif _heartbeat_last_alert:
-                # Problemi appena rientrati — riporta a IDLE
+            elif _heartbeat_last_alert or _heartbeat_known_down:
+                pass  # ancora problemi noti, mantieni stato corrente
+            else:
                 _set_tamagotchi_local("IDLE")
 
-            # Pulisci alert risolti (per ri-alertare se il problema ritorna)
-            active_keys = {k for k, _ in alerts}
+            # Pulisci cooldown soglie risolte
             for key in list(_heartbeat_last_alert.keys()):
                 if key not in active_keys:
                     del _heartbeat_last_alert[key]

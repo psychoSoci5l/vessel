@@ -165,7 +165,9 @@ button {
 .claude-output-header span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
 .output-fs-content { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: var(--font); font-size: 12px; line-height: 1.6; color: var(--text2); max-height: calc(90vh - 90px); overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
 
-.claude-task-item { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; }
+.claude-tasks-scroll { overflow-y: auto; }
+.claude-task-item { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; transition: border-color .15s; }
+.claude-task-item:hover { border-color: var(--green3); }
 .claude-task-prompt { font-size: 11px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
 .claude-task-meta { font-size: 10px; color: var(--muted); display: flex; gap: 10px; }
 .claude-task-status { font-weight: 600; }

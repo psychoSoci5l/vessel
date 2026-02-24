@@ -19,9 +19,21 @@ def log_claude_task(prompt: str, status: str, exit_code: int = 0,
 
 async def run_claude_task_stream(websocket: WebSocket, prompt: str, use_loop: bool = False):
     """Esegue un task via Claude Bridge con streaming output via WS."""
+    # Pre-check: verifica bridge raggiungibile prima di avviare
+    health = check_bridge_health()
+    if health.get("status") != "ok":
+        await websocket.send_json({"type": "claude_chunk", "text": "\n⚠️ Bridge non raggiungibile\n"})
+        await websocket.send_json({
+            "type": "claude_done", "exit_code": 1, "duration_ms": 0,
+            "iterations": 0, "completed": False, "notify": False
+        })
+        log_claude_task(prompt, "error", 1, 0, "Bridge non raggiungibile")
+        return
+
     queue: asyncio.Queue = asyncio.Queue()
     start_time = time.time()
     endpoint = "/run-loop" if use_loop else "/run"
+    CONNECT_TIMEOUT = 10  # timeout connessione iniziale (secondi)
 
     def _bridge_worker():
         try:
@@ -32,7 +44,8 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str, use_loop: bo
                 port = int(port_s.split("/")[0])
             else:
                 host, port = url.split("/")[0], 80
-            conn = http.client.HTTPConnection(host, port, timeout=TASK_TIMEOUT)
+            # Connessione con timeout breve, poi estende per lo streaming
+            conn = http.client.HTTPConnection(host, port, timeout=CONNECT_TIMEOUT)
             payload = json.dumps({
                 "prompt": prompt,
                 "token": CLAUDE_BRIDGE_TOKEN,
@@ -40,6 +53,8 @@ async def run_claude_task_stream(websocket: WebSocket, prompt: str, use_loop: bo
             conn.request("POST", endpoint, body=payload,
                          headers={"Content-Type": "application/json"})
             resp = conn.getresponse()
+            # Connessione stabilita, estendi timeout per lo streaming del task
+            conn.sock.settimeout(TASK_TIMEOUT)
             if resp.status != 200:
                 body = resp.read().decode("utf-8", errors="replace")
                 queue.put_nowait(("error", {"text": f"HTTP {resp.status}: {body[:200]}"}))

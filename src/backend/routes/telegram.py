@@ -1,6 +1,73 @@
 # ─── Telegram polling ────────────────────────────────────────────────────────
 _tg_histories: dict[str, list] = {}
 
+_TELEGRAM_BREVITY = (
+    "\n\n## Canale Telegram\n"
+    "Stai rispondendo su Telegram. Sii BREVE: max 3-4 frasi. "
+    "Niente blocchi di codice, elenchi numerati, link, workaround multi-step, "
+    "o formattazione markdown complessa."
+)
+
+# ─── Prefetch: esecuzione comandi reali per arricchire il contesto Telegram ──
+_GHELPER_PY = str(Path.home() / ".local/share/google-workspace-mcp/bin/python")
+_GHELPER_SCRIPT = str(Path.home() / "scripts/google_helper.py")
+_GHELPER = f"{_GHELPER_PY} {_GHELPER_SCRIPT}"
+
+async def _prefetch_context(text: str) -> str:
+    """Rileva intent e esegue comandi reali sul Pi. Ritorna output da iniettare nel contesto."""
+    low = text.lower()
+    cmds = []
+    # Google Tasks
+    if any(k in low for k in ["google task", "i miei task", "le mie task", "task di oggi",
+                               "leggi i task", "mostra i task", "lista task",
+                               "quali task", "ho da fare", "cosa devo fare", "task da fare",
+                               "i task", "to do", "todo", "cose da fare"]):
+        cmds.append(f"{_GHELPER} tasks list")
+    # Calendario domani (prima di oggi per priorità match)
+    if "domani" in low and any(k in low for k in ["calendario", "agenda", "eventi", "appuntamenti", "impegni"]):
+        cmds.append(f"{_GHELPER} calendar tomorrow")
+    # Calendario oggi (o generico senza "domani/settimana")
+    elif any(k in low for k in ["calendario", "agenda oggi", "eventi di oggi",
+                                 "appuntamenti oggi", "impegni oggi",
+                                 "in calendario", "in agenda", "ho appuntamenti"]):
+        cmds.append(f"{_GHELPER} calendar today")
+    # Briefing (calendario + tasks combo)
+    if "briefing" in low:
+        if not any("calendar" in c for c in cmds):
+            cmds.append(f"{_GHELPER} calendar today")
+        if not any("tasks" in c for c in cmds):
+            cmds.append(f"{_GHELPER} tasks list")
+    # Crontab
+    if any(k in low for k in ["cron", "crontab"]):
+        cmds.append("crontab -l")
+    # Spazio disco
+    if any(k in low for k in ["spazio disco", "quanto spazio", "spazio su disco"]):
+        cmds.append("df -h /")
+    # Gmail
+    if any(k in low for k in ["gmail", "mail non lette", "email non lette", "la posta", "le mail",
+                               "email nuov", "mail nuov", "ho email", "ho mail", "le email",
+                               "controlla email", "controlla mail", "check mail", "la mail",
+                               "posta elettronica", "inbox"]):
+        cmds.append(f"{_GHELPER} gmail unread")
+    if not cmds:
+        return ""
+    loop = asyncio.get_running_loop()
+    parts = []
+    for cmd in cmds:
+        try:
+            def _run(c=cmd):
+                r = subprocess.run(c, shell=True, capture_output=True, text=True, timeout=30)
+                return (r.stdout + r.stderr).strip()
+            out = await loop.run_in_executor(None, _run)
+            if out:
+                parts.append(out)
+        except Exception as e:
+            print(f"[Telegram] Prefetch error: {e}")
+    if not parts:
+        return ""
+    print(f"[Telegram] Prefetch: {len(parts)} risultati per '{text[:50]}'")
+    return "\n\n".join(parts)
+
 def _tg_history(provider_id: str) -> list:
     if provider_id not in _tg_histories:
         _tg_histories[provider_id] = db_load_chat_history(provider_id, channel="telegram")
@@ -22,6 +89,7 @@ def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
 async def _handle_telegram_message(text: str):
     """Routing prefissi e risposta via Telegram."""
     provider_id, system, model, text = _resolve_telegram_provider(text)
+    system += _TELEGRAM_BREVITY
 
     if text.strip() == "/status":
         pi = await get_pi_stats()
@@ -64,6 +132,12 @@ async def _handle_telegram_message(text: str):
         telegram_send("Uso: /voice <messaggio>")
         return
 
+    # Prefetch: esecui comandi reali se il messaggio matcha pattern noti
+    context = await _prefetch_context(text)
+    enriched_text = text
+    if context:
+        enriched_text = f"[DATI REALI DAL SISTEMA — usa questi per rispondere:]\n{context}\n\n[RICHIESTA:] {text}"
+
     history = _tg_history(provider_id)
     if send_voice:
         voice_prefix = (
@@ -71,7 +145,7 @@ async def _handle_telegram_message(text: str):
             "come in una conversazione parlata. Niente emoji, asterischi, elenchi, "
             "formattazione markdown o roleplay. Max 2-3 frasi.] "
         )
-        reply = await _chat_response(voice_prefix + text, history, provider_id, system, model, channel="telegram")
+        reply = await _chat_response(voice_prefix + enriched_text, history, provider_id, system, model, channel="telegram")
         telegram_send(reply)
         loop = asyncio.get_running_loop()
         def _tts_send():
@@ -80,7 +154,7 @@ async def _handle_telegram_message(text: str):
                 telegram_send_voice(ogg)
         loop.run_in_executor(None, _tts_send)
     else:
-        reply = await _chat_response(text, history, provider_id, system, model, channel="telegram")
+        reply = await _chat_response(enriched_text, history, provider_id, system, model, channel="telegram")
         telegram_send(reply)
 
 VOICE_MAX_DURATION = 180
@@ -112,6 +186,7 @@ async def _handle_telegram_voice(voice: dict):
     print(f"[Telegram] Vocale trascritto ({duration}s): {text[:80]}...")
 
     provider_id, system, model, text = _resolve_telegram_provider(text)
+    system += _TELEGRAM_BREVITY
 
     voice_prefix = (
         "[Messaggio vocale trascritto — rispondi in modo conciso e naturale, "
