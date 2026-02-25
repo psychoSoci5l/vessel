@@ -54,9 +54,9 @@
   // ── Logout ──
   async function doLogout() {
     try {
-      await fetch('/auth/logout', { method: 'POST' });
+      await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
     } catch(e) {}
-    window.location.href = '/';
+    window.location.replace('/');
   }
 
   // ── Clock ──

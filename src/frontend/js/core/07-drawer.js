@@ -16,11 +16,13 @@
       (cfg ? cfg.actions : '') +
       '<button class="btn-ghost btn-sm" onclick="closeDrawer()">✕</button>';
     document.getElementById('drawer-overlay').classList.add('show');
+    document.body.classList.add('drawer-open');
     activeDrawer = widgetId;
   }
 
   function closeDrawer() {
     document.getElementById('drawer-overlay').classList.remove('show');
+    document.body.classList.remove('drawer-open');
     activeDrawer = null;
   }
 

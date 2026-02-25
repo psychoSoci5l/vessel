@@ -142,6 +142,10 @@
   /* ── Task prompt: testo non troncato ── */
   .claude-task-prompt { white-space: normal; word-break: break-word; }
 
+  /* ── Drawer push content ── */
+  .app-content { transition: margin-right 0.3s ease; }
+  body.drawer-open .app-content { margin-right: 420px; }
+
   /* ── Misc Desktop ── */
   button { min-height: 36px; }
   .btn-sm { min-height: 28px; }
@@ -186,6 +190,7 @@
 
   /* ── Drawer più largo ── */
   .drawer { width: 480px; }
+  body.drawer-open .app-content { margin-right: 480px; }
 
   /* ── System/Profile: più respiro ── */
   .sys-section { padding: 18px 20px; }

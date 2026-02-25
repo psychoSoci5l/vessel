@@ -123,7 +123,9 @@ async def auth_logout(request: Request):
         _save_sessions()
     db_log_audit("logout", actor=request.client.host)
     resp = JSONResponse({"ok": True})
-    resp.delete_cookie("vessel_session")
+    is_secure = request.url.scheme == "https"
+    resp.delete_cookie("vessel_session", path="/", httponly=True,
+                       samesite="lax", secure=is_secure)
     return resp
 
 @app.get("/auth/check")

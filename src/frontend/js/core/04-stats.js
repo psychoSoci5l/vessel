@@ -87,7 +87,13 @@
     for (let y = 0; y <= h; y += h / 4) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
     }
-    if (cpuHistory.length < 2) return;
+    if (cpuHistory.length < 2) {
+      ctx.fillStyle = cs.getPropertyValue('--muted').trim();
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('Raccolta dati in corso\u2026', w/2, h/2);
+      return;
+    }
     function drawLine(data, maxVal, color) {
       ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.lineJoin = 'round';
       ctx.beginPath();

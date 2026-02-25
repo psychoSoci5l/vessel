@@ -1,514 +1,607 @@
-  // ── Sigil Canvas Engine (Fase 44) ──
-  // Motore condiviso: header micro-sigil, dashboard widget, login screen
+  // ── Sigil Canvas Engine (Fase 46 — Pixel-Perfect ESP32 Match) ──
+  // Offscreen 320×170 buffer + pixelated scaling = TFT-identical rendering
 
   const SigilEngine = (() => {
-    const COL = {
-      hood: '#2a0e42', hoodEdge: '#4a1d70',
-      eye: '#00ff41', glow: '#00ff41',
-      sigil: '#ff0040', bg: '#050208'
+    // ── ESP32 exact colors (RGB888 from tft.color565 args) ──
+    const C = {
+      bg: [5,2,8], green: [0,255,65], dim: [0,85,21],
+      red: [255,0,64], yellow: [255,170,0], scan: [3,1,5],
+      hood: [61,21,96], hoodLt: [106,45,158], white: [255,255,255]
     };
 
-    function hexToRgb(hex) {
-      if (typeof hex === 'string' && hex.startsWith('rgb')) {
-        const m = hex.match(/(\d+)/g);
-        return { r: +m[0], g: +m[1], b: +m[2] };
-      }
-      hex = hex.replace('#', '');
-      if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
-      return { r: parseInt(hex.slice(0,2),16), g: parseInt(hex.slice(2,4),16), b: parseInt(hex.slice(4,6),16) };
-    }
+    // ── ESP32 exact geometry ──
+    const G = {
+      cx: 160, cy: 85, eyeY: 70, sigilY: 43, mouthY: 115,
+      lx: 130, rx: 190, hw: 19, hh: 10, eyelid: 15
+    };
 
-    function lerpColor(c1, c2, t) {
-      const a = hexToRgb(c1), b = hexToRgb(c2);
+    // ── Offscreen buffer ──
+    const _off = document.createElement('canvas');
+    _off.width = 320; _off.height = 170;
+
+    // ── Color helpers ──
+    function rgb(c) { return `rgb(${c[0]},${c[1]},${c[2]})`; }
+    function rgba(c, a) { return `rgba(${c[0]},${c[1]},${c[2]},${a})`; }
+    function lerp(c1, c2, t) {
+      if (t <= 0) return c1; if (t >= 1) return c2;
+      return [c1[0]+(c2[0]-c1[0])*t|0, c1[1]+(c2[1]-c1[1])*t|0, c1[2]+(c2[2]-c1[2])*t|0];
+    }
+    // Hex compat for renderMini
+    function hexToRgb(hex) {
+      if (typeof hex !== 'string') return {r:0,g:0,b:0};
+      if (hex.startsWith('rgb')) { const m=hex.match(/(\d+)/g); return {r:+m[0],g:+m[1],b:+m[2]}; }
+      hex=hex.replace('#','');
+      if (hex.length===3) hex=hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+      return {r:parseInt(hex.slice(0,2),16),g:parseInt(hex.slice(2,4),16),b:parseInt(hex.slice(4,6),16)};
+    }
+    function lerpHex(c1,c2,t) {
+      const a=hexToRgb(c1),b=hexToRgb(c2);
       return `rgb(${a.r+(b.r-a.r)*t|0},${a.g+(b.g-a.g)*t|0},${a.b+(b.b-a.b)*t|0})`;
     }
+    function rgbaHex(hex,alpha) { const c=hexToRgb(hex); return `rgba(${c.r},${c.g},${c.b},${alpha})`; }
 
-    function rgbaStr(hex, alpha) {
-      const c = hexToRgb(hex);
-      return `rgba(${c.r},${c.g},${c.b},${alpha})`;
+    // ── Drawing primitives (ESP32 equivalents) ──
+
+    function fillCircle(ctx, x, y, r, col) {
+      ctx.fillStyle = rgb(col); ctx.beginPath(); ctx.arc(x, y, Math.max(0,r), 0, Math.PI*2); ctx.fill();
     }
 
-    // ── Hood (landscape) ──
-    function drawHood(ctx, W, H) {
-      const cx = W/2, r = W*0.297, hcy = H*0.635, peakY = H*0.071;
-      const shoulder = W*0.328, baseY = H*1.03;
+    function fillEllipse(ctx, cx, cy, rx, ry, col) {
+      ctx.fillStyle = rgb(col); ctx.beginPath(); ctx.ellipse(cx, cy, Math.max(0,rx), Math.max(0,ry), 0, 0, Math.PI*2); ctx.fill();
+    }
 
-      // Ambient glow (molto sottile)
-      const ambGrad = ctx.createRadialGradient(cx, hcy, r*0.6, cx, hcy, r*1.6);
-      ambGrad.addColorStop(0, rgbaStr(COL.hoodEdge, 0.03));
-      ambGrad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = ambGrad;
-      ctx.fillRect(0, 0, W, H);
+    function fillTriangle(ctx, x0,y0,x1,y1,x2,y2, col) {
+      ctx.fillStyle = rgb(col); ctx.beginPath();
+      ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.lineTo(x2,y2);
+      ctx.closePath(); ctx.fill();
+    }
 
-      function hoodPath() {
-        ctx.beginPath();
-        ctx.moveTo(cx-shoulder, baseY);
-        ctx.bezierCurveTo(cx-shoulder, hcy+r*0.15, cx-r*0.85, hcy-r*0.2, cx-r*0.5, peakY+H*0.103);
-        ctx.quadraticCurveTo(cx, peakY-H*0.024, cx+r*0.5, peakY+H*0.103);
-        ctx.bezierCurveTo(cx+r*0.85, hcy-r*0.2, cx+shoulder, hcy+r*0.15, cx+shoulder, baseY);
-        ctx.closePath();
+    function drawLine(ctx, x0,y0,x1,y1, w, col) {
+      ctx.strokeStyle = rgb(col); ctx.lineWidth = w; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+    }
+
+    function drawCircleStroke(ctx, x, y, r, col) {
+      ctx.strokeStyle = rgb(col); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(x, y, Math.max(0,r), 0, Math.PI*2); ctx.stroke();
+    }
+
+    // ── Scanlines (ESP32: every 2px, COL_SCAN color) ──
+    function drawScanlines(ctx) {
+      ctx.fillStyle = rgb(C.scan);
+      for (let y = 0; y < 170; y += 2) ctx.fillRect(0, y, 320, 1);
+    }
+
+    // ── Hood filled (column-by-column, ESP32 drawHoodFilled port) ──
+    function drawHoodFilled(ctx, col) {
+      const cx = G.cx, cy = G.cy;
+      const shoulder = 78, peakH = 60, baseY = 170, neckMinY = cy + 10;
+
+      const c_center = lerp(col, C.white, 0.04);
+      const c_inner = col;
+      const c_mid = lerp(col, C.bg, 0.25);
+      const c_outer = lerp(col, C.bg, 0.55);
+      const c_edge = lerp(col, C.bg, 0.82);
+
+      for (let dx = -shoulder; dx <= shoulder; dx++) {
+        const x = cx + dx;
+        if (x < 0 || x >= 320) continue;
+        const t = Math.abs(dx) / shoulder;
+
+        let topY = cy - peakH + (peakH * t * t)|0;
+        if (topY < 0) topY = 0;
+
+        let botY;
+        if (t < 0.28) { botY = baseY; }
+        else {
+          const curve = (t - 0.28) / 0.72;
+          const rise = 0.5 * (1 - Math.cos(curve * Math.PI));
+          botY = baseY - (rise * (baseY - neckMinY))|0;
+        }
+
+        const lineH = botY - topY;
+        if (lineH <= 0) continue;
+
+        // Horizontal gradient color
+        let hCol;
+        if (t < 0.12) hCol = lerp(c_center, c_inner, t / 0.12);
+        else if (t < 0.3) hCol = lerp(c_inner, c_mid, (t - 0.12) / 0.18);
+        else if (t < 0.55) hCol = lerp(c_mid, c_outer, (t - 0.3) / 0.25);
+        else if (t < 0.8) hCol = lerp(c_outer, c_edge, (t - 0.55) / 0.25);
+        else hCol = lerp(c_edge, C.bg, (t - 0.8) / 0.2);
+
+        // Vertical gradient: 45% top normal, 55% bottom darker
+        const topH = lineH * 45 / 100 | 0;
+        const botH = lineH - topH;
+        const botCol = lerp(hCol, C.bg, 0.35);
+
+        ctx.fillStyle = rgb(hCol);
+        ctx.fillRect(x, topY, 1, topH);
+        ctx.fillStyle = rgb(botCol);
+        ctx.fillRect(x, topY + topH, 1, botH);
       }
 
-      // Hood body gradient (scuro come ESP32 — svanisce nel nero ai bordi)
-      hoodPath();
-      const darkHood = lerpColor(COL.hood, '#000', 0.55);
-      const midHood = lerpColor(COL.hood, '#000', 0.25);
-      const hg = ctx.createLinearGradient(cx-shoulder, 0, cx+shoulder, 0);
-      hg.addColorStop(0, rgbaStr(darkHood, 0.15));
-      hg.addColorStop(0.15, darkHood);
-      hg.addColorStop(0.3, midHood);
-      hg.addColorStop(0.42, COL.hood);
-      hg.addColorStop(0.5, lerpColor(COL.hood, '#fff', 0.04));
-      hg.addColorStop(0.58, COL.hood);
-      hg.addColorStop(0.7, midHood);
-      hg.addColorStop(0.85, darkHood);
-      hg.addColorStop(1, rgbaStr(darkHood, 0.15));
-      ctx.fillStyle = hg; ctx.fill();
-
-      // Vertical shading
-      hoodPath();
-      const vg = ctx.createLinearGradient(0, peakY, 0, baseY);
-      vg.addColorStop(0, 'rgba(255,255,255,0.03)');
-      vg.addColorStop(0.2, 'rgba(0,0,0,0)');
-      vg.addColorStop(0.55, 'rgba(0,0,0,0.25)');
-      vg.addColorStop(1, 'rgba(0,0,0,0.65)');
-      ctx.fillStyle = vg; ctx.fill();
-
-      // Center dark
-      hoodPath();
-      const cd = ctx.createRadialGradient(cx, hcy+H*0.03, r*0.05, cx, hcy+H*0.03, r*0.95);
-      cd.addColorStop(0, 'rgba(0,0,0,0.85)');
-      cd.addColorStop(0.4, 'rgba(0,0,0,0.6)');
-      cd.addColorStop(0.7, 'rgba(0,0,0,0.2)');
-      cd.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = cd; ctx.fill();
-
-      // Face cavity (3 strati come ESP32 drawFaceShadow — ellissi più scure)
-      const fow = r*0.72, ovalCY = hcy+H*0.07;
-      // Outer soft
-      const sh0 = ctx.createRadialGradient(cx, ovalCY, fow*0.1, cx, ovalCY, fow*1.2);
-      sh0.addColorStop(0, 'rgba(0,0,0,0.95)');
-      sh0.addColorStop(0.35, 'rgba(0,0,0,0.75)');
-      sh0.addColorStop(0.65, 'rgba(0,0,0,0.4)');
-      sh0.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = sh0;
-      ctx.beginPath(); ctx.ellipse(cx, ovalCY, fow*1.15, fow*1.05, 0, 0, Math.PI*2); ctx.fill();
-      // Deep core (quasi nero — come ESP32 shadow2)
-      const sh1 = ctx.createRadialGradient(cx, ovalCY+fow*0.12, fow*0.05, cx, ovalCY+fow*0.12, fow*0.7);
-      sh1.addColorStop(0, 'rgba(0,0,0,0.9)');
-      sh1.addColorStop(0.6, 'rgba(0,0,0,0.5)');
-      sh1.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = sh1;
-      ctx.beginPath(); ctx.ellipse(cx, ovalCY+fow*0.12, fow*0.7, fow*0.65, 0, 0, Math.PI*2); ctx.fill();
-
-      // Edge highlight (sottile come ESP32 edgeHighlight)
-      ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.12);
-      ctx.lineWidth = 0.8; ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(cx-shoulder+5, baseY-10);
-      ctx.bezierCurveTo(cx-shoulder+3, hcy+r*0.15, cx-r*0.85, hcy-r*0.2, cx-r*0.5, peakY+H*0.103);
-      ctx.quadraticCurveTo(cx, peakY-H*0.024, cx+r*0.5, peakY+H*0.103);
-      ctx.bezierCurveTo(cx+r*0.85, hcy-r*0.2, cx+shoulder-3, hcy+r*0.15, cx+shoulder-5, baseY-10);
-      ctx.stroke();
-    }
-
-    // ── Eye (mandorla angolare — stile ESP32) ──
-    function drawGlowingEye(ctx, ex, ey, size, col, glowCol, glowR, intensity) {
-      intensity = intensity ?? 1.0;
-      const gc = hexToRgb(glowCol);
-      // Glow più contenuto (come drawEyeGlow su ESP32: cerchi concentrici)
-      const g1 = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR*0.7*intensity);
-      g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},${0.18*intensity})`);
-      g1.addColorStop(0.5, `rgba(${gc.r},${gc.g},${gc.b},${0.08*intensity})`);
-      g1.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g1;
-      ctx.beginPath(); ctx.arc(ex, ey, glowR*0.7*intensity, 0, Math.PI*2); ctx.fill();
-
-      // Mandorla angolare (due triangoli come ESP32 drawMandorlaEye)
-      const hw = size, hh = size*0.52;
-      ctx.save();
-      ctx.beginPath();
-      ctx.moveTo(ex-hw, ey);
-      ctx.lineTo(ex, ey-hh);
-      ctx.lineTo(ex+hw, ey);
-      ctx.lineTo(ex, ey+hh);
-      ctx.closePath();
-      ctx.clip();
-
-      // Fill piatto (come ESP32 — niente gradient luminosi)
-      ctx.fillStyle = col;
-      ctx.fillRect(ex-hw, ey-hh, hw*2, hh*2);
-
-      // Scan-lines orizzontali dentro l'occhio (effetto TFT pixel grid)
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      for (let y = ey-hh; y < ey+hh; y += 3) {
-        ctx.fillRect(ex-hw, y, hw*2, 1);
+      // Edge highlight on upper arc
+      const edgeHL = lerp(col, C.white, 0.15);
+      for (let dx = -(shoulder-10); dx <= (shoulder-10); dx++) {
+        const t = Math.abs(dx) / shoulder;
+        const topY = cy - peakH + (peakH * t * t)|0;
+        const alpha = 0.4 * (1 - t * 1.3);
+        if (alpha > 0 && topY > 0) {
+          ctx.fillStyle = rgba(lerp(C.bg, edgeHL, alpha), 1);
+          ctx.fillRect(cx + dx, topY - 1, 1, 1);
+        }
       }
-
-      // Palpebra superiore (lid cut come drawMandorlaEyeRelaxed, ~15%)
-      const lidCut = hh * 0.15;
-      ctx.fillStyle = COL.bg;
-      ctx.fillRect(ex-hw-1, ey-hh-1, hw*2+2, lidCut+1);
-
-      ctx.restore();
-
-      // Pupilla (più piccola, stile minimale)
-      ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.arc(ex, ey+1, size*0.13, 0, Math.PI*2); ctx.fill();
     }
 
-    function drawHappyEye(ctx, ex, ey, size, col, glowCol, glowR) {
-      const gc = hexToRgb(glowCol);
-      const g1 = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR*0.7);
-      g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},0.25)`);
-      g1.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g1;
-      ctx.beginPath(); ctx.arc(ex, ey, glowR*0.7, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = col; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.arc(ex, ey+size*0.3, size*0.8, Math.PI*1.15, Math.PI*1.85);
-      ctx.stroke();
+    // ── Face shadow (3 nested ellipses, ESP32 drawFaceShadow) ──
+    function drawFaceShadow(ctx) {
+      fillEllipse(ctx, G.cx, G.cy+2, 56, 62, [4,2,6]);
+      fillEllipse(ctx, G.cx, G.cy+5, 46, 54, [2,1,3]);
+      fillEllipse(ctx, G.cx, G.cy+10, 34, 42, [1,0,2]);
     }
 
-    // ── Sigil symbol (scala ridotta per coerenza con ESP32) ──
-    function drawSigil(ctx, sx, sy, col, sigScale, rotation) {
-      sigScale = sigScale || 1;
-      rotation = rotation || 0;
-      const s = 8 * sigScale;
-      const gc = hexToRgb(col);
-      // Glow minimo (come ESP32: fillCircle con colore appena visibile)
-      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, s*2);
-      g.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},0.12)`);
-      g.addColorStop(0.6, `rgba(${gc.r},${gc.g},${gc.b},0.05)`);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(sx, sy, s*2, 0, Math.PI*2); ctx.fill();
-      ctx.save();
-      ctx.translate(sx, sy);
-      ctx.rotate(rotation);
-      ctx.strokeStyle = col; ctx.lineCap = 'round';
-      // Croce (come ESP32: drawWideLine vertical + horizontal)
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(0,s); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-s,0); ctx.lineTo(s,0); ctx.stroke();
-      // Diagonali (più sottili)
-      ctx.lineWidth = 1;
-      const d = s*0.65;
-      ctx.beginPath(); ctx.moveTo(-d,-d); ctx.lineTo(d,d); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-d,d); ctx.lineTo(d,-d); ctx.stroke();
-      // Cerchietto al centro
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(0, 0, s*0.35, 0, Math.PI*2); ctx.stroke();
-      // Punte esterne (pixel singoli come ESP32 drawPixel)
-      ctx.fillStyle = col;
-      [[0,-s*1.2],[0,s*1.2],[-s*1.2,0],[s*1.2,0]].forEach(([dx,dy]) => {
-        ctx.beginPath(); ctx.arc(dx, dy, 1.2, 0, Math.PI*2); ctx.fill();
+    // ── Eye glow (2 concentric circles, ESP32 drawEyeGlow) ──
+    function drawEyeGlow(ctx, ex, ey, col, intensity) {
+      if (intensity < 0.05) return;
+      fillCircle(ctx, ex, ey, 24, lerp(C.bg, col, Math.min(1, 0.08*intensity)));
+      fillCircle(ctx, ex, ey, 16, lerp(C.bg, col, Math.min(1, 0.18*intensity)));
+    }
+
+    // ── Mandorla eye (2 triangles, ESP32 drawMandorlaEye) ──
+    function drawMandorlaEye(ctx, ex, ey, hw, hh, col) {
+      fillTriangle(ctx, ex-hw,ey, ex,ey-hh, ex+hw,ey, col);
+      fillTriangle(ctx, ex-hw,ey, ex,ey+hh, ex+hw,ey, col);
+    }
+
+    // ── Relaxed mandorla (with upper lid cut) ──
+    function drawMandorlaEyeRelaxed(ctx, ex, ey, hw, hh, col, lidPct) {
+      drawMandorlaEye(ctx, ex, ey, hw, hh, col);
+      if (lidPct > 0) {
+        const cutH = hh * lidPct / 100 | 0;
+        ctx.fillStyle = rgb(C.bg);
+        ctx.fillRect(ex-hw-1, ey-hh-1, hw*2+2, cutH+2);
+      }
+    }
+
+    // ── Happy eye (parabolic arc, 3px thick, ESP32 drawHappyEye) ──
+    function drawHappyEye(ctx, ex, ey, hw, col) {
+      ctx.fillStyle = rgb(col);
+      for (let dx = -hw; dx <= hw; dx++) {
+        const t = dx / hw;
+        const dy = (-8 * (1 - t*t))|0;
+        ctx.fillRect(ex+dx, ey+dy-1, 1, 3);
+      }
+    }
+
+    // ── Sigil symbol (ESP32 drawSigil exact port) ──
+    function drawSigil(ctx, sx, sy, col, scale, rotation) {
+      scale = scale || 1; rotation = rotation || 0;
+      // Glow halo (2 concentric circles)
+      const glowR = (14 * scale)|0;
+      if (glowR > 2) {
+        fillCircle(ctx, sx, sy, glowR+4, lerp(C.bg, col, 0.05));
+        fillCircle(ctx, sx, sy, glowR, lerp(C.bg, col, 0.12));
+      }
+      const cosR = Math.cos(rotation), sinR = Math.sin(rotation);
+      function pt(dx,dy) {
+        return [sx + (scale*(dx*cosR-dy*sinR))|0, sy + (scale*(dx*sinR+dy*cosR))|0];
+      }
+      // Cross (2px wide)
+      const [v0x,v0y]=pt(0,-8),[v1x,v1y]=pt(0,8);
+      const [h0x,h0y]=pt(-8,0),[h1x,h1y]=pt(8,0);
+      drawLine(ctx,v0x,v0y,v1x,v1y,2,col);
+      drawLine(ctx,h0x,h0y,h1x,h1y,2,col);
+      // Diagonals (1px)
+      const [d0x,d0y]=pt(-5,-5),[d1x,d1y]=pt(5,5);
+      const [d2x,d2y]=pt(-5,5),[d3x,d3y]=pt(5,-5);
+      drawLine(ctx,d0x,d0y,d1x,d1y,1,col);
+      drawLine(ctx,d2x,d2y,d3x,d3y,1,col);
+      // Center circle
+      drawCircleStroke(ctx, sx, sy, Math.max(1,(3*scale)|0), col);
+      // Cardinal points
+      ctx.fillStyle = rgb(col);
+      [pt(0,-10),pt(0,10),pt(-10,0),pt(10,0)].forEach(([px,py]) => {
+        ctx.fillRect(px, py, 1, 1);
       });
-      ctx.restore();
     }
 
+    // ── Mouth (parabolic curve for smiles/frowns) ──
     function drawMouth(ctx, mx, my, w, col, curve) {
-      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(mx-w, my);
-      ctx.quadraticCurveTo(mx, my+curve, mx+w, my);
-      ctx.stroke();
+      ctx.fillStyle = rgb(col);
+      for (let dx = -w; dx <= w; dx++) {
+        const t = dx / w;
+        const dy = (curve * t * t)|0;
+        ctx.fillRect(mx+dx, my+dy, 1, 1);
+        if (Math.abs(curve) > 3) ctx.fillRect(mx+dx, my+dy+1, 1, 1);
+      }
     }
 
-    // ── State renderer (parametrizzato per layout) ──
-    function renderStates(ctx, cx, eyeY, eyeDist, eyeSize, sigilY, mouthY, glowR, now, state) {
-      const lx = cx - eyeDist, rx = cx + eyeDist;
-      const es = eyeSize, gr = glowR;
+    // ── Straight mouth line ──
+    function drawMouthLine(ctx, mx, my, hw, col) {
+      drawLine(ctx, mx-hw, my, mx+hw, my, 1, col);
+    }
+
+    // ── Text helper (ESP32 font approximation) ──
+    function drawText(ctx, text, x, y, col, size) {
+      ctx.fillStyle = rgb(col);
+      ctx.font = `${size||10}px "JetBrains Mono",monospace`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(text, x, y);
+    }
+
+    // ── State renderer (all 11 states, ESP32-accurate) ──
+    function renderStates(ctx, now, state) {
+      const {cx,cy,eyeY,sigilY,mouthY,lx,rx,hw,hh} = G;
 
       if (state === 'IDLE') {
+        drawHoodFilled(ctx, C.hood);
+        drawFaceShadow(ctx);
         const breath = 0.7 + 0.3*Math.sin(now/4000*Math.PI*2);
-        const ec = lerpColor('#003310', COL.eye, breath);
-        const dx = 2*Math.sin(now/5000), dy = 1.5*Math.cos(now/7000);
-        drawGlowingEye(ctx, lx+dx, eyeY+dy, es, ec, COL.glow, gr*0.7, breath);
-        drawGlowingEye(ctx, rx+dx, eyeY+dy, es, ec, COL.glow, gr*0.7, breath);
-        const sb = 0.08+0.04*Math.sin(now/3000);
-        drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, sb), 0.5);
-        drawMouth(ctx, cx, mouthY, 12, rgbaStr(COL.eye, 0.2), 0);
+        const eyeCol = [0, (255*breath)|0, (65*breath)|0];
+        drawEyeGlow(ctx, lx, eyeY, C.green, 0.8);
+        drawEyeGlow(ctx, rx, eyeY, C.green, 0.8);
+        const dx = (2*Math.sin(now/5000))|0, dy = (1*Math.cos(now/7000))|0;
+        drawMandorlaEyeRelaxed(ctx, lx, eyeY, hw, hh, eyeCol, G.eyelid);
+        drawMandorlaEyeRelaxed(ctx, rx, eyeY, hw, hh, eyeCol, G.eyelid);
+        fillCircle(ctx, lx+dx, eyeY+dy, 4, C.bg);
+        fillCircle(ctx, rx+dx, eyeY+dy, 4, C.bg);
+        const sb = 0.1 + 0.05*Math.sin(now/6000*Math.PI*2);
+        drawSigil(ctx, cx, sigilY, lerp(C.bg, C.red, sb), 0.6);
+        drawLine(ctx, cx-15, mouthY, cx+15, mouthY, 1, eyeCol);
 
       } else if (state === 'THINKING') {
-        drawGlowingEye(ctx, lx, eyeY-2, es, COL.eye, COL.glow, gr*0.8, 1);
-        drawGlowingEye(ctx, rx, eyeY-2, es, COL.eye, COL.glow, gr*0.8, 1);
-        const thinkRot = (now/8000)*Math.PI*2;
-        const thinkPulse = 0.6+0.2*Math.sin(now/600);
-        drawSigil(ctx, cx, sigilY, lerpColor('#000', COL.sigil, thinkPulse), 0.8, thinkRot);
-        drawMouth(ctx, cx, mouthY, 10, rgbaStr(COL.eye, 0.3), 0);
-        const dots = ['','.','..','...'][Math.floor(now/400)%4];
-        ctx.fillStyle = rgbaStr(COL.eye, 0.3);
-        ctx.font = '14px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-        ctx.fillText(dots, cx, mouthY+22);
+        drawHoodFilled(ctx, C.hood);
+        drawFaceShadow(ctx);
+        drawEyeGlow(ctx, lx, eyeY, C.green, 1);
+        drawEyeGlow(ctx, rx, eyeY, C.green, 1);
+        drawMandorlaEyeRelaxed(ctx, lx, eyeY, hw, hh, C.green, 0);
+        drawMandorlaEyeRelaxed(ctx, rx, eyeY, hw, hh, C.green, 0);
+        fillCircle(ctx, lx, eyeY-5, 5, C.bg);
+        fillCircle(ctx, rx, eyeY-5, 5, C.bg);
+        const pulse = 0.7+0.3*Math.sin(now/1000*Math.PI*2);
+        const sigilCol = lerp(C.bg, C.red, pulse);
+        const rot = now/8000*Math.PI*2;
+        drawSigil(ctx, cx, sigilY, sigilCol, 1, rot);
+        drawLine(ctx, cx-12, mouthY, cx+12, mouthY, 1, C.green);
+        const dots = ['','.','..','...'][(now/400|0)%4];
+        if (dots) drawText(ctx, dots, cx, cy+50, C.dim, 14);
 
       } else if (state === 'WORKING') {
-        const sq = es*0.5;
-        drawGlowingEye(ctx, lx, eyeY, sq, COL.eye, COL.glow, gr*0.4, 0.6);
-        drawGlowingEye(ctx, rx, eyeY, sq, COL.eye, COL.glow, gr*0.4, 0.6);
-        // Sopracciglia concentrate (come ESP32)
-        ctx.strokeStyle = rgbaStr(COL.eye, 0.4); ctx.lineWidth = 1.5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(lx-es, eyeY-es*0.55-4); ctx.lineTo(lx+es*0.4, eyeY-es*0.55-2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(rx-es*0.4, eyeY-es*0.55-2); ctx.lineTo(rx+es, eyeY-es*0.55-4); ctx.stroke();
-        const workRot = (now/3000)*Math.PI*2;
-        drawSigil(ctx, cx, sigilY, rgbaStr(COL.eye, 0.3), 0.7, workRot);
-        drawMouth(ctx, cx, mouthY, 8, rgbaStr(COL.eye, 0.25), 0);
-        const dots2 = ['','.','..','...'][Math.floor(now/600)%4];
-        ctx.fillStyle = rgbaStr(COL.eye, 0.25);
-        ctx.font = '12px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-        ctx.fillText(dots2, cx, mouthY+20);
+        drawHoodFilled(ctx, C.hood);
+        drawFaceShadow(ctx);
+        drawEyeGlow(ctx, lx, eyeY, C.green, 0.5);
+        drawEyeGlow(ctx, rx, eyeY, C.green, 0.5);
+        drawMandorlaEye(ctx, lx, eyeY, hw, 4, C.dim);
+        drawMandorlaEye(ctx, rx, eyeY, hw, 4, C.dim);
+        drawLine(ctx, lx-18, eyeY-14, lx+18, eyeY-14, 2, C.dim);
+        drawLine(ctx, rx-18, eyeY-14, rx+18, eyeY-14, 2, C.dim);
+        const rot = now/3000*Math.PI*2;
+        drawSigil(ctx, cx, sigilY, C.dim, 0.9, rot);
+        drawLine(ctx, cx-8, mouthY, cx+8, mouthY, 1, C.dim);
+        const dots = ['','.','..','...'][(now/600|0)%4];
+        if (dots) drawText(ctx, dots, cx, cy+50, C.dim, 14);
 
       } else if (state === 'PROUD') {
-        drawHappyEye(ctx, lx, eyeY, es, COL.eye, COL.glow, gr);
-        drawHappyEye(ctx, rx, eyeY, es, COL.eye, COL.glow, gr);
-        const proudScale = 1.1+0.1*Math.sin(now/500);
-        drawSigil(ctx, cx, sigilY, COL.sigil, proudScale);
-        const ringT = (now%2000)/2000;
-        const ringR = 12+ringT*25, ringA = 0.4*(1-ringT);
-        if (ringA>0.01) {
-          ctx.strokeStyle = rgbaStr(COL.sigil, ringA); ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.arc(cx, sigilY, ringR, 0, Math.PI*2); ctx.stroke();
-        }
-        drawMouth(ctx, cx, mouthY, 18, COL.eye, 8);
+        drawHoodFilled(ctx, C.hoodLt);
+        drawFaceShadow(ctx);
+        drawEyeGlow(ctx, lx, eyeY, C.green, 1);
+        drawEyeGlow(ctx, rx, eyeY, C.green, 1);
+        drawHappyEye(ctx, lx, eyeY, (hw*0.7)|0, C.green);
+        drawHappyEye(ctx, rx, eyeY, (hw*0.7)|0, C.green);
+        const ss = 1.1+0.1*Math.sin(now/500*Math.PI*2);
+        drawSigil(ctx, cx, sigilY, C.red, ss);
+        const ringT = (now%1500)/1500;
+        const ringR = (15*ringT)|0;
+        const ringCol = lerp(C.red, C.bg, ringT);
+        if (ringR > 0) drawCircleStroke(ctx, cx, sigilY, ringR, ringCol);
+        drawMouth(ctx, cx, mouthY, 18, C.green, 7);
 
       } else if (state === 'SLEEPING') {
-        ctx.strokeStyle = rgbaStr(COL.eye, 0.3); ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(lx-es, eyeY); ctx.lineTo(lx+es, eyeY); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(rx-es, eyeY); ctx.lineTo(rx+es, eyeY); ctx.stroke();
-        const yO = 6*Math.sin(now/800);
-        ctx.fillStyle = rgbaStr(COL.eye, 0.3);
-        ctx.font = '12px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-        ctx.fillText('z', cx+30, eyeY-25+yO);
-        ctx.font = '20px "JetBrains Mono", monospace';
-        ctx.fillText('Z', cx+45, eyeY-42+yO);
-        ctx.font = '12px "JetBrains Mono", monospace';
-        ctx.fillText('z', cx+58, eyeY-58+yO);
+        drawHoodFilled(ctx, lerp(C.hood, C.bg, 0.4));
+        drawLine(ctx, lx-hw, eyeY, lx+hw, eyeY, 2, C.dim);
+        drawLine(ctx, rx-hw, eyeY, rx+hw, eyeY, 2, C.dim);
+        drawSigil(ctx, cx, sigilY, [40,0,10], 0.5);
+        const yOff = (5*Math.sin(now/800))|0;
+        drawText(ctx, 'z', cx+50, cy-45+yOff, C.dim, 14);
+        drawText(ctx, 'Z', cx+65, cy-60+yOff, C.dim, 24);
+        drawText(ctx, 'z', cx+85, cy-75+yOff, C.dim, 14);
 
       } else if (state === 'HAPPY') {
-        drawHappyEye(ctx, lx, eyeY, es*1.1, COL.eye, COL.glow, gr);
-        drawHappyEye(ctx, rx, eyeY, es*1.1, COL.eye, COL.glow, gr);
-        const sc = (Math.floor(now/300)%2===0) ? COL.sigil : lerpColor(COL.sigil,'#000',0.3);
-        const bounceY = sigilY+4*Math.sin(now/400);
-        drawSigil(ctx, cx, bounceY, sc, 1.1);
-        drawMouth(ctx, cx, mouthY, 22, COL.eye, 10);
+        drawHoodFilled(ctx, C.hoodLt);
+        drawFaceShadow(ctx);
+        drawEyeGlow(ctx, lx, eyeY, C.green, 1);
+        drawEyeGlow(ctx, rx, eyeY, C.green, 1);
+        drawHappyEye(ctx, lx, eyeY, (hw*0.8)|0, C.green);
+        drawHappyEye(ctx, rx, eyeY, (hw*0.8)|0, C.green);
+        const flash = (now/300|0)%2 === 0;
+        const sigilCol = flash ? C.red : [180,0,45];
+        const bounceY = (5*Math.sin(now/300*Math.PI*2))|0;
+        drawSigil(ctx, cx, sigilY+bounceY, sigilCol, 1.1);
+        drawMouth(ctx, cx, mouthY, 22, C.green, 9);
         const sp = 0.5+0.5*Math.sin(now/600);
-        ctx.fillStyle = lerpColor('#000', COL.eye, sp);
-        ctx.font = '16px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-        ctx.fillText('*', cx-45, eyeY-25); ctx.fillText('*', cx+45, eyeY-25);
+        const starCol = [0,(255*sp)|0,(65*sp)|0];
+        drawText(ctx, '*', cx-60, cy-30, starCol, 14);
+        drawText(ctx, '*', cx+58, cy-30, starCol, 14);
+        drawText(ctx, '*', cx-45, cy-48, starCol, 8);
+        drawText(ctx, '*', cx+48, cy-48, starCol, 8);
 
       } else if (state === 'CURIOUS') {
-        const scanX = 5*Math.sin(now/1500);
-        drawGlowingEye(ctx, lx+scanX, eyeY, es*1.05, COL.eye, COL.glow, gr*0.9, 1);
-        drawGlowingEye(ctx, rx+scanX, eyeY, es*1.05, COL.eye, COL.glow, gr*0.9, 1);
-        // Sopracciglia sottili (come ESP32 — linee semplici)
-        ctx.strokeStyle = rgbaStr(COL.eye, 0.6); ctx.lineWidth = 1.5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(lx-es, eyeY-es*0.6-2); ctx.lineTo(lx+es*0.6, eyeY-es*0.6-6); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(rx-es*0.6, eyeY-es*0.6-6); ctx.lineTo(rx+es, eyeY-es*0.6-2); ctx.stroke();
-        const curiousTilt = 0.2*Math.sin(now/1200);
-        const curiousScale = 0.6+0.15*(0.5+0.5*Math.sin(now/1000*Math.PI*2));
-        drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.5), curiousScale, curiousTilt);
-        drawMouth(ctx, cx, mouthY, 10, rgbaStr(COL.eye, 0.3), 0);
+        drawHoodFilled(ctx, C.hoodLt);
+        drawFaceShadow(ctx);
+        drawEyeGlow(ctx, lx, eyeY, C.green, 1);
+        drawEyeGlow(ctx, rx, eyeY, C.green, 1);
+        drawMandorlaEyeRelaxed(ctx, lx, eyeY, hw+2, hh+2, C.green, 0);
+        drawMandorlaEyeRelaxed(ctx, rx, eyeY, hw+2, hh+2, C.green, 0);
+        const scanX = (8*Math.sin(now/1500))|0;
+        fillCircle(ctx, lx+scanX, eyeY, 5, C.bg);
+        fillCircle(ctx, rx+scanX, eyeY, 5, C.bg);
+        drawLine(ctx, lx-20, eyeY-20, lx+15, eyeY-16, 2, C.green);
+        drawLine(ctx, rx-15, eyeY-16, rx+20, eyeY-20, 2, C.green);
+        const sp = 0.5+0.5*Math.sin(now/1000*Math.PI*2);
+        const sigilCol = lerp(C.bg, C.red, sp);
+        const tilt = 0.25*Math.sin(now/1200);
+        const sc = 0.9+0.2*sp;
+        drawSigil(ctx, cx, sigilY, sigilCol, sc, tilt);
+        drawCircleStroke(ctx, cx, mouthY, 5, C.green);
+        const qY = (3*Math.sin(now/800))|0;
+        drawText(ctx, '?', cx+80, cy-30+qY, C.dim, 24);
 
       } else if (state === 'ALERT') {
-        const alertCol = '#ffaa00';
-        const flash = Math.floor(now/500)%2===0;
-        drawGlowingEye(ctx, lx, eyeY, es, alertCol, alertCol, gr, 1);
-        drawGlowingEye(ctx, rx, eyeY, es, alertCol, alertCol, gr, 1);
-        const shakeX = 3*Math.sin(now/80);
-        drawSigil(ctx, cx+shakeX, sigilY, flash ? COL.sigil : lerpColor(COL.sigil,'#000',0.4), 1.2);
-        ctx.strokeStyle = alertCol; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-        ctx.beginPath();
-        for (let i=0;i<5;i++) {
-          const mx=cx-18+i*9, my=mouthY+((i%2===0)?0:5);
-          if(i===0) ctx.moveTo(mx,my); else ctx.lineTo(mx,my);
+        drawHoodFilled(ctx, C.yellow);
+        drawFaceShadow(ctx);
+        drawEyeGlow(ctx, lx, eyeY, C.yellow, 1);
+        drawEyeGlow(ctx, rx, eyeY, C.yellow, 1);
+        drawMandorlaEye(ctx, lx, eyeY, hw, hh, C.yellow);
+        drawMandorlaEye(ctx, rx, eyeY, hw, hh, C.yellow);
+        fillCircle(ctx, lx, eyeY, 5, C.bg);
+        fillCircle(ctx, rx, eyeY, 5, C.bg);
+        drawLine(ctx, lx-18, eyeY-18, lx+5, eyeY-12, 2, C.yellow);
+        drawLine(ctx, rx-5, eyeY-12, rx+18, eyeY-18, 2, C.yellow);
+        const shakeX = (3*Math.sin(now/80))|0;
+        drawSigil(ctx, cx+shakeX, sigilY, C.red, 1.2);
+        // Zigzag mouth
+        for (let i = 0; i < 4; i++) {
+          const sx0 = cx-20+i*10, sy0 = mouthY+((i%2===0)?0:5);
+          const sx1 = sx0+10, sy1 = mouthY+((i%2===0)?5:0);
+          drawLine(ctx, sx0, sy0, sx1, sy1, 2, C.yellow);
         }
-        ctx.stroke();
-        if (flash) {
-          ctx.fillStyle = COL.sigil;
-          ctx.font = 'bold 24px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-          ctx.fillText('!', cx+eyeDist+22, eyeY-5);
-        }
+        if ((now/500|0)%2===0) drawText(ctx, '!', cx+90, cy-15, C.red, 24);
 
       } else if (state === 'ERROR') {
-        const errCol = '#ff0040';
-        const gc2 = hexToRgb(errCol);
-        [-1,1].forEach(side => {
-          const ex = side===-1 ? lx : rx;
-          const g = ctx.createRadialGradient(ex, eyeY, 0, ex, eyeY, gr*0.6);
-          g.addColorStop(0, `rgba(${gc2.r},${gc2.g},${gc2.b},0.25)`);
-          g.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = g;
-          ctx.beginPath(); ctx.arc(ex, eyeY, gr*0.6, 0, Math.PI*2); ctx.fill();
-          ctx.strokeStyle = errCol; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
-          const xs = es*0.65;
-          ctx.beginPath(); ctx.moveTo(ex-xs, eyeY-xs); ctx.lineTo(ex+xs, eyeY+xs); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(ex-xs, eyeY+xs); ctx.lineTo(ex+xs, eyeY-xs); ctx.stroke();
+        drawHoodFilled(ctx, C.red);
+        drawFaceShadow(ctx);
+        drawEyeGlow(ctx, lx, eyeY, C.red, 0.6);
+        drawEyeGlow(ctx, rx, eyeY, C.red, 0.6);
+        // X marks
+        [lx, rx].forEach(ex => {
+          drawLine(ctx, ex-12, eyeY-12, ex+12, eyeY+12, 3, C.red);
+          drawLine(ctx, ex-12, eyeY+12, ex+12, eyeY-12, 3, C.red);
         });
-        if (Math.random()>0.4) drawSigil(ctx, cx, sigilY, rgbaStr(errCol, 0.4), 0.7+Math.random()*0.3);
-        drawMouth(ctx, cx, mouthY+3, 14, errCol, -5);
-        ctx.fillStyle = rgbaStr(errCol, 0.5);
-        ctx.font = '11px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-        ctx.fillText('reconnecting', cx, mouthY+32);
+        if (Math.random()>0.4) {
+          const sc = 0.7+Math.random()*0.3;
+          drawSigil(ctx, cx, sigilY, [120,0,30], sc);
+        }
+        drawLine(ctx, cx-15, mouthY+5, cx, mouthY, 2, C.red);
+        drawLine(ctx, cx, mouthY, cx+15, mouthY+5, 2, C.red);
+        drawText(ctx, 'reconnecting', cx, cy+55, C.red, 8);
 
       } else if (state === 'BORED') {
-        const phase = Math.floor((now/5000)%6);
-        const t = (now%5000)/5000;
+        const elapsed = now;
+        const phase = (elapsed/5000|0)%6;
+        const t = (elapsed%5000)/5000;
+
+        drawHoodFilled(ctx, C.hood);
+        drawFaceShadow(ctx);
+        drawEyeGlow(ctx, lx, eyeY, C.green, 0.7);
+        drawEyeGlow(ctx, rx, eyeY, C.green, 0.7);
 
         if (phase === 0) {
-          const angle = t*Math.PI*2, rollR = 10;
-          const ldx = Math.cos(angle)*rollR, ldy = Math.sin(angle)*rollR;
-          drawGlowingEye(ctx, lx+ldx, eyeY+ldy, es*0.9, COL.eye, COL.glow, gr*0.7, 0.7);
-          drawGlowingEye(ctx, rx+ldx, eyeY+ldy, es*0.9, COL.eye, COL.glow, gr*0.7, 0.7);
-          drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.15), 0.6);
-          drawMouth(ctx, cx, mouthY, 12, rgbaStr(COL.eye, 0.3), -2);
+          // Eye Roll
+          const edx = (Math.cos(t*Math.PI*2)*12)|0;
+          const edy = (Math.sin(t*Math.PI*2)*12)|0;
+          drawMandorlaEyeRelaxed(ctx, lx, eyeY, hw, hh, C.green, G.eyelid);
+          drawMandorlaEyeRelaxed(ctx, rx, eyeY, hw, hh, C.green, G.eyelid);
+          fillCircle(ctx, lx+edx, eyeY+edy, 4, C.bg);
+          fillCircle(ctx, rx+edx, eyeY+edy, 4, C.bg);
+          drawSigil(ctx, cx, sigilY, [38,0,10], 0.6);
+          drawMouth(ctx, cx, mouthY, 10, C.dim, -2);
+          drawText(ctx, '...', cx, mouthY+18, [0,40,10], 8);
+
         } else if (phase === 1) {
-          let lookX, lookY;
-          if (t<0.25) { lookX=-18*(t/0.25); lookY=0; }
-          else if (t<0.5) { lookX=-18+36*((t-0.25)/0.25); lookY=0; }
-          else if (t<0.75) { lookX=18-18*((t-0.5)/0.25); lookY=-10*((t-0.5)/0.25); }
-          else { lookX=0; lookY=-10+10*((t-0.75)/0.25); }
-          drawGlowingEye(ctx, lx+lookX, eyeY+lookY, es, COL.eye, COL.glow, gr*0.8, 0.8);
-          drawGlowingEye(ctx, rx+lookX, eyeY+lookY, es, COL.eye, COL.glow, gr*0.8, 0.8);
-          drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, lookY<-5 ? 0.4 : 0.12), 0.7);
-          drawMouth(ctx, cx, mouthY, 14, rgbaStr(COL.eye, 0.2), 0);
+          // Wander
+          let pdx=0, pdy=0;
+          if (t<0.25) { pdx=(-25*(t/0.25))|0; }
+          else if (t<0.5) { pdx=(-25+50*((t-0.25)/0.25))|0; }
+          else if (t<0.75) { pdx=(25*(1-(t-0.5)/0.25))|0; pdy=(-15*((t-0.5)/0.25))|0; }
+          else { pdy=(-15*(1-(t-0.75)/0.25))|0; }
+          drawMandorlaEyeRelaxed(ctx, lx, eyeY, hw, hh, C.green, G.eyelid);
+          drawMandorlaEyeRelaxed(ctx, rx, eyeY, hw, hh, C.green, G.eyelid);
+          fillCircle(ctx, lx+pdx, eyeY+pdy, 4, C.bg);
+          fillCircle(ctx, rx+pdx, eyeY+pdy, 4, C.bg);
+          const sb = (t>0.5&&t<0.75) ? 0.5 : 0.15;
+          drawSigil(ctx, cx, sigilY, lerp(C.bg, C.red, sb), 0.7);
+          drawLine(ctx, cx-10, mouthY, cx+10, mouthY, 1, C.dim);
+          if (t>0.6&&t<0.85) drawText(ctx, '?', cx+70, cy-35, [0,40,10], 14);
+
         } else if (phase === 2) {
-          const yawnOpen = t<0.3 ? t/0.3 : t<0.7 ? 1 : 1-(t-0.7)/0.3;
-          const lidClose = Math.max(0, yawnOpen-0.3);
-          const eyeH = es*(1-lidClose*0.7);
-          drawGlowingEye(ctx, lx, eyeY, eyeH, COL.eye, COL.glow, gr*0.5, 0.5+0.3*(1-yawnOpen));
-          drawGlowingEye(ctx, rx, eyeY, eyeH, COL.eye, COL.glow, gr*0.5, 0.5+0.3*(1-yawnOpen));
-          drawMouth(ctx, cx, mouthY, 6+yawnOpen*12, rgbaStr(COL.eye, 0.3+yawnOpen*0.2), yawnOpen*10);
-          drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.08+0.04*(1-yawnOpen)), 0.5);
+          // Yawn
+          let yawnOpen;
+          if (t<0.3) yawnOpen=t/0.3;
+          else if (t<0.7) yawnOpen=1;
+          else yawnOpen=1-(t-0.7)/0.3;
+          const eyeH = Math.max(2, (hh*(1-yawnOpen*0.7))|0);
+          drawMandorlaEye(ctx, lx, eyeY, hw, eyeH, C.green);
+          drawMandorlaEye(ctx, rx, eyeY, hw, eyeH, C.green);
+          if (eyeH>3) { fillCircle(ctx,lx,eyeY,3,C.bg); fillCircle(ctx,rx,eyeY,3,C.bg); }
+          const mH = Math.max(1,(12*yawnOpen)|0);
+          fillEllipse(ctx, cx, mouthY, 8, mH, C.dim);
+          const sd = 0.15*(1-yawnOpen*0.8);
+          drawSigil(ctx, cx, sigilY, lerp(C.bg, C.red, sd), 0.6);
+
         } else if (phase === 3) {
-          const bounceT = Math.abs(Math.sin(t*Math.PI*3));
-          const juggleY = sigilY+20-bounceT*40;
-          const juggleRot = t*Math.PI*4;
-          drawSigil(ctx, cx, juggleY, COL.sigil, 0.8+bounceT*0.4, juggleRot);
-          const trackY = (juggleY-eyeY)*0.15;
-          drawGlowingEye(ctx, lx, eyeY+trackY, es, COL.eye, COL.glow, gr*0.8, 0.85);
-          drawGlowingEye(ctx, rx, eyeY+trackY, es, COL.eye, COL.glow, gr*0.8, 0.85);
-          drawMouth(ctx, cx, mouthY, 14, rgbaStr(COL.eye, 0.3), 3);
+          // Juggle
+          const bounceY = 30 - Math.abs(Math.sin(t*3*Math.PI))*60;
+          const juggleRot = t*4*Math.PI;
+          const juggleSY = sigilY + bounceY|0;
+          drawSigil(ctx, cx, juggleSY, C.red, 0.9, juggleRot);
+          const trackY = (bounceY*0.15)|0;
+          drawMandorlaEyeRelaxed(ctx, lx, eyeY, hw, hh, C.green, G.eyelid);
+          drawMandorlaEyeRelaxed(ctx, rx, eyeY, hw, hh, C.green, G.eyelid);
+          fillCircle(ctx, lx, eyeY+trackY-2, 4, C.bg);
+          fillCircle(ctx, rx, eyeY+trackY-2, 4, C.bg);
+          drawMouth(ctx, cx, mouthY, 12, C.green, 4);
+
         } else if (phase === 4) {
-          const droopCycle = t<0.7 ? t/0.7 : 0;
-          const snap = t>=0.7 ? Math.min(1,(t-0.7)/0.1) : 0;
-          const eyeDroop = droopCycle*0.8*(1-snap);
-          const eyeScale = es*(1-eyeDroop*0.6);
-          const eyeInt = 0.9-eyeDroop*0.5+snap*0.5;
-          drawGlowingEye(ctx, lx, eyeY+eyeDroop*6, eyeScale, COL.eye, COL.glow, gr*0.6, eyeInt);
-          drawGlowingEye(ctx, rx, eyeY+eyeDroop*6, eyeScale, COL.eye, COL.glow, gr*0.6, eyeInt);
-          if (eyeDroop<0.5||snap>0||Math.random()>0.5)
-            drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.12*(1-eyeDroop)+snap*0.2), 0.5+snap*0.3);
-          drawMouth(ctx, cx, mouthY, 12, rgbaStr(COL.eye, 0.2), -2*eyeDroop);
-          if (snap>0.5) {
-            ctx.fillStyle = rgbaStr(COL.eye, 0.4*(1-(t-0.8)/0.2));
-            ctx.font = 'bold 16px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-            ctx.fillText('!', cx+eyeDist+8, eyeY-14);
-          }
-        } else if (phase === 5) {
-          drawGlowingEye(ctx, lx, eyeY-4, es*0.9, COL.eye, COL.glow, gr*0.7, 0.75);
-          drawGlowingEye(ctx, rx, eyeY-4, es*0.9, COL.eye, COL.glow, gr*0.7, 0.75);
-          drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.3), 0.8, (now/2000)*Math.PI*2);
-          ctx.strokeStyle = rgbaStr(COL.eye, 0.35); ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.arc(cx, mouthY, 4, 0, Math.PI*2); ctx.stroke();
-          const notes = ['\u266A','\u266B'];
-          for (let i=0;i<2;i++) {
-            const nt = (t+i*0.4)%1;
-            const nx = cx+20+i*12+6*Math.sin(nt*Math.PI*2);
-            const ny = mouthY-nt*45;
-            const na = nt<0.8 ? 0.5 : 0.5*(1-(nt-0.8)/0.2);
-            ctx.fillStyle = rgbaStr(COL.eye, na);
-            ctx.font = `${12+i*3}px "JetBrains Mono", monospace`;
-            ctx.textAlign = 'center';
-            ctx.fillText(notes[i], nx, ny);
-          }
+          // Doze off
+          let droop;
+          if (t<0.7) droop=t/0.7;
+          else if (t<0.8) droop=1-(t-0.7)/0.1;
+          else droop=0;
+          const eyeH = Math.max(2, (hh*(1-droop*0.85))|0);
+          const eyeCol = lerp(C.green, C.dim, droop*0.6);
+          drawMandorlaEye(ctx, lx, eyeY, hw, eyeH, eyeCol);
+          drawMandorlaEye(ctx, rx, eyeY, hw, eyeH, eyeCol);
+          if (eyeH>3) { fillCircle(ctx,lx,eyeY,3,C.bg); fillCircle(ctx,rx,eyeY,3,C.bg); }
+          if (droop<0.5||Math.random()>(droop*0.8))
+            drawSigil(ctx, cx, sigilY, lerp(C.bg,C.red,0.2*(1-droop)), 0.6);
+          drawLine(ctx, cx-10, mouthY, cx+10, mouthY, 1, C.dim);
+          if (t>0.7&&t<0.9) drawText(ctx, '!', cx+60, cy-30, C.green, 24);
+
+        } else {
+          // Whistle
+          drawMandorlaEyeRelaxed(ctx, lx, eyeY, hw, hh, C.green, G.eyelid);
+          drawMandorlaEyeRelaxed(ctx, rx, eyeY, hw, hh, C.green, G.eyelid);
+          fillCircle(ctx, lx, eyeY-6, 4, C.bg);
+          fillCircle(ctx, rx, eyeY-6, 4, C.bg);
+          const vinylRot = now/4000*Math.PI*2;
+          drawSigil(ctx, cx, sigilY, lerp(C.bg,C.red,0.35), 0.7, vinylRot);
+          drawCircleStroke(ctx, cx, mouthY, 4, C.green);
+          const nt1 = (t*2)%1, nt2 = (t*2+0.5)%1;
+          const ny1 = mouthY-10-(35*nt1)|0, ny2 = mouthY-10-(35*nt2)|0;
+          drawText(ctx, '~', cx+30, ny1, lerp(C.green,C.bg,nt1), 14);
+          drawText(ctx, '*', cx+45, ny2, lerp(C.green,C.bg,nt2), 8);
         }
       }
     }
 
-    // ── Scanlines ──
-    function drawScanlines(ctx, W, H) {
-      ctx.fillStyle = 'rgba(0,0,0,0.04)';
-      for (let y = 0; y < H; y += 2) ctx.fillRect(0, y, W, 1);
-    }
-
-    // ── Full frame render ──
-    function renderFrame(canvas, state, startTime) {
-      const ctx = canvas.getContext('2d');
-      const dpr = window.devicePixelRatio || 1;
-      const dispW = canvas.clientWidth, dispH = canvas.clientHeight;
-      if (canvas.width !== dispW*dpr || canvas.height !== dispH*dpr) {
-        canvas.width = dispW*dpr;
-        canvas.height = dispH*dpr;
-      }
-      const W = dispW, H = dispH;
+    // ── Dormant frame (just pulsing sigil symbol) ──
+    function renderDormantFrame(canvas, startTime) {
+      const ctx = _off.getContext('2d');
+      ctx.fillStyle = rgb(C.bg);
+      ctx.fillRect(0, 0, 320, 170);
       const now = Date.now() - startTime;
-
-      ctx.save();
-      ctx.scale(dpr, dpr);
-      ctx.fillStyle = COL.bg;
-      ctx.fillRect(0, 0, W, H);
-      drawHood(ctx, W, H);
-      drawScanlines(ctx, W, H);
-      // Landscape coords scaled to canvas size (reference: 320x170)
-      const sx = W/320, sy = H/170;
-      const s = Math.min(sx, sy);
-      const cx = W/2;
-      renderStates(ctx, cx, 82*sy, 44*s, 18*s, 38*sy, 115*sy, 28*s, now, state);
-      ctx.restore();
+      const pulse = 0.3 + 0.2*Math.sin(now/3000*Math.PI*2);
+      drawSigil(ctx, 160, 85, lerp(C.bg, C.red, pulse), 1.5);
+      drawScanlines(ctx);
+      _blit(canvas);
     }
 
-    // ── Mini render (header — solo occhi) ──
+    // ── Blit offscreen → visible canvas ──
+    function _blit(canvas) {
+      const vctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const dw = canvas.clientWidth, dh = canvas.clientHeight;
+      if (canvas.width !== dw*dpr || canvas.height !== dh*dpr) {
+        canvas.width = dw*dpr; canvas.height = dh*dpr;
+      }
+      vctx.imageSmoothingEnabled = false;
+      vctx.drawImage(_off, 0, 0, dw*dpr, dh*dpr);
+    }
+
+    // ── Full frame render (offscreen 320×170 → pixelated blit) ──
+    function renderFrame(canvas, state, startTime) {
+      const ctx = _off.getContext('2d');
+      ctx.fillStyle = rgb(C.bg);
+      ctx.fillRect(0, 0, 320, 170);
+      const now = Date.now() - startTime;
+      renderStates(ctx, now, state);
+      drawScanlines(ctx);
+      _blit(canvas);
+    }
+
+    // ── Mini render (header — smooth, not pixel-art) ──
     function renderMini(canvas, state, startTime) {
       const ctx = canvas.getContext('2d');
       const dpr = window.devicePixelRatio || 1;
       const dispW = canvas.clientWidth, dispH = canvas.clientHeight;
       if (canvas.width !== dispW*dpr || canvas.height !== dispH*dpr) {
-        canvas.width = dispW*dpr;
-        canvas.height = dispH*dpr;
+        canvas.width = dispW*dpr; canvas.height = dispH*dpr;
       }
       const now = Date.now() - startTime;
-      ctx.save();
-      ctx.scale(dpr, dpr);
+      ctx.save(); ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, dispW, dispH);
-      // Just draw eyes centered in the mini canvas
       const cx = dispW/2, ey = dispH/2;
       const es = dispH*0.35, gr = dispH*0.6, ed = dispW*0.22;
+      const COL = { eye:'#00ff41', glow:'#00ff41', bg:'#050208' };
 
-      if (state === 'SLEEPING') {
-        ctx.strokeStyle = rgbaStr(COL.eye, 0.3); ctx.lineWidth = 2; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(cx-ed-es, ey); ctx.lineTo(cx-ed+es, ey); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(cx+ed-es, ey); ctx.lineTo(cx+ed+es, ey); ctx.stroke();
-      } else if (state === 'HAPPY' || state === 'PROUD') {
-        drawHappyEye(ctx, cx-ed, ey, es, COL.eye, COL.glow, gr);
-        drawHappyEye(ctx, cx+ed, ey, es, COL.eye, COL.glow, gr);
-      } else if (state === 'ERROR') {
-        const errCol = '#ff0040';
-        ctx.strokeStyle = errCol; ctx.lineWidth = 3; ctx.lineCap = 'round';
-        const xs = es*0.6;
-        [cx-ed, cx+ed].forEach(ex => {
-          ctx.beginPath(); ctx.moveTo(ex-xs, ey-xs); ctx.lineTo(ex+xs, ey+xs); ctx.stroke();
-          ctx.beginPath(); ctx.moveTo(ex-xs, ey+xs); ctx.lineTo(ex+xs, ey-xs); ctx.stroke();
+      function miniGlowEye(ex, ey2, es2, col, gcol, gr2, inten) {
+        inten = inten ?? 1;
+        const gc = hexToRgb(gcol);
+        const g1 = ctx.createRadialGradient(ex,ey2,0,ex,ey2,gr2*0.7*inten);
+        g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},${0.18*inten})`);
+        g1.addColorStop(0.5, `rgba(${gc.r},${gc.g},${gc.b},${0.08*inten})`);
+        g1.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = g1;
+        ctx.beginPath(); ctx.arc(ex,ey2,gr2*0.7*inten,0,Math.PI*2); ctx.fill();
+        const hw2=es2, hh2=es2*0.52;
+        ctx.save(); ctx.beginPath();
+        ctx.moveTo(ex-hw2,ey2); ctx.lineTo(ex,ey2-hh2); ctx.lineTo(ex+hw2,ey2); ctx.lineTo(ex,ey2+hh2);
+        ctx.closePath(); ctx.clip();
+        ctx.fillStyle = col; ctx.fillRect(ex-hw2,ey2-hh2,hw2*2,hh2*2);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        for (let y2=ey2-hh2;y2<ey2+hh2;y2+=3) ctx.fillRect(ex-hw2,y2,hw2*2,1);
+        ctx.fillStyle = COL.bg;
+        ctx.fillRect(ex-hw2-1,ey2-hh2-1,hw2*2+2,(hh2*0.15|0)+1);
+        ctx.restore();
+        ctx.fillStyle = '#000';
+        ctx.beginPath(); ctx.arc(ex,ey2+1,es2*0.13,0,Math.PI*2); ctx.fill();
+      }
+      function miniHappyEye(ex, ey2, es2, col, gcol, gr2) {
+        const gc = hexToRgb(gcol);
+        const g1=ctx.createRadialGradient(ex,ey2,0,ex,ey2,gr2*0.7);
+        g1.addColorStop(0,`rgba(${gc.r},${gc.g},${gc.b},0.25)`);
+        g1.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=g1; ctx.beginPath(); ctx.arc(ex,ey2,gr2*0.7,0,Math.PI*2); ctx.fill();
+        ctx.strokeStyle=col; ctx.lineWidth=3.5; ctx.lineCap='round';
+        ctx.beginPath(); ctx.arc(ex,ey2+es2*0.3,es2*0.8,Math.PI*1.15,Math.PI*1.85); ctx.stroke();
+      }
+
+      if (state==='SLEEPING') {
+        ctx.strokeStyle=rgbaHex(COL.eye,0.3); ctx.lineWidth=2; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(cx-ed-es,ey); ctx.lineTo(cx-ed+es,ey); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx+ed-es,ey); ctx.lineTo(cx+ed+es,ey); ctx.stroke();
+      } else if (state==='HAPPY'||state==='PROUD') {
+        miniHappyEye(cx-ed,ey,es,COL.eye,COL.glow,gr);
+        miniHappyEye(cx+ed,ey,es,COL.eye,COL.glow,gr);
+      } else if (state==='ERROR') {
+        ctx.strokeStyle='#ff0040'; ctx.lineWidth=3; ctx.lineCap='round';
+        const xs=es*0.6;
+        [cx-ed,cx+ed].forEach(ex2=>{
+          ctx.beginPath(); ctx.moveTo(ex2-xs,ey-xs); ctx.lineTo(ex2+xs,ey+xs); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(ex2-xs,ey+xs); ctx.lineTo(ex2+xs,ey-xs); ctx.stroke();
         });
-      } else if (state === 'ALERT') {
-        const alertCol = '#ffaa00';
-        drawGlowingEye(ctx, cx-ed, ey, es, alertCol, alertCol, gr, 1);
-        drawGlowingEye(ctx, cx+ed, ey, es, alertCol, alertCol, gr, 1);
-      } else if (state === 'THINKING' || state === 'WORKING') {
-        const pulse = 0.6+0.4*Math.sin(now/800);
-        drawGlowingEye(ctx, cx-ed, ey-2, es, COL.eye, COL.glow, gr, pulse);
-        drawGlowingEye(ctx, cx+ed, ey-2, es, COL.eye, COL.glow, gr, pulse);
+      } else if (state==='ALERT') {
+        miniGlowEye(cx-ed,ey,es,'#ffaa00','#ffaa00',gr,1);
+        miniGlowEye(cx+ed,ey,es,'#ffaa00','#ffaa00',gr,1);
+      } else if (state==='THINKING'||state==='WORKING') {
+        const p=0.6+0.4*Math.sin(now/800);
+        miniGlowEye(cx-ed,ey-2,es,COL.eye,COL.glow,gr,p);
+        miniGlowEye(cx+ed,ey-2,es,COL.eye,COL.glow,gr,p);
       } else {
-        // IDLE, CURIOUS, BORED — breathing eyes
-        const breath = 0.7+0.3*Math.sin(now/4000*Math.PI*2);
-        const ec = lerpColor('#004415', COL.eye, breath);
-        const dx = 2*Math.sin(now/5000), dy = 1*Math.cos(now/7000);
-        drawGlowingEye(ctx, cx-ed+dx, ey+dy, es, ec, COL.glow, gr, breath);
-        drawGlowingEye(ctx, cx+ed+dx, ey+dy, es, ec, COL.glow, gr, breath);
+        const breath=0.7+0.3*Math.sin(now/4000*Math.PI*2);
+        const ec=lerpHex('#004415',COL.eye,breath);
+        const dx2=2*Math.sin(now/5000), dy2=1*Math.cos(now/7000);
+        miniGlowEye(cx-ed+dx2,ey+dy2,es,ec,COL.glow,gr,breath);
+        miniGlowEye(cx+ed+dx2,ey+dy2,es,ec,COL.glow,gr,breath);
       }
       ctx.restore();
     }
 
-    return { renderFrame, renderMini, COL };
+    // Legacy compat
+    const COL = { hood:'#3d1560',hoodEdge:'#6a2d9e',eye:'#00ff41',glow:'#00ff41',sigil:'#ff0040',bg:'#050208' };
+
+    return { renderFrame, renderMini, renderDormantFrame, COL };
   })();
 
   // ── Sigil Widget State ──
@@ -517,6 +610,7 @@
   let _sigilOnline = false;
   let _sigilStateTime = Date.now();
   let _sigilAnimFrame = null;
+  let _sigilDormant = true;
 
   function setSigilState(state) {
     if (state !== _sigilState) {
@@ -525,12 +619,10 @@
       _sigilStateTime = Date.now();
     }
     _sigilOnline = true;
-    // Update mood timer display
     const moodEl = document.getElementById('sigil-mood-info');
     if (moodEl) moodEl.textContent = state;
   }
 
-  // Update sigil indicator (DOM + canvas state)
   function updateSigilIndicator(state) {
     const ind = document.getElementById('sigil-indicator');
     if (ind) {
@@ -542,30 +634,52 @@
     setSigilState(state);
   }
 
-  // ── Animation loop (shared for all canvases) ──
+  // ── Wake sigil (click to activate) ──
+  function wakeSigil() {
+    if (!_sigilDormant) return;
+    _sigilDormant = false;
+    const label = document.getElementById('sigil-wake-label');
+    if (label) label.style.display = 'none';
+    const cmds = document.getElementById('sigil-commands');
+    if (cmds) cmds.style.display = 'flex';
+    const textRow = document.querySelector('.sigil-text-row');
+    if (textRow) textRow.style.display = 'flex';
+    const dbgToggle = document.querySelector('.sigil-debug-toggle');
+    if (dbgToggle) dbgToggle.style.display = 'flex';
+  }
+
+  // ── Toggle debug controls ──
+  function toggleSigilDebug() {
+    const el = document.getElementById('sigil-debug-actions');
+    if (el) el.style.display = el.style.display === 'none' ? 'flex' : 'none';
+  }
+
+  // ── Animation loop ──
   function _sigilAnimLoop() {
-    // Dashboard widget canvas
     const wc = document.getElementById('sigil-widget-canvas');
     if (wc && wc.offsetParent !== null) {
-      SigilEngine.renderFrame(wc, _sigilState, _sigilStartTime);
+      if (_sigilDormant) {
+        SigilEngine.renderDormantFrame(wc, _sigilStartTime);
+      } else {
+        SigilEngine.renderFrame(wc, _sigilState, _sigilStartTime);
+      }
     }
-    // Header mini canvas
     const mc = document.getElementById('sigil-header-canvas');
     if (mc && mc.offsetParent !== null) {
       SigilEngine.renderMini(mc, _sigilState, _sigilStartTime);
     }
-    // Mood timer update
-    const timerEl = document.getElementById('sigil-mood-timer');
-    if (timerEl) {
-      const elapsed = Math.floor((Date.now() - _sigilStateTime) / 1000);
-      if (elapsed < 60) timerEl.textContent = elapsed + 's';
-      else if (elapsed < 3600) timerEl.textContent = Math.floor(elapsed/60) + 'm ' + (elapsed%60) + 's';
-      else timerEl.textContent = Math.floor(elapsed/3600) + 'h ' + Math.floor((elapsed%3600)/60) + 'm';
+    if (!_sigilDormant) {
+      const timerEl = document.getElementById('sigil-mood-timer');
+      if (timerEl) {
+        const elapsed = Math.floor((Date.now() - _sigilStateTime) / 1000);
+        if (elapsed < 60) timerEl.textContent = elapsed + 's';
+        else if (elapsed < 3600) timerEl.textContent = Math.floor(elapsed/60) + 'm ' + (elapsed%60) + 's';
+        else timerEl.textContent = Math.floor(elapsed/3600) + 'h ' + Math.floor((elapsed%3600)/60) + 'm';
+      }
     }
     _sigilAnimFrame = requestAnimationFrame(_sigilAnimLoop);
   }
 
-  // Start anim loop on init
   _sigilAnimLoop();
 
   // ── Sigil commands ──
@@ -600,7 +714,6 @@
       .catch(() => showToast('Errore OTA'));
   }
 
-  // ── Header click → scroll to widget ──
   function scrollToSigilWidget() {
     switchView('dashboard');
     setTimeout(() => {
