@@ -16,7 +16,7 @@
       else { if (!groups.other) groups.other = []; groups.other.push(e); }
     });
     const labels = { tech: 'Tech', person: 'Persone', place: 'Luoghi', other: 'Altro' };
-    const colors = { tech: 'var(--cyan)', person: 'var(--green)', place: 'var(--amber)', other: 'var(--text2)' };
+    const colors = { tech: 'var(--cyan)', person: 'var(--accent)', place: 'var(--amber)', other: 'var(--text2)' };
     let html = '<div style="font-size:10px;color:var(--muted);margin-bottom:8px;">' + entities.length + ' entità</div>';
     for (const [type, items] of Object.entries(groups)) {
       if (!items.length) continue;

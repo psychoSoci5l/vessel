@@ -30,7 +30,7 @@
     let content = lines.length ? lines.map(l => {
       if (searchVal) {
         const re = new RegExp('(' + searchVal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
-        return l.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(re, '<span style="background:var(--green-dim);color:var(--green);font-weight:700;">$1</span>');
+        return l.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(re, '<span style="background:var(--accent-dim);color:var(--accent);font-weight:700;">$1</span>');
       }
       return l.replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }).join('\n') : '(nessun log)';

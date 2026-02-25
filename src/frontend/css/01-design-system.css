@@ -1,12 +1,12 @@
 /* Font caricato via <link> in index.html con preconnect + font-display:swap */
 
 /* ═══════════════════════════════════════════
-   VESSEL DASHBOARD — Design System v3
-   Verde LED + Flexbox + Mobile-first
+   VESSEL DASHBOARD — Design System v4
+   Theme Engine + Flexbox + Mobile-first
    ═══════════════════════════════════════════ */
 
 :root {
-  /* Base — più scuro per contrasto LED */
+  /* ── Theme: Terminal Green (default) ── */
   --bg: #020502;
   --bg2: #081208;
   --card: #0a1a0a;
@@ -14,34 +14,146 @@
   --border: #162816;
   --border2: #1e3a1e;
 
-  /* Verde LED — più vivido */
-  --green: #00ff41;
-  --green2: #00dd38;
-  --green3: #00aa2a;
-  --green-dim: #002a0e;
+  --accent: #00ff41;
+  --accent2: #00dd38;
+  --accent3: #00aa2a;
+  --accent-dim: #002a0e;
 
-  /* Glow presets */
   --glow-sm: 0 0 4px rgba(0,255,65,0.4);
   --glow-md: 0 0 8px rgba(0,255,65,0.3), 0 0 20px rgba(0,255,65,0.12);
   --glow-text: 0 0 6px rgba(0,255,65,0.5), 0 0 14px rgba(0,255,65,0.2);
 
-  /* Accenti */
   --amber: #ffb000;
   --red: #ff3333;
   --red-dim: #3a0808;
   --cyan: #00ffcc;
 
-  /* Testo */
   --text: #c8ffc8;
   --text2: #7ab87a;
   --muted: #3d6b3d;
 
-  /* Font */
+  --btn-hover: #004422;
+
   --font: 'JetBrains Mono', 'Fira Code', monospace;
 
-  /* Safe areas iOS */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Theme: Amber CRT ── */
+[data-theme="amber"] {
+  --bg: #050300;
+  --bg2: #0f0a04;
+  --card: #1a1008;
+  --card2: #22160a;
+  --border: #2e2010;
+  --border2: #3e2e18;
+
+  --accent: #ffb000;
+  --accent2: #dd9800;
+  --accent3: #aa7400;
+  --accent-dim: #2a1a00;
+
+  --glow-sm: 0 0 4px rgba(255,176,0,0.4);
+  --glow-md: 0 0 8px rgba(255,176,0,0.3), 0 0 20px rgba(255,176,0,0.12);
+  --glow-text: 0 0 6px rgba(255,176,0,0.5), 0 0 14px rgba(255,176,0,0.2);
+
+  --amber: #ff8800;
+  --cyan: #ffcc44;
+
+  --text: #ffe0a0;
+  --text2: #b89860;
+  --muted: #6b5530;
+
+  --btn-hover: #442200;
+}
+
+/* ── Theme: Cyan Ice ── */
+[data-theme="cyan"] {
+  --bg: #000305;
+  --bg2: #040a10;
+  --card: #081420;
+  --card2: #0c1c2a;
+  --border: #102838;
+  --border2: #183a4e;
+
+  --accent: #00ffcc;
+  --accent2: #00ddaa;
+  --accent3: #00aa88;
+  --accent-dim: #002a22;
+
+  --glow-sm: 0 0 4px rgba(0,255,204,0.4);
+  --glow-md: 0 0 8px rgba(0,255,204,0.3), 0 0 20px rgba(0,255,204,0.12);
+  --glow-text: 0 0 6px rgba(0,255,204,0.5), 0 0 14px rgba(0,255,204,0.2);
+
+  --amber: #44aaff;
+  --cyan: #00ff88;
+
+  --text: #c0f0f0;
+  --text2: #6aa8a8;
+  --muted: #305858;
+
+  --btn-hover: #003344;
+}
+
+/* ── Theme: Red Alert ── */
+[data-theme="red"] {
+  --bg: #050000;
+  --bg2: #100404;
+  --card: #1a0808;
+  --card2: #220c0c;
+  --border: #2e1414;
+  --border2: #3e1e1e;
+
+  --accent: #ff3333;
+  --accent2: #dd2828;
+  --accent3: #aa1e1e;
+  --accent-dim: #2a0808;
+
+  --glow-sm: 0 0 4px rgba(255,51,51,0.4);
+  --glow-md: 0 0 8px rgba(255,51,51,0.3), 0 0 20px rgba(255,51,51,0.12);
+  --glow-text: 0 0 6px rgba(255,51,51,0.5), 0 0 14px rgba(255,51,51,0.2);
+
+  --amber: #ff8844;
+  --red: #ff5555;
+  --red-dim: #3a0808;
+  --cyan: #ff6688;
+
+  --text: #ffc8c8;
+  --text2: #b87a7a;
+  --muted: #6b3d3d;
+
+  --btn-hover: #440000;
+}
+
+/* ── Theme: Ghost White ── */
+[data-theme="ghost"] {
+  --bg: #020202;
+  --bg2: #0a0a0a;
+  --card: #111111;
+  --card2: #1a1a1a;
+  --border: #252525;
+  --border2: #333333;
+
+  --accent: #e0e0e0;
+  --accent2: #bbbbbb;
+  --accent3: #888888;
+  --accent-dim: #1a1a1a;
+
+  --glow-sm: 0 0 4px rgba(224,224,224,0.3);
+  --glow-md: 0 0 8px rgba(224,224,224,0.2), 0 0 20px rgba(224,224,224,0.08);
+  --glow-text: 0 0 6px rgba(224,224,224,0.4), 0 0 14px rgba(224,224,224,0.15);
+
+  --amber: #aa9966;
+  --red: #cc4444;
+  --red-dim: #2a0808;
+  --cyan: #99bbcc;
+
+  --text: #d0d0d0;
+  --text2: #888888;
+  --muted: #555555;
+
+  --btn-hover: #2a2a2a;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }

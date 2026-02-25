@@ -39,9 +39,9 @@
 }
 
 .code-tab.active {
-  background: var(--green-dim);
-  color: var(--green);
-  border-color: var(--green3);
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: var(--accent3);
   text-shadow: var(--glow-text);
 }
 
@@ -81,9 +81,9 @@
 
 .msg-user {
   align-self: flex-end;
-  background: var(--green-dim);
-  color: var(--green);
-  border: 1px solid var(--green3);
+  background: var(--accent-dim);
+  color: var(--accent);
+  border: 1px solid var(--accent3);
 }
 
 .msg-bot {
@@ -101,7 +101,7 @@
   color: var(--muted); font-size: 12px; cursor: pointer; padding: 2px 6px;
   opacity: 0; transition: opacity .15s; z-index: 2; min-height: 0; font-family: var(--font);
 }
-.copy-btn:hover { color: var(--green2); border-color: var(--green3); }
+.copy-btn:hover { color: var(--accent2); border-color: var(--accent3); }
 .copy-wrap:hover .copy-btn { opacity: 1; }
 @media (hover: none) { .copy-btn { opacity: 0.5; } }
 
@@ -115,7 +115,7 @@
   gap: 6px;
 }
 
-.dots span { animation: blink 1.2s infinite; display: inline-block; color: var(--green); }
+.dots span { animation: blink 1.2s infinite; display: inline-block; color: var(--accent); }
 .dots span:nth-child(2) { animation-delay: .2s; }
 .dots span:nth-child(3) { animation-delay: .4s; }
 
@@ -139,14 +139,14 @@
   background: var(--bg2);
   border: 1px solid var(--border2);
   border-radius: 8px;
-  color: var(--green);
+  color: var(--accent);
   padding: 10px 14px;
   min-height: 40px;
   max-height: 120px;
   font-family: var(--font);
   font-size: 16px;
   outline: none;
-  caret-color: var(--green);
+  caret-color: var(--accent);
   -webkit-appearance: none;
   appearance: none;
   overflow-y: auto;
@@ -155,13 +155,13 @@
 }
 
 #chat-input::placeholder { color: var(--muted); font-size: 13px; }
-#chat-input:focus { border-color: var(--green3); box-shadow: var(--glow-md); }
+#chat-input:focus { border-color: var(--accent3); box-shadow: var(--glow-md); }
 
 .btn-send {
-  background: var(--green-dim);
-  border: 1px solid var(--green3);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent3);
   border-radius: 8px;
-  color: var(--green);
+  color: var(--accent);
   font-family: var(--font);
   font-size: 18px;
   font-weight: 700;
@@ -172,7 +172,7 @@
   transition: all .15s;
   text-shadow: var(--glow-text);
 }
-.btn-send:hover { background: #004422; }
+.btn-send:hover { background: var(--btn-hover); }
 .btn-send:disabled { opacity: 0.4; cursor: default; }
 
 .code-input-meta {
@@ -193,7 +193,7 @@
   font-family: var(--font);
   transition: all .15s;
 }
-.btn-icon:hover { border-color: var(--green3); color: var(--green2); }
+.btn-icon:hover { border-color: var(--accent3); color: var(--accent2); }
 
 /* Provider dropdown */
 .provider-dropdown { position: relative; flex-shrink: 0; }
@@ -215,7 +215,7 @@
   white-space: nowrap;
   transition: border-color .15s;
 }
-.provider-btn:hover { border-color: var(--green3); }
+.provider-btn:hover { border-color: var(--accent3); }
 
 .provider-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .provider-arrow { font-size: 10px; color: var(--muted); transition: transform .15s; }
@@ -254,13 +254,13 @@
   text-align: left;
 }
 .provider-menu button:last-child { border-bottom: none; }
-.provider-menu button:hover { background: var(--green-dim); color: var(--green); }
+.provider-menu button:hover { background: var(--accent-dim); color: var(--accent); }
 
 .provider-menu .dot,
 .dot {
   width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
 }
-.dot-auto { background: var(--green); box-shadow: 0 0 4px var(--green); }
+.dot-auto { background: var(--accent); box-shadow: 0 0 4px var(--accent); }
 .dot-cloud { background: #ffb300; box-shadow: 0 0 4px #ffb300; }
 .dot-local { background: #00ffcc; box-shadow: 0 0 4px #00ffcc; }
 .dot-deepseek { background: #6c5ce7; box-shadow: 0 0 4px #6c5ce7; }
@@ -278,7 +278,7 @@
   text-transform: uppercase;
   opacity: 0.85;
 }
-.agent-badge[data-agent="vessel"]     { color: #00ff41; border: 1px solid #00ff4144; }
+.agent-badge[data-agent="vessel"]     { color: var(--accent); border: 1px solid var(--accent3); }
 .agent-badge[data-agent="coder"]      { color: #00e5ff; border: 1px solid #00e5ff44; }
 .agent-badge[data-agent="sysadmin"]   { color: #ffab00; border: 1px solid #ffab0044; }
 .agent-badge[data-agent="researcher"] { color: #aa00ff; border: 1px solid #aa00ff44; }

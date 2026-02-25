@@ -6,7 +6,7 @@
       keywords: ['modifica','aggiorna','cambia','refactor','aggiungi','rimuovi','sostituisci','rinomina','sposta','estendi','integra'] },
     { id: 'deploy',   label: 'DEPLOY',   color: '#aa66ff', loop: true,
       keywords: ['deploy','installa','avvia','configura','setup','migra','pubblica','rilascia','lancia'] },
-    { id: 'crea',     label: 'CREA',     color: '#00ff41', loop: false,
+    { id: 'crea',     label: 'CREA',     color: null, loop: false,
       keywords: ['crea','genera','scrivi','costruisci','make','nuova','nuovo','implementa','progetta','realizza'] },
     { id: 'analizza', label: 'ANALIZZA', color: '#44aaff', loop: false,
       keywords: ['analizza','spiega','controlla','leggi','dimmi','cosa fa','verifica','mostra','elenca','lista','log','report','confronta'] },
@@ -28,9 +28,10 @@
     const cat = detectTaskCategory(ta.value);
     const manualLoop = loopToggle?.checked || false;
     const willLoop = manualLoop || cat.loop;
+    const color = cat.color || getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
     badge.textContent = cat.label;
-    badge.style.color = cat.color;
-    badge.style.borderColor = cat.color;
+    badge.style.color = color;
+    badge.style.borderColor = color;
     const loopBadge = document.getElementById('task-loop-badge');
     if (loopBadge) loopBadge.style.display = willLoop ? 'inline-block' : 'none';
   }
@@ -117,14 +118,14 @@
         <select onchange="applyTemplate(this)" style="width:100%;margin-bottom:6px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;color:var(--text2);padding:6px 8px;font-family:var(--font);font-size:11px;outline:none;cursor:pointer;">${opts}</select>
         <textarea id="claude-prompt" rows="6" placeholder="Descrivi il task..."
           oninput="updateCategoryBadge()"
-          style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;color:var(--green);padding:10px 12px;font-family:var(--font);font-size:13px;outline:none;resize:vertical;caret-color:var(--green);min-height:120px;box-sizing:border-box;"></textarea>
+          style="width:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:6px;color:var(--accent);padding:10px 12px;font-family:var(--font);font-size:13px;outline:none;resize:vertical;caret-color:var(--accent);min-height:120px;box-sizing:border-box;"></textarea>
         <div style="display:flex;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap;">
           <button class="btn-green" id="claude-run-btn" onclick="runClaudeTask()" ${!isOnline ? 'disabled title="Bridge offline"' : ''}>▶ Esegui</button>
           <button class="btn-red" id="claude-cancel-btn" onclick="cancelClaudeTask()" style="display:none;">■ Stop</button>
           <span id="task-category-badge" style="font-size:9px;font-weight:700;letter-spacing:1px;border:1px solid #666;border-radius:3px;padding:1px 6px;color:#666;">GENERICO</span>
           <span id="task-loop-badge" style="display:none;font-size:9px;font-weight:700;letter-spacing:1px;border:1px solid #ffaa00;border-radius:3px;padding:1px 6px;color:#ffaa00;">⟳ LOOP</span>
           <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:var(--text2);margin-left:auto;cursor:pointer;">
-            <input type="checkbox" id="ralph-toggle" style="accent-color:var(--green);cursor:pointer;" onchange="updateCategoryBadge()"> Ralph Loop
+            <input type="checkbox" id="ralph-toggle" style="accent-color:var(--accent);cursor:pointer;" onchange="updateCategoryBadge()"> Ralph Loop
           </label>
           <button class="btn-ghost btn-sm" onclick="loadBridge()">↻</button>
         </div>

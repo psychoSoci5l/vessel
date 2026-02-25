@@ -23,7 +23,7 @@
     const cpuBar = document.getElementById('hc-cpu-bar');
     if (cpuBar) {
       cpuBar.style.width = cpuPct + '%';
-      cpuBar.style.background = cpuPct > 80 ? 'var(--red)' : cpuPct > 60 ? 'var(--amber)' : 'var(--green)';
+      cpuBar.style.background = cpuPct > 80 ? 'var(--red)' : cpuPct > 60 ? 'var(--amber)' : 'var(--accent)';
     }
     const ramBar = document.getElementById('hc-ram-bar');
     if (ramBar) {
@@ -44,7 +44,7 @@
     const diskBar = document.getElementById('hc-disk-bar');
     if (diskBar) {
       diskBar.style.width = diskPct + '%';
-      diskBar.style.background = diskPct > 85 ? 'var(--red)' : diskPct > 70 ? 'var(--amber)' : 'var(--green)';
+      diskBar.style.background = diskPct > 85 ? 'var(--red)' : diskPct > 70 ? 'var(--amber)' : 'var(--accent)';
     }
 
     // Health dots
@@ -81,7 +81,8 @@
     ctx.scale(dpr, dpr);
     const w = rect.width, h = rect.height;
     ctx.clearRect(0, 0, w, h);
-    ctx.strokeStyle = 'rgba(0,255,65,0.08)';
+    const cs = getComputedStyle(document.documentElement);
+    ctx.strokeStyle = cs.getPropertyValue('--border').trim();
     ctx.lineWidth = 1;
     for (let y = 0; y <= h; y += h / 4) {
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
@@ -99,8 +100,8 @@
       }
       ctx.stroke();
     }
-    drawLine(cpuHistory, 100, '#00ff41');
-    drawLine(tempHistory, 85, '#ffb000');
+    drawLine(cpuHistory, 100, cs.getPropertyValue('--accent').trim());
+    drawLine(tempHistory, 85, cs.getPropertyValue('--amber').trim());
   }
 
   function updateSessions(sessions) {

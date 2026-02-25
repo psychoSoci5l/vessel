@@ -12,18 +12,18 @@
 .sys-title {
   font-size: 16px;
   font-weight: 700;
-  color: var(--green);
+  color: var(--accent);
   letter-spacing: 2px;
   text-shadow: var(--glow-text);
 }
 
 .version-badge {
   font-size: 10px;
-  background: var(--green-dim);
-  border: 1px solid var(--green3);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent3);
   border-radius: 4px;
   padding: 2px 8px;
-  color: var(--green2);
+  color: var(--accent2);
 }
 
 .sys-section {
@@ -78,6 +78,6 @@
 
 .session-dot {
   width: 7px; height: 7px; border-radius: 50%;
-  background: var(--green); box-shadow: var(--glow-sm);
+  background: var(--accent); box-shadow: var(--glow-sm);
   animation: pulse 2s infinite;
 }

@@ -16,9 +16,10 @@
 <style>
   :root {
     --bg: #060a06; --bg2: #0b110b; --card: #0e160e; --border: #1a2e1a;
-    --border2: #254025; --green: #00ff41; --green2: #00cc33; --green3: #009922;
-    --green-dim: #003311; --red: #ff3333; --muted: #3d6b3d; --text: #c8ffc8;
-    --amber: #ffb000; --font: 'JetBrains Mono', 'Fira Code', monospace;
+    --border2: #254025; --accent: #00ff41; --accent2: #00cc33; --accent3: #009922;
+    --accent-dim: #003311; --red: #ff3333; --muted: #3d6b3d; --text: #c8ffc8;
+    --amber: #ffb000; --btn-hover: #004422;
+    --font: 'JetBrains Mono', 'Fira Code', monospace;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -26,28 +27,28 @@
     height: 100vh; height: 100dvh; display: flex; align-items: center; justify-content: center;
     overflow: hidden; position: fixed; inset: 0;
     background-image: repeating-linear-gradient(0deg, transparent, transparent 2px,
-      rgba(0,255,65,0.012) 2px, rgba(0,255,65,0.012) 4px);
+      rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
   }
   .login-box {
     background: var(--card); border: 1px solid var(--border2); border-radius: 8px;
     padding: 36px 32px 28px; width: min(380px, 90vw); text-align: center;
-    box-shadow: 0 0 60px rgba(0,255,65,0.06);
+    box-shadow: 0 0 60px rgba(0,255,65,0.04);
   }
-  .login-icon { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--green3);
-    filter: drop-shadow(0 0 10px rgba(0,255,65,0.4)); margin-bottom: 18px; }
-  .login-title { font-size: 20px; font-weight: 700; color: var(--green); letter-spacing: 2px;
-    text-shadow: 0 0 10px rgba(0,255,65,0.4); margin-bottom: 6px; }
+  .login-icon { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--accent3);
+    filter: drop-shadow(0 0 10px var(--accent3)); margin-bottom: 18px; }
+  .login-title { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: 2px;
+    text-shadow: 0 0 10px var(--accent3); margin-bottom: 6px; }
   .login-sub { font-size: 12px; color: var(--muted); margin-bottom: 24px; }
   #pin-input { position: absolute; opacity: 0; pointer-events: none; }
   .pin-display {
     display: flex; gap: 10px; justify-content: center; margin-bottom: 6px;
   }
   .pin-dot {
-    width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--green3);
+    width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--accent3);
     background: transparent; transition: background .15s, box-shadow .15s;
   }
   .pin-dot.filled {
-    background: var(--green); box-shadow: 0 0 8px rgba(0,255,65,0.5);
+    background: var(--accent); box-shadow: 0 0 8px var(--accent3);
   }
   .pin-counter {
     font-size: 11px; color: var(--muted); margin-bottom: 16px; letter-spacing: 1px;
@@ -59,24 +60,24 @@
   .numpad-btn {
     font-family: var(--font); font-size: 24px; font-weight: 600;
     padding: 16px 0; border: 1px solid var(--border2); border-radius: 8px;
-    background: var(--bg2); color: var(--green); cursor: pointer;
+    background: var(--bg2); color: var(--accent); cursor: pointer;
     transition: all .15s; -webkit-tap-highlight-color: transparent;
     user-select: none; min-height: 58px; touch-action: manipulation;
   }
-  .numpad-btn:active { background: var(--green-dim); border-color: var(--green3); }
+  .numpad-btn:active { background: var(--accent-dim); border-color: var(--accent3); }
   .numpad-btn.fn { font-size: 14px; color: var(--muted); }
-  .numpad-btn.fn:active { color: var(--green); }
+  .numpad-btn.fn:active { color: var(--accent); }
   .numpad-bottom {
     width: min(300px, 80vw); margin: 14px auto 0;
   }
   .numpad-submit {
     font-family: var(--font); font-size: 14px; font-weight: 600; letter-spacing: 2px;
-    width: 100%; padding: 16px 0; border: 1px solid var(--green3); border-radius: 8px;
-    background: var(--green-dim); color: var(--green); cursor: pointer;
+    width: 100%; padding: 16px 0; border: 1px solid var(--accent3); border-radius: 8px;
+    background: var(--accent-dim); color: var(--accent); cursor: pointer;
     transition: all .15s; -webkit-tap-highlight-color: transparent;
     user-select: none; text-transform: uppercase; touch-action: manipulation;
   }
-  .numpad-submit:active { background: #004422; }
+  .numpad-submit:active { background: var(--btn-hover); }
   #login-error {
     margin-top: 12px; font-size: 11px; color: var(--red); min-height: 16px;
   }

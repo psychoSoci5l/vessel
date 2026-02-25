@@ -14,13 +14,13 @@
   height: 26px;
   border-radius: 50%;
   object-fit: cover;
-  border: 1px solid var(--green3);
-  filter: drop-shadow(0 0 8px rgba(0,255,65,0.5));
+  border: 1px solid var(--accent3);
+  filter: drop-shadow(0 0 8px var(--accent3));
 }
 
 .dash-title {
   font-weight: 700;
-  color: var(--green);
+  color: var(--accent);
   letter-spacing: 2px;
   font-size: 16px;
   text-shadow: var(--glow-text);
@@ -51,7 +51,7 @@
   transition: all .5s;
   flex-shrink: 0;
 }
-.health-dot.green { background: var(--green); box-shadow: var(--glow-sm); }
+.health-dot.green { background: var(--accent); box-shadow: var(--glow-sm); }
 .health-dot.yellow { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .health-dot.red { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }
 
@@ -79,7 +79,7 @@
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, var(--green3), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent3), transparent);
 }
 
 .stat-icon {
@@ -99,7 +99,7 @@
 .stat-value {
   font-size: 22px;
   font-weight: 700;
-  color: var(--green);
+  color: var(--accent);
   text-shadow: var(--glow-text);
   line-height: 1.2;
 }
@@ -120,7 +120,7 @@
 
 .stat-bar-fill {
   height: 100%;
-  background: var(--green);
+  background: var(--accent);
   border-radius: 2px;
   transition: width .5s ease;
   width: 0%;
@@ -166,7 +166,7 @@
   color: var(--text2);
 }
 
-.dot-cpu { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: var(--glow-sm); }
+.dot-cpu { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: var(--glow-sm); }
 .dot-temp { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
 
 #pi-chart {
@@ -200,7 +200,7 @@
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 2px;
-  background: linear-gradient(90deg, transparent, var(--green3), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent3), transparent);
   opacity: 0;
   transition: opacity .2s;
 }
@@ -210,7 +210,7 @@
 
 .widget-card:hover,
 .widget-card:active {
-  border-color: var(--green3);
+  border-color: var(--accent3);
   box-shadow: var(--glow-md);
 }
 
@@ -223,7 +223,7 @@
 
 .wc-label {
   font-size: 10px;
-  color: var(--green2);
+  color: var(--accent2);
   text-transform: uppercase;
   letter-spacing: 1.5px;
   font-weight: 600;

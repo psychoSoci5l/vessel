@@ -108,7 +108,7 @@
     max-height: none;
     height: 100%;
     border-top: none;
-    border-left: 2px solid var(--green3);
+    border-left: 2px solid var(--accent3);
     border-radius: 0;
     transform: translateX(100%);
   }

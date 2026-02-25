@@ -71,7 +71,7 @@
 }
 
 .nav-item.active {
-  color: var(--green);
+  color: var(--accent);
 }
 
 .nav-item.active .nav-icon {

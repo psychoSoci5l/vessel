@@ -38,7 +38,7 @@
     ollama_pc_coder: 'PC Coder', ollama_pc_deep: 'PC Deep', unknown: '?'
   };
   const _providerColors = {
-    anthropic: 'var(--green)', openrouter: 'var(--amber)', ollama: 'var(--muted)',
+    anthropic: 'var(--accent)', openrouter: 'var(--amber)', ollama: 'var(--muted)',
     ollama_pc_coder: 'var(--cyan)', ollama_pc_deep: '#aa66ff'
   };
 
@@ -68,11 +68,11 @@
     });
     const grandTot = total.input + total.output;
     html += `<tr style="font-weight:700;">
-      <td style="padding:6px;color:var(--green);">TOTALE</td>
-      <td style="padding:6px;text-align:right;color:var(--green);">${fmt(total.input)}</td>
-      <td style="padding:6px;text-align:right;color:var(--green);">${fmt(total.output)}</td>
-      <td style="padding:6px;text-align:right;color:var(--green);">${fmt(grandTot)}</td>
-      <td style="padding:6px;text-align:right;color:var(--green);">${total.calls}</td>
+      <td style="padding:6px;color:var(--accent);">TOTALE</td>
+      <td style="padding:6px;text-align:right;color:var(--accent);">${fmt(total.input)}</td>
+      <td style="padding:6px;text-align:right;color:var(--accent);">${fmt(total.output)}</td>
+      <td style="padding:6px;text-align:right;color:var(--accent);">${fmt(grandTot)}</td>
+      <td style="padding:6px;text-align:right;color:var(--accent);">${total.calls}</td>
     </tr>`;
     html += '</table></div>';
     el.innerHTML = html;

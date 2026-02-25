@@ -1,4 +1,4 @@
-  // ── Input handlers ──
+  // ── Input handlers + Theme selector ──
   document.addEventListener('DOMContentLoaded', () => {
     const chatInput = document.getElementById('chat-input');
     chatInput.addEventListener('keydown', e => {
@@ -8,7 +8,24 @@
     document.getElementById('mem-search-keyword')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') searchMemory();
     });
+
+    const sel = document.getElementById('theme-selector');
+    if (sel) {
+      const current = getThemeId();
+      sel.innerHTML = THEMES.map(t =>
+        `<button class="theme-chip${t.id === current ? ' active' : ''}" data-theme="${t.id}" onclick="selectTheme(this)">` +
+        `<span class="theme-swatch" style="background:${t.accent};box-shadow:0 0 6px ${t.accent};"></span>${t.label}</button>`
+      ).join('');
+    }
   });
+
+  function selectTheme(chip) {
+    const id = chip.dataset.theme;
+    applyTheme(id);
+    document.querySelectorAll('.theme-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    drawChart();
+  }
 
   // ── Connect ──
   connect();
