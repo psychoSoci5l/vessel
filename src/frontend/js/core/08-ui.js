@@ -49,6 +49,13 @@
     setTimeout(() => { clearInterval(timer); clearInterval(tryReconnect); statusEl.textContent = 'Timeout — ricarica manualmente.'; }, 120000);
   }
 
+  // ── Deep Learn ──
+  function triggerDeepLearn() {
+    const btn = document.getElementById('btn-deep-learn');
+    if (btn) { btn.disabled = true; btn.textContent = 'In corso...'; }
+    send({ action: 'deep_learn' });
+  }
+
   // ── Sigil Indicator → moved to sigil.js (Fase 44) ──
 
   // ── Logout ──

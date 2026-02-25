@@ -7,6 +7,7 @@ def _resolve_auto_params(provider_id: str) -> tuple:
         "ollama_pc_coder": ("pc_coder", OLLAMA_PC_CODER_MODEL),
         "ollama_pc_deep": ("pc_deep", OLLAMA_PC_DEEP_MODEL),
         "openrouter": ("deepseek", OPENROUTER_MODEL),
+        "brain": ("brain", BRAIN_MODEL),
     }
     return _map.get(provider_id, ("cloud", ANTHROPIC_MODEL))
 
@@ -38,6 +39,8 @@ async def handle_chat(websocket, msg, ctx):
         reply = await _stream_chat(websocket, text, ctx["pc_deep"], "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL, memory_enabled=mem)
     elif provider == "deepseek":
         reply = await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, memory_enabled=mem)
+    elif provider == "brain":
+        reply = await _stream_chat(websocket, text, ctx["brain"], "brain", BRAIN_SYSTEM, BRAIN_MODEL, memory_enabled=mem)
     else:
         reply = await _stream_chat(websocket, text, ctx["cloud"], "anthropic", OLLAMA_SYSTEM, ANTHROPIC_MODEL, memory_enabled=mem)
     emotion = detect_emotion(reply or "")
@@ -227,6 +230,39 @@ async def handle_delete_saved_prompt(websocket, msg, ctx):
     prompts = await bg(db_get_saved_prompts)
     await websocket.send_json({"type": "saved_prompts", "prompts": prompts})
 
+async def handle_deep_learn(websocket, msg, ctx):
+    """Trigger manuale deep_learn.py dalla dashboard."""
+    ip = websocket.client.host
+    if not _rate_limit(ip, "deep_learn", 1, 3600):
+        await websocket.send_json({"type": "toast", "text": "Deep Learn gia' eseguito di recente (max 1/h)"})
+        return
+    await websocket.send_json({"type": "toast", "text": "Deep Learn in corso... (1-2 minuti)"})
+    await broadcast_tamagotchi("THINKING")
+    try:
+        def _run():
+            r = subprocess.run(
+                ["python3.13", str(Path.home() / "deep_learn.py")],
+                capture_output=True, text=True, timeout=300
+            )
+            return (r.stdout + r.stderr).strip()
+        output = await bg(_run)
+        notes = db_get_notes(1)
+        if notes and "#deep_learn" in (notes[0].get("tags") or ""):
+            result_text = notes[0]["content"][:500]
+        else:
+            result_text = output[-500:] if output else "Nessun output"
+        await websocket.send_json({"type": "deep_learn_result", "text": result_text})
+        await websocket.send_json({"type": "toast", "text": "Deep Learn completato"})
+        await broadcast_tamagotchi("PROUD")
+    except subprocess.TimeoutExpired:
+        await websocket.send_json({"type": "deep_learn_result", "text": "Timeout (5 min)"})
+        await websocket.send_json({"type": "toast", "text": "Deep Learn: timeout"})
+        await broadcast_tamagotchi("ERROR")
+    except Exception as e:
+        await websocket.send_json({"type": "deep_learn_result", "text": f"Errore: {e}"})
+        await websocket.send_json({"type": "toast", "text": f"Deep Learn errore: {e}"})
+        await broadcast_tamagotchi("ERROR")
+
 async def handle_get_sigil_state(websocket, msg, ctx):
     await websocket.send_json({"type": "sigil_state", "state": _tamagotchi_state})
 
@@ -259,4 +295,5 @@ WS_DISPATCHER = {
     "save_prompt": handle_save_prompt,
     "delete_saved_prompt": handle_delete_saved_prompt,
     "get_sigil_state": handle_get_sigil_state,
+    "deep_learn": handle_deep_learn,
 }

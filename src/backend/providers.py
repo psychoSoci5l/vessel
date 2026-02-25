@@ -79,8 +79,38 @@ class OllamaProvider(BaseChatProvider):
         })
         self.timeout = OLLAMA_TIMEOUT
 
+class BrainProvider(BaseChatProvider):
+    """Claude Code CLI via bridge — ragionamento con memoria cross-sessione."""
+    def setup(self):
+        if not CLAUDE_BRIDGE_TOKEN:
+            self.is_valid = False
+            self.error_msg = "(Bridge token mancante)"
+            return
+        from urllib.parse import urlparse
+        parsed = urlparse(CLAUDE_BRIDGE_URL)
+        self.host = parsed.hostname or "localhost"
+        self.port = parsed.port or 8095
+        self.use_https = parsed.scheme == "https"
+        self.path = "/brain"
+        self.headers = {"Content-Type": "application/json"}
+        # Estrai ultimo messaggio utente dalla history
+        last_user_msg = ""
+        for msg in reversed(self.history):
+            if msg.get("role") == "user":
+                last_user_msg = msg["content"]
+                break
+        self.payload = json.dumps({
+            "token": CLAUDE_BRIDGE_TOKEN,
+            "prompt": last_user_msg,
+            "system_prompt": self.system_prompt,
+        })
+        self.timeout = 120
+        self.parser_type = "ndjson_brain"
+
 def get_provider(provider_id: str, model: str, system_prompt: str, history: list) -> BaseChatProvider:
-    if provider_id == "anthropic":
+    if provider_id == "brain":
+        p = BrainProvider(model, system_prompt, history)
+    elif provider_id == "anthropic":
         p = AnthropicProvider(model, system_prompt, history)
     elif provider_id == "openrouter":
         p = OpenRouterProvider(model, system_prompt, history)

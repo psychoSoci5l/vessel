@@ -108,6 +108,8 @@ def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
         return "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL, text.split(" ", 1)[1]
     if low.startswith("@local "):
         return "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, text.split(" ", 1)[1]
+    if low.startswith("@brain "):
+        return "brain", BRAIN_SYSTEM, BRAIN_MODEL, text.split(" ", 1)[1]
     return "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, text
 
 async def _handle_telegram_message(text: str):
@@ -134,7 +136,7 @@ async def _handle_telegram_message(text: str):
         reply = (
             "Vessel - comandi Telegram\n\n"
             "Chat libera (default: DeepSeek V3)\n"
-            "Prefissi: @haiku @coder @deep @local\n\n"
+            "Prefissi: @haiku @coder @deep @local @brain\n\n"
             "📌 Note:\n"
             "  /nota <testo> - salva nota veloce\n"
             "  /note [N] - ultime N note\n"

@@ -144,6 +144,23 @@ def _provider_worker(provider, queue):
                                 output_tokens = usage.get("completion_tokens", 0)
                         except Exception:
                             pass
+                elif provider.parser_type == "ndjson_brain":
+                    try:
+                        data = json.loads(line)
+                        dtype = data.get("type", "")
+                        if dtype == "chunk":
+                            text = data.get("text", "")
+                            if text:
+                                queue.put_nowait(("chunk", text))
+                        elif dtype == "done":
+                            conn.close()
+                            return
+                        elif dtype == "error":
+                            queue.put_nowait(("error", data.get("text", "brain error")))
+                            conn.close()
+                            return
+                    except Exception:
+                        pass
         conn.close()
     except Exception as e:
         queue.put_nowait(("error", str(e)))

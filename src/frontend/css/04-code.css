@@ -239,6 +239,7 @@
 .dot-deepseek { background: #6c5ce7; box-shadow: 0 0 4px #6c5ce7; }
 .dot-pc-coder { background: #ff006e; box-shadow: 0 0 4px #ff006e; }
 .dot-pc-deep { background: #e74c3c; box-shadow: 0 0 4px #e74c3c; }
+.dot-brain { background: #00d4ff; box-shadow: 0 0 6px #00d4ff; }
 
 .agent-badge {
   display: inline-block;

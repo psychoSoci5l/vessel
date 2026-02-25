@@ -61,7 +61,8 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     provider_map = {
         "ollama": "ollama", "cloud": "anthropic", "deepseek": "openrouter",
-        "pc_coder": "ollama_pc_coder", "pc_deep": "ollama_pc_deep"
+        "pc_coder": "ollama_pc_coder", "pc_deep": "ollama_pc_deep",
+        "brain": "brain"
     }
     ctx = {k: db_load_chat_history(pid) for k, pid in provider_map.items()}
     await websocket.send_json({

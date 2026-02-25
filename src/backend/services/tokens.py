@@ -75,6 +75,8 @@ def _provider_defaults(provider_id: str) -> tuple:
         return OLLAMA_PC_CODER_MODEL, OLLAMA_PC_CODER_SYSTEM
     if provider_id == "ollama_pc_deep":
         return OLLAMA_PC_DEEP_MODEL, OLLAMA_PC_DEEP_SYSTEM
+    if provider_id == "brain":
+        return BRAIN_MODEL, BRAIN_SYSTEM
     return OLLAMA_MODEL, OLLAMA_SYSTEM
 
 # ─── Tamagotchi helper (REST locale, evita import circolari) ──────────────────

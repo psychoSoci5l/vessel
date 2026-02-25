@@ -84,6 +84,14 @@
     else if (msg.type === 'shutdown_ack') { document.getElementById('reboot-overlay').classList.add('show'); document.getElementById('reboot-status').textContent = 'Il Pi si sta spegnendo…'; document.querySelector('.reboot-text').textContent = 'Spegnimento in corso…'; }
     else if (msg.type === 'saved_prompts') { renderSavedPrompts(msg.prompts); }
     else if (msg.type === 'sigil_state') { updateSigilIndicator(msg.state); }
+    else if (msg.type === 'deep_learn_result') {
+      const el = document.getElementById('deep-learn-text');
+      const wrap = document.getElementById('deep-learn-result');
+      const btn = document.getElementById('btn-deep-learn');
+      if (el) el.textContent = msg.text;
+      if (wrap) wrap.style.display = 'block';
+      if (btn) { btn.disabled = false; btn.textContent = 'Avvia Deep Learn'; }
+    }
     else if (msg.type && msg.type.startsWith('plugin_')) {
       const hName = 'pluginRender_' + msg.type.replace('plugin_', '');
       if (window[hName]) { try { window[hName](msg); } catch(e) { console.error('[Plugin] render:', e); } }

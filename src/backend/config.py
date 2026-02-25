@@ -90,6 +90,7 @@ _HARDWARE_BY_PROVIDER = {
     "ollama_pc_coder": "un PC Windows con GPU NVIDIA RTX 3060",
     "ollama_pc_deep": "un PC Windows con GPU NVIDIA RTX 3060",
     "openrouter": "Cloud (DeepSeek V3)",
+    "brain": "PC Windows via Claude Code CLI (con memoria cross-sessione)",
 }
 
 def get_agent_config(agent_id: str) -> dict:
@@ -157,7 +158,16 @@ OLLAMA_PC_DEEP_SYSTEM = _build_system_prompt(
     "ma puoi aiutare con qualsiasi cosa."
 )
 
-# ─── Claude Bridge (PC Monitoring) ──────────────────────────────────────────
+# ─── Claude Brain (Claude Code CLI via Bridge) ────────────────────────────
+BRAIN_MODEL = "claude-code"
+BRAIN_SYSTEM = _build_system_prompt(
+    "PC Windows via Claude Code CLI (con memoria cross-sessione claude-mem)",
+    "Sei specializzato in ragionamento avanzato, analisi complessa e problem solving. "
+    "Hai accesso alla memoria episodica del progetto. "
+    "Puoi aiutare con qualsiasi cosa, con qualita' di ragionamento superiore."
+)
+
+# ─── Claude Bridge (PC + Brain) ──────────────────────────────────────────
 # Config letta da ~/.nanobot/bridge.json (url, token)
 # oppure override via env var CLAUDE_BRIDGE_URL / CLAUDE_BRIDGE_TOKEN
 _bridge_cfg = _get_config("bridge.json")
@@ -246,6 +256,7 @@ PROVIDER_FALLBACKS = {
     "ollama":          "ollama_pc_coder",
     "ollama_pc_coder": "ollama",
     "ollama_pc_deep":  "openrouter",
+    "brain":           "openrouter",
 }
 
 # ─── Heartbeat Monitor ──────────────────────────────────────────────────────

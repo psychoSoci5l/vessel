@@ -211,6 +211,7 @@ CONTEXT_BUDGETS = {
     "ollama":           3000,
     "ollama_pc_coder":  6000,
     "ollama_pc_deep":   6000,
+    "brain":           12000,
 }
 
 def estimate_tokens(text: str) -> int:

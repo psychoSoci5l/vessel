@@ -181,6 +181,7 @@
                   <button type="button" onclick="switchProvider('pc_coder')"><span class="dot dot-pc-coder"></span> PC Coder</button>
                   <button type="button" onclick="switchProvider('pc_deep')"><span class="dot dot-pc-deep"></span> PC Deep</button>
                   <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> DeepSeek V3</button>
+                  <button type="button" onclick="switchProvider('brain')"><span class="dot dot-brain"></span> Brain</button>
                 </div>
               </div>
               <button class="btn-send" id="chat-send" onclick="sendChat()">&#x21B5;</button>
@@ -344,6 +345,17 @@
                 <div id="grafo-body">
                   <div class="widget-placeholder"><span class="ph-icon">&#x25CE;</span><span>Knowledge Graph</span></div>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Deep Learn -->
+          <div class="prof-section">
+            <div class="prof-section-title">SELF-LEARNING</div>
+            <div style="padding:8px 12px;">
+              <button class="btn-green btn-sm" onclick="triggerDeepLearn()" id="btn-deep-learn">Avvia Deep Learn</button>
+              <div id="deep-learn-result" style="display:none;margin-top:8px;">
+                <pre id="deep-learn-text" style="white-space:pre-wrap;font-size:11px;color:var(--text2);max-height:300px;overflow-y:auto;"></pre>
               </div>
             </div>
           </div>
