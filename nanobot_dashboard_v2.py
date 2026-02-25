@@ -629,6 +629,14 @@ def init_db():
                 provider TEXT NOT NULL DEFAULT '',
                 use_loop INTEGER NOT NULL DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tags TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_notes_ts ON notes(ts);
         """)
         # Schema version + migrations
         row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -1105,6 +1113,67 @@ def db_delete_saved_prompt(prompt_id: int) -> bool:
     with _db_conn() as conn:
         cur = conn.execute("DELETE FROM saved_prompts WHERE id = ?", (prompt_id,))
         return cur.rowcount > 0
+
+
+# ─── Note rapide (Fase 42) ────────────────────────────────────────────────────
+
+def db_add_note(content: str, tags: str = "") -> int:
+    """Salva una nota rapida. Ritorna l'id."""
+    with _db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO notes (ts, content, tags) VALUES (?, ?, ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%S"), content[:2000], tags[:200])
+        )
+        return cur.lastrowid
+
+
+def db_get_notes(limit: int = 5) -> list:
+    """Ritorna le ultime N note, ordinate per più recenti."""
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, ts, content, tags FROM notes ORDER BY id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def db_search_notes(keyword: str, limit: int = 5) -> list:
+    """Ricerca note per keyword nel contenuto o nei tag."""
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, ts, content, tags FROM notes WHERE content LIKE ? OR tags LIKE ? ORDER BY id DESC LIMIT ?",
+            (f"%{keyword}%", f"%{keyword}%", limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def db_delete_note(note_id: int) -> bool:
+    """Elimina una nota per id."""
+    with _db_conn() as conn:
+        cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        return cur.rowcount > 0
+
+
+def db_search_entity(name: str) -> dict | None:
+    """Cerca un'entity per nome (parziale). Ritorna entity + relazioni o None."""
+    with _db_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM entities WHERE name LIKE ? ORDER BY frequency DESC LIMIT 1",
+            (f"%{name}%",)
+        ).fetchone()
+        if not row:
+            return None
+        entity = dict(row)
+        rels = conn.execute("""
+            SELECT r.relation, r.frequency, ea.name as name_a, eb.name as name_b
+            FROM relations r
+            JOIN entities ea ON r.entity_a = ea.id
+            JOIN entities eb ON r.entity_b = eb.id
+            WHERE r.entity_a = ? OR r.entity_b = ?
+            ORDER BY r.frequency DESC LIMIT 5
+        """, (entity["id"], entity["id"])).fetchall()
+        entity["relations"] = [dict(r) for r in rels]
+        return entity
 
 
 # --- src/backend/providers.py ---
@@ -2097,13 +2166,6 @@ def detect_emotion(text: str) -> str:
             scores[state] = score
     if not scores:
         return "HAPPY"
-    # ERROR e ALERT richiedono almeno 2 match per evitare falsi positivi
-    if "ERROR" in scores and scores["ERROR"] < 2:
-        del scores["ERROR"]
-    if "ALERT" in scores and scores["ALERT"] < 2:
-        del scores["ALERT"]
-    if not scores:
-        return "HAPPY"
     return max(scores, key=scores.get)
 
 # ─── Agent Detection (Fase 39C) ──────────────────────────────────────────────
@@ -2820,7 +2882,7 @@ async def set_tamagotchi_state(request: Request):
     detail = data.get("detail", "")
     text   = data.get("text", "")
     mood   = data.get("mood", None)
-    valid_states = {"IDLE", "THINKING", "WORKING", "PROUD", "SLEEPING", "ERROR", "BOOTING", "HAPPY", "ALERT"}
+    valid_states = {"IDLE", "THINKING", "WORKING", "PROUD", "SLEEPING", "ERROR", "BOOTING", "HAPPY", "ALERT", "CURIOUS", "BORED"}
     if state not in valid_states:
         return JSONResponse({"ok": False, "error": f"Stato non valido. Validi: {valid_states}"}, status_code=400)
     await broadcast_tamagotchi(state, detail, text, mood)
@@ -2864,6 +2926,16 @@ async def get_tamagotchi_mood():
 # --- src/backend/routes/telegram.py ---
 # ─── Telegram polling ────────────────────────────────────────────────────────
 _tg_histories: dict[str, list] = {}
+
+_BRAINSTORM_SYSTEM = (
+    "Sei in modalità BRAINSTORMING. Il tuo compito è:\n"
+    "- Generare 10-15 idee diverse, creative e inaspettate sull'argomento dato\n"
+    "- Organizzarle in 3-4 cluster tematici (con titolo breve) da 2-3 idee ciascuno\n"
+    "- Includere almeno 1 idea provocatoria o controintuitiva\n"
+    "- Concludere con 2 domande aperte per approfondire\n"
+    "- Stile: bullet points asciutti, max 250 parole totali\n"
+    "- Niente preamboli — inizia direttamente con i cluster\n\n"
+)
 
 _TELEGRAM_BREVITY = (
     "\n\n## Canale Telegram\n"
@@ -2913,7 +2985,19 @@ async def _prefetch_context(text: str) -> str:
                                "controlla email", "controlla mail", "check mail", "la mail",
                                "posta elettronica", "inbox"]):
         cmds.append(f"{_GHELPER} gmail unread")
-    if not cmds:
+    # Google Docs
+    if any(k in low for k in ["google doc", "i miei doc", "i miei documenti", "lista doc",
+                               "documenti recenti", "ultimi doc", "apri doc"]):
+        cmds.append(f"{_GHELPER} docs list 8")
+    # Note rapide (query sincrona DB, non serve executor)
+    notes_part = ""
+    if any(k in low for k in ["le mie note", "mie note", "ho scritto", "appunti", "ricordami cosa", "cosa ho annotato"]):
+        notes = db_get_notes(5)
+        if notes:
+            notes_text = "\n".join(f"[{n['ts'][:10]}] #{n['id']}: {n['content'][:120]}" for n in notes)
+            notes_part = f"Note recenti:\n{notes_text}"
+
+    if not cmds and not notes_part:
         return ""
     loop = asyncio.get_running_loop()
     parts = []
@@ -2927,6 +3011,8 @@ async def _prefetch_context(text: str) -> str:
                 parts.append(out)
         except Exception as e:
             print(f"[Telegram] Prefetch error: {e}")
+    if notes_part:
+        parts.append(notes_part)
     if not parts:
         return ""
     print(f"[Telegram] Prefetch: {len(parts)} risultati per '{text[:50]}'")
@@ -2973,13 +3059,23 @@ async def _handle_telegram_message(text: str):
     if text.strip() == "/help":
         reply = (
             "Vessel - comandi Telegram\n\n"
-            "Scrivi liberamente per chattare (provider default: DeepSeek V3)\n\n"
-            "Prefissi provider:\n"
-            "  @haiku - Claude Haiku (cloud)\n"
-            "  @coder - Qwen 14B (LAN)\n"
-            "  @deep - Qwen 30B (LAN)\n"
-            "  @local - Gemma3 (Pi)\n\n"
-            "Comandi:\n"
+            "Chat libera (default: DeepSeek V3)\n"
+            "Prefissi: @haiku @coder @deep @local\n\n"
+            "📌 Note:\n"
+            "  /nota <testo> - salva nota veloce\n"
+            "  /note [N] - ultime N note\n"
+            "  /cerca <parola> - cerca nelle note\n"
+            "  /delnota <id> - elimina nota\n\n"
+            "📄 Google Docs:\n"
+            "  /docs list [N] - lista documenti\n"
+            "  /docs read <titolo> - leggi documento\n"
+            "  /docs append <titolo> | <testo>\n\n"
+            "🧠 Memoria:\n"
+            "  /ricorda <nome> = <desc> - salva nel KG\n"
+            "  /chi è <nome> - cerca nel knowledge graph\n\n"
+            "💡 Brainstorming:\n"
+            "  /brainstorm <argomento>\n\n"
+            "⚙️ Sistema:\n"
             "  /status - stats Pi\n"
             "  /voice <msg> - risposta vocale\n"
             "  /help - questo messaggio"
@@ -2988,8 +3084,174 @@ async def _handle_telegram_message(text: str):
         return
 
     low = text.strip().lower()
+
+    # ─── Fase 42: Note rapide ────────────────────────────────────────────────
+    if low.startswith("/nota "):
+        content = text[6:].strip()
+        if content:
+            # Auto-extract #hashtag come tags
+            import re as _re
+            tags = " ".join(_re.findall(r'#\w+', content))
+            note_id = db_add_note(content, tags=tags)
+            tag_str = f" [{tags}]" if tags else ""
+            telegram_send(f"📌 Nota #{note_id} salvata{tag_str}.")
+        else:
+            telegram_send("Uso: /nota <testo>")
+        return
+
+    if low == "/note" or low.startswith("/note "):
+        try:
+            n = int(text.split()[1]) if len(text.split()) > 1 else 5
+            n = min(max(n, 1), 20)
+        except (ValueError, IndexError):
+            n = 5
+        notes = db_get_notes(n)
+        if not notes:
+            telegram_send("Nessuna nota salvata.")
+            return
+        lines = [f"#{n_['id']} [{n_['ts'][:10]}] {n_['content'][:90]}" for n_ in notes]
+        telegram_send(f"📌 Ultime {len(notes)} note:\n" + "\n".join(lines))
+        return
+
+    if low.startswith("/cerca "):
+        kw = text[7:].strip()
+        results = db_search_notes(kw)
+        if not results:
+            telegram_send(f"Nessuna nota per '{kw}'.")
+            return
+        lines = [f"#{n['id']} [{n['ts'][:10]}] {n['content'][:80]}" for n in results]
+        telegram_send(f"🔍 '{kw}':\n" + "\n".join(lines))
+        return
+
+    if low.startswith("/delnota "):
+        try:
+            note_id = int(text[9:].strip())
+            if db_delete_note(note_id):
+                telegram_send(f"🗑 Nota #{note_id} eliminata.")
+            else:
+                telegram_send(f"Nota #{note_id} non trovata.")
+        except ValueError:
+            telegram_send("Uso: /delnota <id>")
+        return
+
+    # ─── Fase 42: Google Docs ─────────────────────────────────────────────────
+    if low.startswith("/docs"):
+        args_raw = text.strip()[5:].strip()   # tutto dopo "/docs"
+        args_low = args_raw.lower()
+        loop = asyncio.get_running_loop()
+
+        if not args_raw or args_low == "list" or args_low.startswith("list"):
+            n = 8
+            try:
+                n = min(int(args_low.split()[1]), 15)
+            except (ValueError, IndexError):
+                pass
+            def _docs_list(n=n):
+                r = subprocess.run(
+                    f"{_GHELPER} docs list {n}",
+                    shell=True, capture_output=True, text=True, timeout=30
+                )
+                return (r.stdout + r.stderr).strip()
+            out = await loop.run_in_executor(None, _docs_list)
+            telegram_send(out or "Nessun documento trovato.")
+
+        elif args_low.startswith("read "):
+            title = args_raw[5:].strip()
+            if not title:
+                telegram_send("Uso: /docs read <titolo>")
+            else:
+                def _docs_read(t=title):
+                    r = subprocess.run(
+                        [_GHELPER_PY, _GHELPER_SCRIPT, "docs", "read", t],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    return (r.stdout + r.stderr).strip()
+                out = await loop.run_in_executor(None, _docs_read)
+                if len(out) > 3800:
+                    out = out[:3800] + "\n[...troncato]"
+                telegram_send(out or "Documento non trovato.")
+
+        elif args_low.startswith("append "):
+            rest = args_raw[7:].strip()
+            if "|" not in rest:
+                telegram_send("Uso: /docs append <titolo> | <testo da aggiungere>")
+            else:
+                title, testo = rest.split("|", 1)
+                title, testo = title.strip(), testo.strip()
+                if not title or not testo:
+                    telegram_send("Uso: /docs append <titolo> | <testo da aggiungere>")
+                else:
+                    def _docs_append(t=title, tx=testo):
+                        r = subprocess.run(
+                            [_GHELPER_PY, _GHELPER_SCRIPT, "docs", "append", t, tx],
+                            capture_output=True, text=True, timeout=30
+                        )
+                        return (r.stdout + r.stderr).strip()
+                    out = await loop.run_in_executor(None, _docs_append)
+                    telegram_send(out or "✅ Testo aggiunto.")
+
+        else:
+            telegram_send(
+                "📄 Google Docs:\n"
+                "  /docs list [N] — lista documenti\n"
+                "  /docs read <titolo> — leggi documento\n"
+                "  /docs append <titolo> | <testo> — aggiungi testo"
+            )
+        return
+
+    # ─── Fase 42: Knowledge Graph ─────────────────────────────────────────────
+    if low.startswith("/ricorda ") and "=" in text:
+        parts = text[9:].split("=", 1)
+        kg_name = parts[0].strip()
+        kg_desc = parts[1].strip()
+        if kg_name and kg_desc:
+            eid = db_upsert_entity("memo", kg_name, kg_desc)
+            telegram_send(f"🧠 Ricordato: {kg_name} (#{eid})")
+        else:
+            telegram_send("Uso: /ricorda <nome> = <descrizione>")
+        return
+
+    if low.startswith("/chi "):
+        # Parsing robusto: gestisce "è", "e", NFC/NFD, con o senza accento
+        rest = text.strip()[5:]  # tutto dopo "/chi "
+        if rest.lower().startswith(("è ", "e ")):
+            kg_query = rest[2:].strip()
+        elif rest.lower()[:1] in ("è", "e") and rest[1:2] == " ":
+            kg_query = rest[2:].strip()
+        else:
+            kg_query = rest.strip()
+        if not kg_query:
+            telegram_send("Uso: /chi è <nome>")
+            return
+        entity = db_search_entity(kg_query)
+        if entity:
+            lines = [f"🧠 {entity['name']} ({entity['type']})"]
+            if entity.get("description"):
+                lines.append(entity["description"])
+            lines.append(f"Visto {entity['frequency']}x, ultimo: {entity['last_seen'][:10]}")
+            if entity.get("relations"):
+                rels_str = ", ".join(
+                    f"{r['name_a']} {r['relation']} {r['name_b']}"
+                    for r in entity["relations"][:3]
+                )
+                lines.append(f"Relazioni: {rels_str}")
+            telegram_send("\n".join(lines))
+            return
+        # Non trovato nel KG → fallthrough all'LLM (usa FRIENDS.md + context)
+        text = f"Chi è {kg_query}?"
+        low = text.lower()
+
+    # ─── Fase 42: Brainstorming + Voice ──────────────────────────────────────
+    brainstorm_mode = False
     send_voice = False
-    if low.startswith("/voice "):
+    if low.startswith("/brainstorm "):
+        text = text[12:].strip()
+        if not text:
+            telegram_send("Uso: /brainstorm <argomento>")
+            return
+        brainstorm_mode = True
+        system = _BRAINSTORM_SYSTEM
+    elif low.startswith("/voice "):
         text = text[7:].strip()
         send_voice = True
     elif low == "/voice":
@@ -3003,6 +3265,7 @@ async def _handle_telegram_message(text: str):
         enriched_text = f"[DATI REALI DAL SISTEMA — usa questi per rispondere:]\n{context}\n\n[RICHIESTA:] {text}"
 
     history = _tg_history(provider_id)
+    await broadcast_tamagotchi("THINKING")
     if send_voice:
         voice_prefix = (
             "[L'utente ha richiesto risposta vocale — rispondi in modo conciso e naturale, "
@@ -3011,6 +3274,7 @@ async def _handle_telegram_message(text: str):
         )
         reply = await _chat_response(voice_prefix + enriched_text, history, provider_id, system, model, channel="telegram")
         telegram_send(reply)
+        await broadcast_tamagotchi(detect_emotion(reply or ""))
         loop = asyncio.get_running_loop()
         def _tts_send():
             ogg = text_to_voice(reply)
@@ -3020,6 +3284,10 @@ async def _handle_telegram_message(text: str):
     else:
         reply = await _chat_response(enriched_text, history, provider_id, system, model, channel="telegram")
         telegram_send(reply)
+        await broadcast_tamagotchi(detect_emotion(reply or ""))
+        # Brainstorm: salva sessione come nota #brainstorm silenziosamente
+        if brainstorm_mode and reply:
+            db_add_note(f"[Brainstorm: {text[:60]}]\n{reply}", tags="#brainstorm")
 
 VOICE_MAX_DURATION = 180
 
@@ -3060,9 +3328,11 @@ async def _handle_telegram_voice(voice: dict):
     voice_text = voice_prefix + text
 
     history = _tg_history(provider_id)
+    await broadcast_tamagotchi("THINKING")
     reply = await _chat_response(voice_text, history, provider_id, system, model, channel="telegram")
 
     telegram_send(reply)
+    await broadcast_tamagotchi(detect_emotion(reply or ""))
 
     loop = asyncio.get_running_loop()
     def _tts_and_send():

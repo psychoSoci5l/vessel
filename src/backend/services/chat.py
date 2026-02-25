@@ -31,13 +31,6 @@ def detect_emotion(text: str) -> str:
             scores[state] = score
     if not scores:
         return "HAPPY"
-    # ERROR e ALERT richiedono almeno 2 match per evitare falsi positivi
-    if "ERROR" in scores and scores["ERROR"] < 2:
-        del scores["ERROR"]
-    if "ALERT" in scores and scores["ALERT"] < 2:
-        del scores["ALERT"]
-    if not scores:
-        return "HAPPY"
     return max(scores, key=scores.get)
 
 # ─── Agent Detection (Fase 39C) ──────────────────────────────────────────────

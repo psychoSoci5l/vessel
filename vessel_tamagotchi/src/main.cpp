@@ -42,6 +42,8 @@ uint16_t COL_DIM;
 uint16_t COL_RED;
 uint16_t COL_YELLOW;
 uint16_t COL_SCAN;
+uint16_t COL_HOOD;     // cappuccio viola #3d1560
+uint16_t COL_HOOD_LT;  // bordo cappuccio #6a2d9e
 
 // ─── State principale ────────────────────────────────────────────────────────
 String currentState = "BOOTING";
@@ -111,7 +113,8 @@ struct BlinkState {
     bool          isWink      = false;   // wink: solo occhio destro chiude
 } blink;
 
-// ─── HAPPY / PROUD / CURIOUS auto-return ─────────────────────────────────────
+// ─── State timing & auto-return ──────────────────────────────────────────────
+unsigned long stateStartedAt   = 0;  // quando è iniziato lo stato corrente
 unsigned long happyStartedAt   = 0;
 unsigned long proudStartedAt   = 0;
 unsigned long curiousStartedAt = 0;
@@ -230,6 +233,16 @@ ButtonSM btnL, btnR;
 const unsigned long LONG_PRESS_MS = 1500;
 const unsigned long DEBOUNCE_MS   = 50;
 
+// ─── Face geometry (v3 mockup values) ────────────────────────────────────────
+const int FACE_EYE_DIST  = 30;   // was 40 — occhi più vicini
+const int FACE_EYE_HW    = 19;   // was 22 — mandorla larghezza
+const int FACE_EYE_HH    = 10;   // was 12 — mandorla altezza
+const int FACE_HOOD_W    = 61;   // was 65
+const int FACE_HOOD_H    = 54;   // was 55
+const int FACE_HOOD_DROP = 50;   // was 20 — cappuccio più lungo
+const int FACE_HOOD_GAP  = 6;    // NEW — gap per doppio cappuccio
+const int FACE_EYELID    = 15;   // NEW — palpebra superiore %
+
 // ─── Forward declarations ─────────────────────────────────────────────────────
 void connectWS();
 void renderState();
@@ -241,9 +254,16 @@ void drawNotifOverlay();
 void drawUnreadIndicator(unsigned long now);
 void drawConnectionIndicator();
 void drawScanlines();
-void drawHood(int cx, int cy, uint16_t col);
+void drawEyeGlow(int ex, int ey, uint16_t col, float intensity);
+void drawFaceShadow(int cx, int cy);
+void drawHoodArc(int cx, int cy, int hw, int hh, int drop, uint16_t col);
+void drawHoodDouble(int cx, int cy, uint16_t col);
+void drawHoodFilled(int cx, int cy, uint16_t col);
 void drawMandorlaEye(int cx, int cy, int halfW, int halfH, uint16_t col);
-void drawSigil(int cx, int cy, uint16_t col);
+void drawMandorlaEyeRelaxed(int cx, int cy, int halfW, int halfH, uint16_t col, int lidPct);
+void drawHappyEye(int cx, int cy, int halfW, uint16_t col);
+void drawSigil(int cx, int cy, uint16_t col, float scale = 1.0f, float rotation = 0.0f);
+uint16_t lerpColor565(uint16_t c1, uint16_t c2, float t);
 
 // ─── Drawing helpers ─────────────────────────────────────────────────────────
 
@@ -269,42 +289,192 @@ uint16_t getSigilBreathingColor(unsigned long now) {
     return tft.color565((uint8_t)(255 * b), 0, (uint8_t)(64 * b));
 }
 
-// ── Cappuccio: arco stilizzato sopra la faccia ──
-void drawHood(int cx, int cy, uint16_t col) {
-    // Arco principale: curva parabolica da sinistra a destra
-    for (int dx = -65; dx <= 65; dx++) {
-        float t = (float)dx / 65.0;
-        int dy = (int)(55.0 * t * t) - 55;  // parabola invertita
+// ── Cappuccio: singolo arco parabolico (helper) ──
+void drawHoodArc(int cx, int cy, int hw, int hh, int drop, uint16_t col) {
+    for (int dx = -hw; dx <= hw; dx++) {
+        float t = (float)dx / (float)hw;
+        int dy = (int)((float)hh * t * t) - hh;
         fb.drawPixel(cx + dx, cy + dy, col);
         fb.drawPixel(cx + dx, cy + dy + 1, col);
     }
-    // Lati del cappuccio che scendono
-    fb.drawWideLine(cx - 65, cy, cx - 60, cy + 20, 2, col);
-    fb.drawWideLine(cx + 65, cy, cx + 60, cy + 20, 2, col);
+    // Lati che scendono
+    fb.drawWideLine(cx - hw, cy, cx - hw + 5, cy + drop, 2, col);
+    fb.drawWideLine(cx + hw, cy, cx + hw - 5, cy + drop, 2, col);
+}
+
+// ── Cappuccio doppio: esterno scuro + interno chiaro → effetto spessore tessuto ──
+void drawHoodDouble(int cx, int cy, uint16_t col) {
+    const int hw = FACE_HOOD_W, hh = FACE_HOOD_H;
+    const int drop = FACE_HOOD_DROP, gap = FACE_HOOD_GAP;
+    // Arco ESTERNO (più grande, colore originale)
+    drawHoodArc(cx, cy, hw + gap, hh + gap, drop + (int)(gap * 1.5), col);
+    // Arco INTERNO (leggermente più chiaro per profondità)
+    uint16_t innerCol = lerpColor565(col, COL_HOOD_LT, 0.35f);
+    drawHoodArc(cx, cy, hw, hh, drop, innerCol);
+}
+
+// ── Cappuccio pieno: forma a campana riempita con gradiente (mockup v4) ──
+void drawHoodFilled(int cx, int cy, uint16_t col) {
+    // Forma a campana: arco parabolico sopra, fianchi sinuosi, fondo curvo
+    const int shoulder = 78;    // mezza larghezza alla base
+    const int peakH = 60;       // altezza picco sopra cy
+    const int baseY = 170;      // fondo schermo (colonne centrali)
+    const int neckMinY = cy + 10; // punto più alto che le colonne laterali raggiungono
+
+    // Pre-calcola colori per 5 zone del gradiente orizzontale (centro→bordo)
+    uint16_t c_center = lerpColor565(col, 0xFFFF, 0.04f);
+    uint16_t c_inner  = col;
+    uint16_t c_mid    = lerpColor565(col, COL_BG, 0.25f);
+    uint16_t c_outer  = lerpColor565(col, COL_BG, 0.55f);
+    uint16_t c_edge   = lerpColor565(col, COL_BG, 0.82f);
+
+    for (int dx = -shoulder; dx <= shoulder; dx++) {
+        int x = cx + dx;
+        if (x < 0 || x >= 320) continue;
+
+        float t = (float)abs(dx) / (float)shoulder;  // 0=centro, 1=bordo
+
+        // Bordo superiore: curva parabolica (alto al centro, basso ai lati)
+        int topY = cy - peakH + (int)((float)peakH * t * t);
+        if (topY < 0) topY = 0;
+
+        // Bordo inferiore: curva sinuosa (campana)
+        // Colonne centrali (t<0.28) vanno fino al fondo schermo
+        // Colonne laterali salgono con curva coseno — crea la sinuosità
+        int botY;
+        if (t < 0.28f) {
+            botY = baseY;
+        } else {
+            float curve = (t - 0.28f) / 0.72f;  // 0→1
+            // Curva coseno: transizione morbida da piatto a curvo
+            float rise = 0.5f * (1.0f - cos(curve * PI));
+            botY = baseY - (int)(rise * (float)(baseY - neckMinY));
+        }
+
+        int lineH = botY - topY;
+        if (lineH <= 0) continue;
+
+        // Colore orizzontale: luminoso al centro, scuro ai bordi
+        uint16_t hCol;
+        if (t < 0.12f)      hCol = lerpColor565(c_center, c_inner, t / 0.12f);
+        else if (t < 0.3f)  hCol = lerpColor565(c_inner, c_mid, (t - 0.12f) / 0.18f);
+        else if (t < 0.55f) hCol = lerpColor565(c_mid, c_outer, (t - 0.3f) / 0.25f);
+        else if (t < 0.8f)  hCol = lerpColor565(c_outer, c_edge, (t - 0.55f) / 0.25f);
+        else                 hCol = lerpColor565(c_edge, COL_BG, (t - 0.8f) / 0.2f);
+
+        // Gradiente verticale: 45% superiore normale, 55% inferiore più scuro
+        int topH = lineH * 45 / 100;
+        int botH = lineH - topH;
+        uint16_t botCol = lerpColor565(hCol, COL_BG, 0.35f);
+
+        fb.drawFastVLine(x, topY, topH, hCol);
+        fb.drawFastVLine(x, topY + topH, botH, botCol);
+    }
+
+    // Highlight sottile sull'arco superiore (bordo tessuto)
+    uint16_t edgeHighlight = lerpColor565(col, 0xFFFF, 0.15f);
+    for (int dx = -(shoulder - 10); dx <= (shoulder - 10); dx++) {
+        float t = (float)abs(dx) / (float)shoulder;
+        int topY = cy - peakH + (int)((float)peakH * t * t);
+        float alpha = 0.4f * (1.0f - t * 1.3f);
+        if (alpha > 0.0f && topY > 0) {
+            uint16_t c = lerpColor565(COL_BG, edgeHighlight, alpha);
+            fb.drawPixel(cx + dx, topY - 1, c);
+        }
+    }
+}
+
+// ── Eye glow halo (simula radialGradient del mockup v4) ──
+void drawEyeGlow(int ex, int ey, uint16_t col, float intensity) {
+    if (intensity < 0.05f) return;
+    // Anelli di glow concentrico dietro l'occhio
+    uint16_t g1 = lerpColor565(COL_BG, col, min(1.0f, 0.18f * intensity));
+    uint16_t g2 = lerpColor565(COL_BG, col, min(1.0f, 0.08f * intensity));
+    fb.fillCircle(ex, ey, 24, g2);  // outer halo
+    fb.fillCircle(ex, ey, 16, g1);  // inner halo
+}
+
+// ── Face shadow (cavità ovale dentro il cappuccio — mockup v4 layer 4) ──
+void drawFaceShadow(int cx, int cy) {
+    // 3 strati di ombra: esterno soft → medio → core profondo
+    // Ovale VERTICALE (più alto che largo) per sembrare un viso reale
+    uint16_t shadow0 = tft.color565(4, 2, 6);   // soft outer
+    uint16_t shadow1 = tft.color565(2, 1, 3);    // mid
+    uint16_t shadow2 = tft.color565(1, 0, 2);    // core — quasi nero
+    fb.fillEllipse(cx, cy + 2,  56, 62, shadow0);  // wide oval (tall)
+    fb.fillEllipse(cx, cy + 5,  46, 54, shadow1);  // mid oval
+    fb.fillEllipse(cx, cy + 10, 34, 42, shadow2);  // deep core oval
 }
 
 // ── Occhio a mandorla (rombo angolare) ──
 void drawMandorlaEye(int ex, int ey, int halfW, int halfH, uint16_t col) {
-    // Rombo: 4 punti cardinali, riempito con 2 triangoli
-    fb.fillTriangle(ex - halfW, ey, ex, ey - halfH, ex + halfW, ey, col);  // upper
-    fb.fillTriangle(ex - halfW, ey, ex, ey + halfH, ex + halfW, ey, col);  // lower
+    fb.fillTriangle(ex - halfW, ey, ex, ey - halfH, ex + halfW, ey, col);
+    fb.fillTriangle(ex - halfW, ey, ex, ey + halfH, ex + halfW, ey, col);
 }
 
-// ── Sigil geometrico tra gli occhi ──
-void drawSigil(int sx, int sy, uint16_t col) {
+// ── Mandorla con palpebra superiore (sguardo rilassato) ──
+void drawMandorlaEyeRelaxed(int ex, int ey, int halfW, int halfH, uint16_t col, int lidPct) {
+    drawMandorlaEye(ex, ey, halfW, halfH, col);
+    if (lidPct > 0) {
+        int cutH = halfH * lidPct / 100;
+        // Copri la parte superiore con rettangolo BG
+        fb.fillRect(ex - halfW - 1, ey - halfH - 1, halfW * 2 + 2, cutH + 2, COL_BG);
+    }
+}
+
+// ── Occhio felice ^_^ (arco verso l'alto) ──
+void drawHappyEye(int ex, int ey, int halfW, uint16_t col) {
+    for (int dx = -halfW; dx <= halfW; dx++) {
+        float t = (float)dx / (float)halfW;
+        int dy = (int)(-8.0 * (1.0 - t * t));  // arco parabolico in su
+        fb.drawPixel(ex + dx, ey + dy, col);
+        fb.drawPixel(ex + dx, ey + dy + 1, col);
+        fb.drawPixel(ex + dx, ey + dy - 1, col);  // spessore 3px
+    }
+}
+
+// ── Color interpolation (simula opacità su TFT 16-bit) ──
+uint16_t lerpColor565(uint16_t c1, uint16_t c2, float t) {
+    if (t <= 0.0f) return c1;
+    if (t >= 1.0f) return c2;
+    uint8_t r1 = (c1 >> 11) & 0x1F, g1 = (c1 >> 5) & 0x3F, b1 = c1 & 0x1F;
+    uint8_t r2 = (c2 >> 11) & 0x1F, g2 = (c2 >> 5) & 0x3F, b2 = c2 & 0x1F;
+    uint8_t r = r1 + (int)((r2 - r1) * t);
+    uint8_t g = g1 + (int)((g2 - g1) * t);
+    uint8_t b = b1 + (int)((b2 - b1) * t);
+    return (r << 11) | (g << 5) | b;
+}
+
+// ── Sigil geometrico tra gli occhi (con scale, rotation e glow) ──
+void drawSigil(int sx, int sy, uint16_t col, float scale, float rotation) {
+    // Glow halo (senza rotazione, cerchio morbido)
+    uint16_t glowCol = lerpColor565(COL_BG, col, 0.12f);
+    int glowR = (int)(14.0f * scale);
+    if (glowR > 2) {
+        fb.fillCircle(sx, sy, glowR + 4, lerpColor565(COL_BG, col, 0.05f));
+        fb.fillCircle(sx, sy, glowR, glowCol);
+    }
+
+    float cosR = cos(rotation), sinR = sin(rotation);
+    #define SIGIL_PT(dx, dy) \
+        (sx + (int)(scale * ((dx) * cosR - (dy) * sinR))), \
+        (sy + (int)(scale * ((dx) * sinR + (dy) * cosR)))
+
     // Croce centrale
-    fb.drawWideLine(sx, sy - 8, sx, sy + 8, 2, col);
-    fb.drawWideLine(sx - 8, sy, sx + 8, sy, 2, col);
+    fb.drawWideLine(SIGIL_PT(0, -8), SIGIL_PT(0, 8), 2, col);
+    fb.drawWideLine(SIGIL_PT(-8, 0), SIGIL_PT(8, 0), 2, col);
     // Raggi diagonali
-    fb.drawWideLine(sx - 5, sy - 5, sx + 5, sy + 5, 1, col);
-    fb.drawWideLine(sx - 5, sy + 5, sx + 5, sy - 5, 1, col);
-    // Cerchietto al centro
-    fb.drawCircle(sx, sy, 3, col);
-    // Punte esterne (stile runa/sole)
-    fb.drawPixel(sx, sy - 10, col);
-    fb.drawPixel(sx, sy + 10, col);
-    fb.drawPixel(sx - 10, sy, col);
-    fb.drawPixel(sx + 10, sy, col);
+    fb.drawWideLine(SIGIL_PT(-5, -5), SIGIL_PT(5, 5), 1, col);
+    fb.drawWideLine(SIGIL_PT(-5, 5), SIGIL_PT(5, -5), 1, col);
+    // Cerchietto al centro (scala il raggio)
+    fb.drawCircle(sx, sy, max(1, (int)(3 * scale)), col);
+    // Punte esterne
+    fb.drawPixel(SIGIL_PT(0, -10), col);
+    fb.drawPixel(SIGIL_PT(0, 10), col);
+    fb.drawPixel(SIGIL_PT(-10, 0), col);
+    fb.drawPixel(SIGIL_PT(10, 0), col);
+
+    #undef SIGIL_PT
 }
 
 // Box notifica in basso a sinistra, 30s
@@ -365,24 +535,22 @@ bool peekUnreadNotification() {
 void renderState() {
     fb.fillSprite(COL_BG);
     const int cx = 160, cy = 85;
-    const int lx = cx - 40, rx = cx + 40, eyeY = cy - 15;
-    const int sigilY = cy - 42;   // sigil tra cappuccio e occhi
+    const int lx = cx - FACE_EYE_DIST, rx = cx + FACE_EYE_DIST, eyeY = cy - 15;
+    const int sigilY = cy - 42;
     const int mouthY = cy + 30;
+    const int hw = FACE_EYE_HW, hh = FACE_EYE_HH;
     unsigned long now = millis();
 
     if (standaloneMode && !wsConnected) {
-        // ── Standalone: cappuccio dim, occhi vaganti, sigil spento ────────────
-        drawHood(cx, cy, COL_DIM);
+        // ── Standalone: cappuccio dim, occhi vaganti, sigil SPENTO ────────────
+        drawHoodFilled(cx, cy, lerpColor565(COL_HOOD, COL_BG, 0.5f));
         float offsetX = 5.0 * sin((float)now / 1800.0);
-        drawMandorlaEye(lx, eyeY, 22, 12, COL_DIM);
-        drawMandorlaEye(rx, eyeY, 22, 12, COL_DIM);
-        // Pupille vaganti (fessure scure dentro la mandorla)
+        drawMandorlaEye(lx, eyeY, hw, hh, COL_DIM);
+        drawMandorlaEye(rx, eyeY, hw, hh, COL_DIM);
         fb.fillCircle(lx + (int)offsetX, eyeY, 5, COL_BG);
         fb.fillCircle(rx + (int)offsetX, eyeY, 5, COL_BG);
-        // Sigil spento, pulsazione dim lentissima
-        uint16_t sigilCol = getSigilBreathingColor(now);
-        drawSigil(cx, sigilY, sigilCol);
-        // Bocca sottile
+        // Sigil completamente spento
+        // (niente drawSigil — buio totale)
         fb.drawWideLine(cx - 12, mouthY, cx + 12, mouthY, 1, COL_DIM);
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
@@ -391,46 +559,38 @@ void renderState() {
     } else if (currentState == "IDLE") {
         // ── IDLE: rendering varia per livello di profondità ───────────────────
         if (currentIdleDepth == IDLE_ABYSS) {
-            // ABYSS: schermo quasi nero, solo sigil che pulsa debolmente
-            float pulse = 0.15 + 0.15 * sin((float)now / 5000.0 * 2.0 * PI);
-            uint8_t r = (uint8_t)(255 * pulse);
-            uint8_t b = (uint8_t)(64 * pulse);
-            drawSigil(cx, cy - 5, tft.color565(r, 0, b));
+            // ABYSS: schermo quasi nero, cappuccio appena visibile (viola scurissimo)
+            drawHoodFilled(cx, cy, tft.color565(12, 4, 18));
 
         } else if (currentIdleDepth == IDLE_DEEP) {
-            // DEEP: occhi chiusi, cappuccio dim, heartbeat lento del sigil
-            drawHood(cx, cy, tft.color565(0, 30, 8));
-            fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, tft.color565(0, 40, 10));
-            fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, tft.color565(0, 40, 10));
-            // Heartbeat sigil: pulse breve ogni 6s
-            float phase = fmod((float)now / 6000.0, 1.0);
-            float beat = (phase < 0.08) ? sin(phase / 0.08 * PI) : 0.0;
-            float base = 0.1 + 0.5 * beat;
-            drawSigil(cx, sigilY, tft.color565((uint8_t)(255 * base), 0, (uint8_t)(64 * base)));
+            // DEEP: occhi chiusi, cappuccio dim viola, sigil quasi invisibile
+            drawHoodFilled(cx, cy, lerpColor565(COL_HOOD, COL_BG, 0.6f));
+            fb.drawWideLine(lx - hw, eyeY, lx + hw, eyeY, 2, tft.color565(0, 40, 10));
+            fb.drawWideLine(rx - hw, eyeY, rx + hw, eyeY, 2, tft.color565(0, 40, 10));
+            // Sigil appena percettibile
+            drawSigil(cx, sigilY, tft.color565(10, 0, 3), 0.5f);
 
         } else if (currentIdleDepth == IDLE_DOZING) {
-            // DOZING: occhi semi-chiusi, drift lento pupille, tutto rallentato
-            drawHood(cx, cy, COL_DIM);
+            // DOZING: occhi semi-chiusi, drift lento pupille, sigil dim
+            drawHoodFilled(cx, cy, lerpColor565(COL_HOOD, COL_BG, 0.3f));
             float maxOpen = 0.4;
-            int halfH = max(1, (int)(12 * min(maxOpen, blink.openness)));
+            int halfH = max(1, (int)(hh * min(maxOpen, blink.openness)));
             if (blink.openness > 0.05) {
-                drawMandorlaEye(lx, eyeY, 22, halfH, COL_DIM);
-                drawMandorlaEye(rx, eyeY, 22, halfH, COL_DIM);
-                // Micro-drift pupille
+                drawMandorlaEye(lx, eyeY, hw, halfH, COL_DIM);
+                drawMandorlaEye(rx, eyeY, hw, halfH, COL_DIM);
                 float drift = 3.0 * sin((float)now / 3000.0);
                 fb.fillCircle(lx + (int)drift, eyeY, 3, COL_BG);
                 fb.fillCircle(rx + (int)drift, eyeY, 3, COL_BG);
             } else {
-                fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, COL_DIM);
-                fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, COL_DIM);
+                fb.drawWideLine(lx - hw, eyeY, lx + hw, eyeY, 2, COL_DIM);
+                fb.drawWideLine(rx - hw, eyeY, rx + hw, eyeY, 2, COL_DIM);
             }
-            // Sigil dim con breathing lentissimo
-            float sb = 0.2 + 0.2 * sin((float)(now % 8000) / 8000.0 * 2.0 * PI);
-            drawSigil(cx, sigilY, tft.color565((uint8_t)(255 * sb), 0, (uint8_t)(64 * sb)));
+            drawSigil(cx, sigilY, tft.color565(20, 0, 5), 0.5f);
 
         } else {
             // AWAKE / DROWSY: rendering standard con modulazione
-            drawHood(cx, cy, COL_DIM);
+            drawHoodFilled(cx, cy, COL_HOOD);
+            drawFaceShadow(cx, cy);
             uint16_t eyeCol = COL_GREEN;
             float breathPeriod = (currentIdleDepth == IDLE_DROWSY) ? 8000.0 : 4000.0;
             if (breathingEnabled && blink.phase == BLINK_NONE) {
@@ -439,20 +599,24 @@ void renderState() {
                 eyeCol = tft.color565(0, (uint8_t)(255 * b), (uint8_t)(65 * b));
             }
             float maxOpen = (currentIdleDepth == IDLE_DROWSY) ? 0.85 : 1.0;
-            // Wink: occhio sinistro resta aperto, destro blink
             float leftOpen  = min(maxOpen, blink.isWink ? maxOpen : blink.openness);
             float rightOpen = min(maxOpen, blink.openness);
-            int leftHalfH  = max(1, (int)(12 * leftOpen));
-            int rightHalfH = max(1, (int)(12 * rightOpen));
+            int leftHalfH  = max(1, (int)(hh * leftOpen));
+            int rightHalfH = max(1, (int)(hh * rightOpen));
+            {
+                float glowI = (currentIdleDepth == IDLE_DROWSY) ? 0.5f : 0.8f;
+                drawEyeGlow(lx, eyeY, COL_GREEN, glowI);
+                drawEyeGlow(rx, eyeY, COL_GREEN, glowI);
+            }
             if (leftOpen > 0.05) {
-                drawMandorlaEye(lx, eyeY, 22, leftHalfH, eyeCol);
+                drawMandorlaEyeRelaxed(lx, eyeY, hw, leftHalfH, eyeCol, FACE_EYELID);
             } else {
-                fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, eyeCol);
+                fb.drawWideLine(lx - hw, eyeY, lx + hw, eyeY, 2, eyeCol);
             }
             if (rightOpen > 0.05) {
-                drawMandorlaEye(rx, eyeY, 22, rightHalfH, eyeCol);
+                drawMandorlaEyeRelaxed(rx, eyeY, hw, rightHalfH, eyeCol, FACE_EYELID);
             } else {
-                fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, eyeCol);
+                fb.drawWideLine(rx - hw, eyeY, rx + hw, eyeY, 2, eyeCol);
             }
             // Pupille micro-drift (AWAKE, no blink attivo)
             if (currentIdleDepth == IDLE_AWAKE && blink.phase == BLINK_NONE) {
@@ -461,55 +625,81 @@ void renderState() {
                 fb.fillCircle(lx + (int)driftX, eyeY + (int)driftY, 4, COL_BG);
                 fb.fillCircle(rx + (int)driftX, eyeY + (int)driftY, 4, COL_BG);
             }
-            drawSigil(cx, sigilY, getSigilBreathingColor(now));
+            // Sigil dim breathing (dormiente ma presente)
+            {
+                float sb = 0.1f + 0.05f * sin((float)now / 6000.0f * 2.0f * PI);
+                uint16_t sigilDim = lerpColor565(COL_BG, COL_RED, sb);
+                float sigilScale = (currentIdleDepth == IDLE_DROWSY) ? 0.55f : 0.6f;
+                drawSigil(cx, sigilY, sigilDim, sigilScale);
+            }
             fb.drawWideLine(cx - 15, mouthY, cx + 15, mouthY, 1, eyeCol);
         }
 
     } else if (currentState == "THINKING") {
-        // ── THINKING: mandorle con pupille alte, sigil fisso, dots ─────────────
-        drawHood(cx, cy, COL_DIM);
-        drawMandorlaEye(lx, eyeY, 22, 12, COL_GREEN);
-        drawMandorlaEye(rx, eyeY, 22, 12, COL_GREEN);
-        // Pupille in alto (fessure scure)
+        // ── THINKING: mandorle aperte, pupille alte, sigil rosso rotante ──────
+        drawHoodFilled(cx, cy, COL_HOOD);
+        drawFaceShadow(cx, cy);
+        drawEyeGlow(lx, eyeY, COL_GREEN, 1.0f);
+        drawEyeGlow(rx, eyeY, COL_GREEN, 1.0f);
+        drawMandorlaEyeRelaxed(lx, eyeY, hw, hh, COL_GREEN, 0);
+        drawMandorlaEyeRelaxed(rx, eyeY, hw, hh, COL_GREEN, 0);
         fb.fillCircle(lx, eyeY - 5, 5, COL_BG);
         fb.fillCircle(rx, eyeY - 5, 5, COL_BG);
-        drawSigil(cx, sigilY, COL_RED);
+        {
+            float pulse = 0.7f + 0.3f * sin((float)now / 1000.0f * 2.0f * PI);
+            uint16_t sigilCol = lerpColor565(COL_BG, COL_RED, pulse);
+            float rot = (float)now / 8000.0f * 2.0f * PI;
+            drawSigil(cx, sigilY, sigilCol, 1.0f, rot);
+        }
         fb.drawWideLine(cx - 12, mouthY, cx + 12, mouthY, 1, COL_GREEN);
-        // Dots animati
         static const char* dotLookup[] = {"", ".", "..", "..."};
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
         fb.drawString(dotLookup[(now / 400) % 4], cx, cy + 50, 2);
 
     } else if (currentState == "WORKING") {
-        // ── WORKING: occhi semi-chiusi, sopracciglia, sigil dim, dots lenti ───
-        drawHood(cx, cy, COL_DIM);
-        int halfH = 4;  // semi-chiusi
-        drawMandorlaEye(lx, eyeY, 22, halfH, COL_DIM);
-        drawMandorlaEye(rx, eyeY, 22, halfH, COL_DIM);
-        // Sopracciglia piatte
+        // ── WORKING: occhi semi-chiusi, sopracciglia piatte, sigil rotante ───
+        drawHoodFilled(cx, cy, COL_HOOD);
+        drawFaceShadow(cx, cy);
+        drawEyeGlow(lx, eyeY, COL_GREEN, 0.5f);
+        drawEyeGlow(rx, eyeY, COL_GREEN, 0.5f);
+        drawMandorlaEye(lx, eyeY, hw, 4, COL_DIM);
+        drawMandorlaEye(rx, eyeY, hw, 4, COL_DIM);
         fb.drawWideLine(lx - 18, eyeY - 14, lx + 18, eyeY - 14, 2, COL_DIM);
         fb.drawWideLine(rx - 18, eyeY - 14, rx + 18, eyeY - 14, 2, COL_DIM);
-        drawSigil(cx, sigilY, COL_DIM);
+        {
+            float rot = (float)now / 3000.0f * 2.0f * PI;
+            drawSigil(cx, sigilY, COL_DIM, 0.9f, rot);
+        }
         fb.drawWideLine(cx - 8, mouthY, cx + 8, mouthY, 1, COL_DIM);
-        // Dots lenti
         static const char* dotLookup2[] = {"", ".", "..", "..."};
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
         fb.drawString(dotLookup2[(now / 600) % 4], cx, cy + 50, 2);
 
     } else if (currentState == "PROUD") {
-        // ── PROUD: mandorle larghe, sigil bright, arco sorriso, "OK" sale ────
+        // ── PROUD: occhi ^_^ felici, sorriso, "OK" sale ─────────────────────
         unsigned long elapsed = now - proudStartedAt;
         float t = min(1.0f, (float)elapsed / PROUD_DURATION);
-        drawHood(cx, cy, COL_GREEN);
-        drawMandorlaEye(lx, eyeY, 24, 14, COL_GREEN);
-        drawMandorlaEye(rx, eyeY, 24, 14, COL_GREEN);
-        drawSigil(cx, sigilY, COL_RED);
-        // Sorriso: arco sottile verso l'alto
-        for (int dx = -20; dx <= 20; dx++) {
-            float ft = (float)dx / 20.0;
-            int dy = (int)(8.0 * ft * ft);
+        drawHoodFilled(cx, cy, COL_HOOD_LT);
+        drawFaceShadow(cx, cy);
+        drawEyeGlow(lx, eyeY, COL_GREEN, 1.0f);
+        drawEyeGlow(rx, eyeY, COL_GREEN, 1.0f);
+        drawHappyEye(lx, eyeY, (int)(hw * 0.7), COL_GREEN);
+        drawHappyEye(rx, eyeY, (int)(hw * 0.7), COL_GREEN);
+        {
+            float sigilScale = 1.1f + 0.1f * sin((float)now / 500.0f * 2.0f * PI);
+            drawSigil(cx, sigilY, COL_RED, sigilScale);
+            // Cerchio espandente (pulse ring)
+            float ringT = fmod((float)now / 1500.0f, 1.0f);
+            int ringR = (int)(15.0f * ringT);
+            uint16_t ringCol = lerpColor565(COL_RED, COL_BG, ringT);
+            fb.drawCircle(cx, sigilY, ringR, ringCol);
+        }
+        // Sorriso largo
+        for (int dx = -18; dx <= 18; dx++) {
+            float ft = (float)dx / 18.0;
+            int dy = (int)(7.0 * ft * ft);
             fb.drawPixel(cx + dx, mouthY + dy, COL_GREEN);
             fb.drawPixel(cx + dx, mouthY + dy + 1, COL_GREEN);
         }
@@ -525,11 +715,10 @@ void renderState() {
         }
 
     } else if (currentState == "SLEEPING") {
-        // ── SLEEPING: occhi chiusi, cappuccio, sigil spento, zZz ─────────────
-        drawHood(cx, cy, COL_DIM);
-        fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, COL_DIM);
-        fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, COL_DIM);
-        // Sigil quasi invisibile
+        // ── SLEEPING: occhi chiusi, cappuccio dim, sigil quasi spento, zZz ───
+        drawHoodFilled(cx, cy, lerpColor565(COL_HOOD, COL_BG, 0.4f));
+        fb.drawWideLine(lx - hw, eyeY, lx + hw, eyeY, 2, COL_DIM);
+        fb.drawWideLine(rx - hw, eyeY, rx + hw, eyeY, 2, COL_DIM);
         drawSigil(cx, sigilY, tft.color565(40, 0, 10));
         int yOff = (int)(5 * sin(now / 800.0));
         fb.setTextColor(COL_DIM);
@@ -539,61 +728,77 @@ void renderState() {
         fb.drawString("z", cx + 85, cy - 75 + yOff, 2);
 
     } else if (currentState == "HAPPY") {
-        // ── HAPPY: mandorle grandi, sigil flash, arco largo, stelline ────────
-        drawHood(cx, cy, COL_GREEN);
-        drawMandorlaEye(lx, eyeY, 26, 14, COL_GREEN);
-        drawMandorlaEye(rx, eyeY, 26, 14, COL_GREEN);
-        // Sigil lampeggia rapidamente
-        uint16_t sigilCol = ((now / 300) % 2 == 0) ? COL_RED : tft.color565(180, 0, 45);
-        drawSigil(cx, sigilY, sigilCol);
-        // Bocca: arco pronunciato
+        // ── HAPPY: occhi ^_^ felici, sigil flash, sorriso largo, stelline ────
+        drawHoodFilled(cx, cy, COL_HOOD_LT);
+        drawFaceShadow(cx, cy);
+        drawEyeGlow(lx, eyeY, COL_GREEN, 1.0f);
+        drawEyeGlow(rx, eyeY, COL_GREEN, 1.0f);
+        drawHappyEye(lx, eyeY, (int)(hw * 0.8), COL_GREEN);
+        drawHappyEye(rx, eyeY, (int)(hw * 0.8), COL_GREEN);
+        {
+            uint16_t sigilCol = ((now / 300) % 2 == 0) ? COL_RED : tft.color565(180, 0, 45);
+            int bounceY = (int)(5.0f * sin((float)now / 300.0f * 2.0f * PI));
+            drawSigil(cx, sigilY + bounceY, sigilCol, 1.1f);
+        }
+        // Sorriso grande
         for (int dx = -22; dx <= 22; dx++) {
             float ft = (float)dx / 22.0;
-            int dy = (int)(10.0 * ft * ft);
+            int dy = (int)(9.0 * ft * ft);
             fb.drawPixel(cx + dx, mouthY + dy, COL_GREEN);
             fb.drawPixel(cx + dx, mouthY + 1 + dy, COL_GREEN);
         }
-        fb.setTextColor(COL_GREEN);
+        // Stelline pulsanti
+        float starPulse = 0.5 + 0.5 * sin((float)now / 600.0);
+        uint16_t starCol = tft.color565(0, (uint8_t)(255 * starPulse), (uint8_t)(65 * starPulse));
+        fb.setTextColor(starCol);
         fb.setTextDatum(MC_DATUM);
-        fb.drawString("*", cx - 75, cy - 35, 2);
-        fb.drawString("*", cx + 70, cy - 35, 2);
+        fb.drawString("*", cx - 60, cy - 30, 2);
+        fb.drawString("*", cx + 58, cy - 30, 2);
+        fb.drawString("*", cx - 45, cy - 48, 1);
+        fb.drawString("*", cx + 48, cy - 48, 1);
 
     } else if (currentState == "CURIOUS") {
-        // ── CURIOUS: occhi larghi, pupille scannerizzanti, "?" ──────────
-        drawHood(cx, cy, COL_GREEN);
-        drawMandorlaEye(lx, eyeY, 24, 14, COL_GREEN);
-        drawMandorlaEye(rx, eyeY, 24, 14, COL_GREEN);
-        // Pupille che scannerizzano lentamente
+        // ── CURIOUS: mandorle larghe, pupille scan, sopracciglia, "?" ────────
+        drawHoodFilled(cx, cy, COL_HOOD_LT);
+        drawFaceShadow(cx, cy);
+        drawEyeGlow(lx, eyeY, COL_GREEN, 1.0f);
+        drawEyeGlow(rx, eyeY, COL_GREEN, 1.0f);
+        drawMandorlaEyeRelaxed(lx, eyeY, hw + 2, hh + 2, COL_GREEN, 0);
+        drawMandorlaEyeRelaxed(rx, eyeY, hw + 2, hh + 2, COL_GREEN, 0);
         float scanX = 8.0 * sin((float)now / 1500.0);
         fb.fillCircle(lx + (int)scanX, eyeY, 5, COL_BG);
         fb.fillCircle(rx + (int)scanX, eyeY, 5, COL_BG);
-        // Sopracciglia alzate (curiosità)
         fb.drawWideLine(lx - 20, eyeY - 20, lx + 15, eyeY - 16, 2, COL_GREEN);
         fb.drawWideLine(rx - 15, eyeY - 16, rx + 20, eyeY - 20, 2, COL_GREEN);
-        // Sigil pulse veloce
-        float sp = 0.5 + 0.5 * sin((float)now / 1000.0 * 2.0 * PI);
-        drawSigil(cx, sigilY, tft.color565((uint8_t)(255 * sp), 0, (uint8_t)(64 * sp)));
-        // Bocca: piccola "o"
+        float sp = 0.5f + 0.5f * sin((float)now / 1000.0f * 2.0f * PI);
+        {
+            uint16_t sigilCol = lerpColor565(COL_BG, COL_RED, sp);
+            float tilt = 0.25f * sin((float)now / 1200.0f);
+            float sc = 0.9f + 0.2f * sp;
+            drawSigil(cx, sigilY, sigilCol, sc, tilt);
+        }
         fb.drawCircle(cx, mouthY, 5, COL_GREEN);
-        // "?" flottante
         float qY = 3.0 * sin((float)now / 800.0);
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
         fb.drawString("?", cx + 80, cy - 30 + (int)qY, 4);
 
     } else if (currentState == "ALERT") {
-        // ── ALERT: mandorle gialle con pupilla, sigil lampeggia, zig-zag ─────
-        drawHood(cx, cy, COL_YELLOW);
-        drawMandorlaEye(lx, eyeY, 22, 12, COL_YELLOW);
-        drawMandorlaEye(rx, eyeY, 22, 12, COL_YELLOW);
+        // ── ALERT: mandorle gialle, sopracciglia V, sigil lampeggia ──────────
+        drawHoodFilled(cx, cy, COL_YELLOW);
+        drawFaceShadow(cx, cy);
+        drawEyeGlow(lx, eyeY, COL_YELLOW, 1.0f);
+        drawEyeGlow(rx, eyeY, COL_YELLOW, 1.0f);
+        drawMandorlaEye(lx, eyeY, hw, hh, COL_YELLOW);
+        drawMandorlaEye(rx, eyeY, hw, hh, COL_YELLOW);
         fb.fillCircle(lx, eyeY, 5, COL_BG);
         fb.fillCircle(rx, eyeY, 5, COL_BG);
-        // Sopracciglia a V aggressiva
         fb.drawWideLine(lx - 18, eyeY - 18, lx + 5, eyeY - 12, 2, COL_YELLOW);
         fb.drawWideLine(rx - 5, eyeY - 12, rx + 18, eyeY - 18, 2, COL_YELLOW);
-        // Sigil lampeggia rosso
-        if ((now / 500) % 2 == 0) drawSigil(cx, sigilY, COL_RED);
-        // Bocca zig-zag
+        {
+            int shakeX = (int)(3.0f * sin((float)now / 80.0f));
+            drawSigil(cx + shakeX, sigilY, COL_RED, 1.2f);
+        }
         for (int i = 0; i < 4; i++) {
             int sx = cx - 20 + i * 10;
             int sy = mouthY + ((i % 2 == 0) ? 0 : 5);
@@ -605,15 +810,168 @@ void renderState() {
             fb.drawString("!", cx + 90, cy - 15, 4);
         }
 
+    } else if (currentState == "BORED") {
+        // ── BORED: 6 sub-animazioni cicliche da 5s (30s totale) ─────────────
+        unsigned long elapsed = now - stateStartedAt;
+        int phase = (elapsed / 5000) % 6;
+        float t = (float)(elapsed % 5000) / 5000.0f;
+        float smooth = t * t * (3.0f - 2.0f * t);  // hermite smoothstep
+
+        drawHoodFilled(cx, cy, COL_HOOD);
+        drawFaceShadow(cx, cy);
+        drawEyeGlow(lx, eyeY, COL_GREEN, 0.7f);
+        drawEyeGlow(rx, eyeY, COL_GREEN, 0.7f);
+
+        if (phase == 0) {
+            // ── Phase 0: Eye Roll ("uffa") ──────────────────────────────────
+            float dx = cos(t * 2.0f * PI) * 12.0f;
+            float dy = sin(t * 2.0f * PI) * 12.0f;
+            drawMandorlaEyeRelaxed(lx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+            drawMandorlaEyeRelaxed(rx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+            fb.fillCircle(lx + (int)dx, eyeY + (int)dy, 4, COL_BG);
+            fb.fillCircle(rx + (int)dx, eyeY + (int)dy, 4, COL_BG);
+            drawSigil(cx, sigilY, tft.color565(38, 0, 10), 0.6f);
+            // Bocca neutra leggermente in giù
+            for (int mdx = -10; mdx <= 10; mdx++) {
+                float mt = (float)mdx / 10.0f;
+                int mdy = (int)(-2.0f * mt * mt);
+                fb.drawPixel(cx + mdx, mouthY - mdy, COL_DIM);
+            }
+            // "..." sotto la bocca
+            fb.setTextColor(tft.color565(0, 40, 10));
+            fb.setTextDatum(MC_DATUM);
+            fb.drawString("...", cx, mouthY + 18, 1);
+
+        } else if (phase == 1) {
+            // ── Phase 1: Wander (guarda in giro) ────────────────────────────
+            float pdx = 0, pdy = 0;
+            if (t < 0.25f)       { pdx = -25.0f * (t / 0.25f); }
+            else if (t < 0.5f)   { pdx = -25.0f + 50.0f * ((t - 0.25f) / 0.25f); }
+            else if (t < 0.75f)  { pdx = 25.0f * (1.0f - (t - 0.5f) / 0.25f); pdy = -15.0f * ((t - 0.5f) / 0.25f); }
+            else                 { pdy = -15.0f * (1.0f - (t - 0.75f) / 0.25f); }
+            drawMandorlaEyeRelaxed(lx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+            drawMandorlaEyeRelaxed(rx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+            fb.fillCircle(lx + (int)pdx, eyeY + (int)pdy, 4, COL_BG);
+            fb.fillCircle(rx + (int)pdx, eyeY + (int)pdy, 4, COL_BG);
+            // Sigil si illumina quando guarda in su
+            float sigilBright = (t > 0.5f && t < 0.75f) ? 0.5f : 0.15f;
+            drawSigil(cx, sigilY, lerpColor565(COL_BG, COL_RED, sigilBright), 0.7f);
+            fb.drawWideLine(cx - 10, mouthY, cx + 10, mouthY, 1, COL_DIM);
+            // "?" appare flebile
+            if (t > 0.6f && t < 0.85f) {
+                fb.setTextColor(tft.color565(0, 40, 10));
+                fb.setTextDatum(MC_DATUM);
+                fb.drawString("?", cx + 70, cy - 35, 2);
+            }
+
+        } else if (phase == 2) {
+            // ── Phase 2: Yawn (sbadiglio) ───────────────────────────────────
+            float yawnOpen;
+            if (t < 0.3f)       yawnOpen = t / 0.3f;
+            else if (t < 0.7f)  yawnOpen = 1.0f;
+            else                yawnOpen = 1.0f - (t - 0.7f) / 0.3f;
+            // Occhi si chiudono durante yawn
+            int eyeH = max(2, (int)(hh * (1.0f - yawnOpen * 0.7f)));
+            drawMandorlaEye(lx, eyeY, hw, eyeH, COL_GREEN);
+            drawMandorlaEye(rx, eyeY, hw, eyeH, COL_GREEN);
+            if (eyeH > 3) {
+                fb.fillCircle(lx, eyeY, 3, COL_BG);
+                fb.fillCircle(rx, eyeY, 3, COL_BG);
+            }
+            // Bocca aperta (sbadiglio)
+            int mouthH = max(1, (int)(12.0f * yawnOpen));
+            fb.fillEllipse(cx, mouthY, 8, mouthH, COL_DIM);
+            // Sigil dim out durante sbadiglio
+            float sigilDim = 0.15f * (1.0f - yawnOpen * 0.8f);
+            drawSigil(cx, sigilY, lerpColor565(COL_BG, COL_RED, sigilDim), 0.6f);
+
+        } else if (phase == 3) {
+            // ── Phase 3: Juggle Sigil (gioca col cervello) ──────────────────
+            float bounceY = 30.0f - fabs(sin(t * 3.0f * PI)) * 60.0f;
+            float sigilRot = t * 4.0f * PI;
+            int juggleSY = sigilY + (int)bounceY;
+            drawSigil(cx, juggleSY, COL_RED, 0.9f, sigilRot);
+            // Occhi seguono il sigil
+            float trackY = bounceY * 0.15f;
+            drawMandorlaEyeRelaxed(lx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+            drawMandorlaEyeRelaxed(rx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+            fb.fillCircle(lx, eyeY + (int)trackY - 2, 4, COL_BG);
+            fb.fillCircle(rx, eyeY + (int)trackY - 2, 4, COL_BG);
+            // Leggero sorriso
+            for (int mdx = -12; mdx <= 12; mdx++) {
+                float mt = (float)mdx / 12.0f;
+                int mdy = (int)(4.0f * mt * mt);
+                fb.drawPixel(cx + mdx, mouthY + mdy, COL_GREEN);
+            }
+
+        } else if (phase == 4) {
+            // ── Phase 4: Doze Off (combatte il sonno) ───────────────────────
+            float droop;
+            if (t < 0.7f)       droop = t / 0.7f;             // chiusura lenta
+            else if (t < 0.8f)  droop = 1.0f - (t - 0.7f) / 0.1f;  // SNAP aperto
+            else                droop = 0.0f;
+            int eyeH = max(2, (int)(hh * (1.0f - droop * 0.85f)));
+            uint16_t eyeCol = lerpColor565(COL_GREEN, COL_DIM, droop * 0.6f);
+            drawMandorlaEye(lx, eyeY, hw, eyeH, eyeCol);
+            drawMandorlaEye(rx, eyeY, hw, eyeH, eyeCol);
+            if (eyeH > 3) {
+                fb.fillCircle(lx, eyeY, 3, COL_BG);
+                fb.fillCircle(rx, eyeY, 3, COL_BG);
+            }
+            // Sigil flicker mentre coscienza svanisce
+            if (droop < 0.5f || random(100) > (int)(droop * 80)) {
+                drawSigil(cx, sigilY, lerpColor565(COL_BG, COL_RED, 0.2f * (1.0f - droop)), 0.6f);
+            }
+            fb.drawWideLine(cx - 10, mouthY, cx + 10, mouthY, 1, COL_DIM);
+            // "!" al risveglio
+            if (t > 0.7f && t < 0.9f) {
+                fb.setTextColor(COL_GREEN);
+                fb.setTextDatum(MC_DATUM);
+                fb.drawString("!", cx + 60, cy - 30, 4);
+            }
+
+        } else {
+            // ── Phase 5: Whistle (fischietta) ───────────────────────────────
+            // Occhi guardano leggermente in alto
+            drawMandorlaEyeRelaxed(lx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+            drawMandorlaEyeRelaxed(rx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+            fb.fillCircle(lx, eyeY - 6, 4, COL_BG);
+            fb.fillCircle(rx, eyeY - 6, 4, COL_BG);
+            // Sigil rotazione lenta costante (vinile)
+            float vinylRot = (float)now / 4000.0f * 2.0f * PI;
+            drawSigil(cx, sigilY, lerpColor565(COL_BG, COL_RED, 0.35f), 0.7f, vinylRot);
+            // Bocca cerchietto (pucker)
+            fb.drawCircle(cx, mouthY, 4, COL_GREEN);
+            // Note musicali che fluttuano su
+            float noteT1 = fmod(t * 2.0f, 1.0f);
+            float noteT2 = fmod(t * 2.0f + 0.5f, 1.0f);
+            int noteY1 = mouthY - 10 - (int)(35.0f * noteT1);
+            int noteY2 = mouthY - 10 - (int)(35.0f * noteT2);
+            uint16_t noteCol1 = lerpColor565(COL_GREEN, COL_BG, noteT1);
+            uint16_t noteCol2 = lerpColor565(COL_GREEN, COL_BG, noteT2);
+            fb.setTextDatum(MC_DATUM);
+            fb.setTextColor(noteCol1);
+            fb.drawString("~", cx + 30, noteY1, 2);
+            fb.setTextColor(noteCol2);
+            fb.drawString("*", cx + 45, noteY2, 1);
+        }
+
     } else if (currentState == "ERROR") {
-        // ── ERROR: X rosse, sigil spento, cappuccio rosso ────────────────────
-        drawHood(cx, cy, COL_RED);
+        // ── ERROR: X rosse, cappuccio rosso, sigil flicker ───────────────────
+        drawHoodFilled(cx, cy, COL_RED);
+        drawFaceShadow(cx, cy);
+        drawEyeGlow(lx, eyeY, COL_RED, 0.6f);
+        drawEyeGlow(rx, eyeY, COL_RED, 0.6f);
         int ey = eyeY;
         fb.drawWideLine(lx - 12, ey - 12, lx + 12, ey + 12, 3, COL_RED);
         fb.drawWideLine(lx - 12, ey + 12, lx + 12, ey - 12, 3, COL_RED);
         fb.drawWideLine(rx - 12, ey - 12, rx + 12, ey + 12, 3, COL_RED);
         fb.drawWideLine(rx - 12, ey + 12, rx + 12, ey - 12, 3, COL_RED);
-        // Bocca V rovesciata
+        // Sigil flicker casuale
+        if (random(100) > 40) {
+            float sc = 0.7f + (float)random(30) / 100.0f;
+            drawSigil(cx, sigilY, tft.color565(120, 0, 30), sc);
+        }
         fb.drawWideLine(cx - 15, mouthY + 5, cx, mouthY, 2, COL_RED);
         fb.drawWideLine(cx, mouthY, cx + 15, mouthY + 5, 2, COL_RED);
         fb.setTextColor(COL_RED);
@@ -645,21 +1003,20 @@ void renderTransition(unsigned long now) {
     unsigned long elapsed = now - transition.start;
     fb.fillSprite(COL_BG);
     const int cx = 160, cy = 85;
-    const int lx = cx - 40, rx = cx + 40, eyeY = cy - 15;
+    const int lx = cx - FACE_EYE_DIST, rx = cx + FACE_EYE_DIST, eyeY = cy - 15;
     const int sigilY = cy - 42;
     const int mouthY = cy + 30;
+    const int hw = FACE_EYE_HW, hh = FACE_EYE_HH;
 
-    drawHood(cx, cy, COL_DIM);
+    drawHoodFilled(cx, cy, COL_HOOD);
 
     if (elapsed < YAWN_MOUTH_END) {
-        // Fase 1: occhi chiusi, bocca si apre gradualmente
-        fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, COL_DIM);
-        fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, COL_DIM);
+        fb.drawWideLine(lx - hw, eyeY, lx + hw, eyeY, 2, COL_DIM);
+        fb.drawWideLine(rx - hw, eyeY, rx + hw, eyeY, 2, COL_DIM);
         drawSigil(cx, sigilY, tft.color565(40, 0, 10));
         float t = (float)elapsed / YAWN_MOUTH_END;
         int mouthH = max(2, (int)(14.0 * t));
         fb.fillEllipse(cx, mouthY, 10, mouthH, COL_DIM);
-        // zZz ancora visibili
         int yOff = (int)(5 * sin(now / 800.0));
         fb.setTextColor(COL_DIM);
         fb.setTextDatum(MC_DATUM);
@@ -667,31 +1024,27 @@ void renderTransition(unsigned long now) {
         fb.drawString("Z", cx + 65, cy - 60 + yOff, 4);
 
     } else if (elapsed < YAWN_EYES_END) {
-        // Fase 2: bocca aperta, mandorle si aprono (easing quadratico)
         fb.fillEllipse(cx, mouthY, 10, 14, COL_DIM);
         float t   = (float)(elapsed - YAWN_MOUTH_END) / (YAWN_EYES_END - YAWN_MOUTH_END);
         float eas = t * t;
-        int halfH = max(1, (int)(12.0 * eas));
+        int halfH = max(1, (int)((float)hh * eas));
         if (eas > 0.05) {
-            drawMandorlaEye(lx, eyeY, 22, halfH, COL_GREEN);
-            drawMandorlaEye(rx, eyeY, 22, halfH, COL_GREEN);
+            drawMandorlaEye(lx, eyeY, hw, halfH, COL_GREEN);
+            drawMandorlaEye(rx, eyeY, hw, halfH, COL_GREEN);
         } else {
-            fb.drawWideLine(lx - 22, eyeY, lx + 22, eyeY, 2, COL_GREEN);
-            fb.drawWideLine(rx - 22, eyeY, rx + 22, eyeY, 2, COL_GREEN);
+            fb.drawWideLine(lx - hw, eyeY, lx + hw, eyeY, 2, COL_GREEN);
+            fb.drawWideLine(rx - hw, eyeY, rx + hw, eyeY, 2, COL_GREEN);
         }
-        // Sigil si accende gradualmente
+        // Sigil si accende gradualmente (transizione, poi si spegne in IDLE)
         uint8_t r = (uint8_t)(255 * eas);
         drawSigil(cx, sigilY, tft.color565(r, 0, (uint8_t)(64 * eas)));
 
     } else if (elapsed < YAWN_ZZZ_END) {
-        // Fase 3: mandorle aperte, bocca si richiude, zZz svaniscono
-        drawMandorlaEye(lx, eyeY, 22, 12, COL_GREEN);
-        drawMandorlaEye(rx, eyeY, 22, 12, COL_GREEN);
-        drawSigil(cx, sigilY, COL_RED);
+        drawMandorlaEyeRelaxed(lx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
+        drawMandorlaEyeRelaxed(rx, eyeY, hw, hh, COL_GREEN, FACE_EYELID);
         float t = (float)(elapsed - YAWN_EYES_END) / (YAWN_ZZZ_END - YAWN_EYES_END);
         int mouthH = max(0, (int)(14.0 * (1.0 - t)));
         if (mouthH > 1) fb.fillEllipse(cx, mouthY, 10, mouthH, COL_DIM);
-        // zZz che svaniscono
         float fade = 1.0 - t;
         uint8_t g = (uint8_t)(85 * fade);
         uint16_t zCol = tft.color565(0, g, (uint8_t)(21 * fade));
@@ -727,17 +1080,17 @@ void renderMoodSummary() {
     fb.setTextDatum(MC_DATUM);
     fb.drawString("DAILY RECAP", cx, 12, 1);
 
-    // Faccina riassuntiva — stile mandorla
-    int lx = cx - 35, rx = cx + 35, eyeY = cy - 12;
+    // Faccina riassuntiva
+    int lx = cx - FACE_EYE_DIST, rx = cx + FACE_EYE_DIST, eyeY = cy - 12;
     bool goodDay = (moodHappy > (moodAlert + moodError * 2));
     bool toughDay = (moodAlert > moodHappy || moodError > 0);
 
-    drawHood(cx, cy, COL_DIM);
+    drawHoodFilled(cx, cy, COL_HOOD);
 
     if (goodDay) {
-        // Mandorle grandi + sorriso
-        drawMandorlaEye(lx, eyeY, 20, 11, COL_GREEN);
-        drawMandorlaEye(rx, eyeY, 20, 11, COL_GREEN);
+        // Occhi ^_^ felici + sorriso
+        drawHappyEye(lx, eyeY, (int)(FACE_EYE_HW * 0.7), COL_GREEN);
+        drawHappyEye(rx, eyeY, (int)(FACE_EYE_HW * 0.7), COL_GREEN);
         drawSigil(cx, cy - 38, COL_RED);
         for (int dx = -18; dx <= 18; dx++) {
             float ft = (float)dx / 18.0;
@@ -747,17 +1100,15 @@ void renderMoodSummary() {
         fb.setTextColor(COL_DIM);
         fb.drawString("buona giornata", cx, cy + 48, 1);
     } else if (toughDay) {
-        // Mandorle semi-chiuse
-        drawMandorlaEye(lx, eyeY, 20, 4, COL_DIM);
-        drawMandorlaEye(rx, eyeY, 20, 4, COL_DIM);
+        drawMandorlaEye(lx, eyeY, FACE_EYE_HW, 4, COL_DIM);
+        drawMandorlaEye(rx, eyeY, FACE_EYE_HW, 4, COL_DIM);
         drawSigil(cx, cy - 38, tft.color565(80, 0, 20));
         fb.drawWideLine(cx - 12, cy + 27, cx + 12, cy + 27, 1, COL_DIM);
         fb.setTextColor(COL_DIM);
         fb.drawString("giornata tosta", cx, cy + 48, 1);
     } else {
-        // Mandorle neutre
-        drawMandorlaEye(lx, eyeY, 20, 11, COL_DIM);
-        drawMandorlaEye(rx, eyeY, 20, 11, COL_DIM);
+        drawMandorlaEyeRelaxed(lx, eyeY, FACE_EYE_HW, FACE_EYE_HH, COL_DIM, FACE_EYELID);
+        drawMandorlaEyeRelaxed(rx, eyeY, FACE_EYE_HW, FACE_EYE_HH, COL_DIM, FACE_EYELID);
         drawSigil(cx, cy - 38, tft.color565(80, 0, 20));
         fb.drawWideLine(cx - 12, cy + 27, cx + 12, cy + 27, 1, COL_DIM);
         fb.setTextColor(COL_DIM);
@@ -1335,16 +1686,16 @@ void bootAnimation() {
             if (op < 1.0f) op += 0.04f;
             if (op > 1.0f) op = 1.0f;
             fb.fillSprite(COL_BG);
-            // Cappuccio appare gradualmente
-            if (op > 0.3f) drawHood(cx, 85, COL_DIM);
+            // Cappuccio doppio appare gradualmente
+            if (op > 0.3f) drawHoodFilled(cx, 85, COL_HOOD);
             // Mandorle si aprono
-            int halfH = max(1, (int)(12.0f * op));
+            int halfH = max(1, (int)((float)FACE_EYE_HH * op));
             if (op > 0.05f) {
-                drawMandorlaEye(cx - 40, eyeY, 22, halfH, COL_GREEN);
-                drawMandorlaEye(cx + 40, eyeY, 22, halfH, COL_GREEN);
+                drawMandorlaEye(cx - FACE_EYE_DIST, eyeY, FACE_EYE_HW, halfH, COL_GREEN);
+                drawMandorlaEye(cx + FACE_EYE_DIST, eyeY, FACE_EYE_HW, halfH, COL_GREEN);
             } else {
-                fb.drawWideLine(cx - 62, eyeY, cx - 18, eyeY, 2, COL_GREEN);
-                fb.drawWideLine(cx + 18, eyeY, cx + 62, eyeY, 2, COL_GREEN);
+                fb.drawWideLine(cx - FACE_EYE_DIST - FACE_EYE_HW, eyeY, cx - FACE_EYE_DIST + FACE_EYE_HW, eyeY, 2, COL_GREEN);
+                fb.drawWideLine(cx + FACE_EYE_DIST - FACE_EYE_HW, eyeY, cx + FACE_EYE_DIST + FACE_EYE_HW, eyeY, 2, COL_GREEN);
             }
             // Sigil flash rosso alla fine
             if (op >= 0.8f) {
@@ -1605,6 +1956,7 @@ void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
             }
 
             currentState = ns;
+            stateStartedAt = millis();
 
             // Reset idle depth su qualsiasi cambio stato attivo (non SLEEPING)
             if (ns != "SLEEPING") resetInteraction();
@@ -1654,12 +2006,14 @@ void setup() {
     fb.createSprite(320, 170);
     fb.setColorDepth(16);
 
-    COL_BG     = tft.color565(2,   5,   2);
-    COL_GREEN  = tft.color565(0,   255, 65);
-    COL_DIM    = tft.color565(0,   85,  21);
-    COL_RED    = tft.color565(255, 0,   64);
-    COL_YELLOW = tft.color565(255, 170, 0);
-    COL_SCAN   = tft.color565(0,   20,  5);
+    COL_BG      = tft.color565(5,   2,   8);     // #050208 — purple-black
+    COL_GREEN   = tft.color565(0,   255, 65);    // #00ff41 — occhi/testo
+    COL_DIM     = tft.color565(0,   85,  21);    // dim green — testo secondario
+    COL_RED     = tft.color565(255, 0,   64);    // #ff0040 — sigil
+    COL_YELLOW  = tft.color565(255, 170, 0);     // alert
+    COL_SCAN    = tft.color565(3,   1,   5);     // scanline purple-tint
+    COL_HOOD    = tft.color565(61,  21,  96);    // #3d1560 — cappuccio viola
+    COL_HOOD_LT = tft.color565(106, 45,  158);   // #6a2d9e — bordo/inner hood
 
     // Bottoni fisici
     pinMode(BTN_LEFT,  INPUT_PULLUP);
@@ -1853,6 +2207,16 @@ void loop() {
                 lastProudDraw = now;
                 renderState();
             }
+        }
+        return;
+    }
+
+    // ── BORED: redraw continuo per sub-animazioni ─────────────────────────
+    if (currentState == "BORED") {
+        static unsigned long lastBoredDraw = 0;
+        if (now - lastBoredDraw >= 33) {  // ~30 FPS
+            lastBoredDraw = now;
+            renderState();
         }
         return;
     }

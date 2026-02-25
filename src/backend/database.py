@@ -121,6 +121,14 @@ def init_db():
                 provider TEXT NOT NULL DEFAULT '',
                 use_loop INTEGER NOT NULL DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts TEXT NOT NULL,
+                content TEXT NOT NULL,
+                tags TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_notes_ts ON notes(ts);
         """)
         # Schema version + migrations
         row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -597,3 +605,64 @@ def db_delete_saved_prompt(prompt_id: int) -> bool:
     with _db_conn() as conn:
         cur = conn.execute("DELETE FROM saved_prompts WHERE id = ?", (prompt_id,))
         return cur.rowcount > 0
+
+
+# ─── Note rapide (Fase 42) ────────────────────────────────────────────────────
+
+def db_add_note(content: str, tags: str = "") -> int:
+    """Salva una nota rapida. Ritorna l'id."""
+    with _db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO notes (ts, content, tags) VALUES (?, ?, ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%S"), content[:2000], tags[:200])
+        )
+        return cur.lastrowid
+
+
+def db_get_notes(limit: int = 5) -> list:
+    """Ritorna le ultime N note, ordinate per più recenti."""
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, ts, content, tags FROM notes ORDER BY id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def db_search_notes(keyword: str, limit: int = 5) -> list:
+    """Ricerca note per keyword nel contenuto o nei tag."""
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT id, ts, content, tags FROM notes WHERE content LIKE ? OR tags LIKE ? ORDER BY id DESC LIMIT ?",
+            (f"%{keyword}%", f"%{keyword}%", limit)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def db_delete_note(note_id: int) -> bool:
+    """Elimina una nota per id."""
+    with _db_conn() as conn:
+        cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        return cur.rowcount > 0
+
+
+def db_search_entity(name: str) -> dict | None:
+    """Cerca un'entity per nome (parziale). Ritorna entity + relazioni o None."""
+    with _db_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM entities WHERE name LIKE ? ORDER BY frequency DESC LIMIT 1",
+            (f"%{name}%",)
+        ).fetchone()
+        if not row:
+            return None
+        entity = dict(row)
+        rels = conn.execute("""
+            SELECT r.relation, r.frequency, ea.name as name_a, eb.name as name_b
+            FROM relations r
+            JOIN entities ea ON r.entity_a = ea.id
+            JOIN entities eb ON r.entity_b = eb.id
+            WHERE r.entity_a = ? OR r.entity_b = ?
+            ORDER BY r.frequency DESC LIMIT 5
+        """, (entity["id"], entity["id"])).fetchall()
+        entity["relations"] = [dict(r) for r in rels]
+        return entity

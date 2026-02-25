@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Sigil Face v4 — Purple Hood Avatar</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #00ff41;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 { font-size: 18px; margin-bottom: 8px; color: #00ff41; }
+  .subtitle { color: #005516; font-size: 11px; margin-bottom: 14px; text-align: center; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; justify-content: center; }
+  .controls button {
+    background: #020502; color: #00ff41; border: 1px solid #00ff41;
+    padding: 7px 14px; cursor: pointer; font-family: inherit;
+    font-size: 12px; border-radius: 4px; transition: all 0.15s;
+  }
+  .controls button:hover { background: #00ff41; color: #020502; }
+  .controls button.active { background: #00ff41; color: #020502; font-weight: bold; }
+  .slider-group { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; justify-content: center; max-width: 900px; }
+  .slider-group label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; color: #005516; }
+  .slider-group input[type="range"] { width: 120px; accent-color: #00ff41; }
+  .slider-group span { color: #00ff41; font-size: 12px; }
+  .display-wrap {
+    border: 2px solid #00ff4133; border-radius: 12px;
+    padding: 16px; background: #020502; display: inline-block;
+  }
+  .display-wrap h3 { font-size: 11px; color: #005516; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 2px; text-align: center; }
+  canvas { display: block; border-radius: 8px; }
+  .color-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; justify-content: center; }
+  .color-row label { font-size: 10px; color: #005516; display: flex; align-items: center; gap: 5px; }
+  .color-row input[type="color"] { width: 32px; height: 24px; border: 1px solid #005516; background: #020502; cursor: pointer; }
+  .presets { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; justify-content: center; }
+  .presets button {
+    background: #1a0a2e; color: #b388ff; border: 1px solid #6a0dad55;
+    padding: 6px 12px; cursor: pointer; font-family: inherit;
+    font-size: 11px; border-radius: 4px; transition: all 0.15s;
+  }
+  .presets button:hover { background: #6a0dad; color: #fff; }
+  .note {
+    margin-top: 12px; padding: 8px; border: 1px solid #005516;
+    border-radius: 4px; font-size: 10px; color: #005516; max-width: 680px; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<h1>Sigil Face v4 — Purple Hood Avatar</h1>
+<p class="subtitle">Cappuccio viola arrotondato, occhi verdi luminosi, ombre profonde</p>
+
+<div class="presets">
+  <button onclick="applyPreset('purple')">Purple Original</button>
+  <button onclick="applyPreset('dark')">Dark Violet</button>
+  <button onclick="applyPreset('midnight')">Midnight Blue</button>
+  <button onclick="applyPreset('crimson')">Crimson</button>
+  <button onclick="applyPreset('green')">Terminal Green</button>
+</div>
+
+<div class="controls">
+  <button class="active" onclick="setState('IDLE')">IDLE</button>
+  <button onclick="setState('THINKING')">THINKING</button>
+  <button onclick="setState('WORKING')">WORKING</button>
+  <button onclick="setState('PROUD')">PROUD</button>
+  <button onclick="setState('SLEEPING')">SLEEPING</button>
+  <button onclick="setState('HAPPY')">HAPPY</button>
+  <button onclick="setState('CURIOUS')">CURIOUS</button>
+  <button onclick="setState('ALERT')">ALERT</button>
+  <button onclick="setState('ERROR')">ERROR</button>
+  <button onclick="setState('BORED')">BORED</button>
+</div>
+
+<div class="color-row">
+  <label>Hood<input type="color" id="colHood" value="#3d1560" oninput="updateColors()"></label>
+  <label>Hood Light<input type="color" id="colHoodEdge" value="#6a2d9e" oninput="updateColors()"></label>
+  <label>Eye<input type="color" id="colEye" value="#00ff41" oninput="updateColors()"></label>
+  <label>Eye Glow<input type="color" id="colGlow" value="#00ff41" oninput="updateColors()"></label>
+  <label>Sigil<input type="color" id="colSigil" value="#ff0040" oninput="updateColors()"></label>
+  <label>BG<input type="color" id="colBg" value="#050208" oninput="updateColors()"></label>
+</div>
+
+<div class="slider-group">
+  <label>Hood Raggio<input type="range" id="hoodR" min="120" max="260" value="200" oninput="up()"><span id="hoodR_v">200</span></label>
+  <label>Hood CentroY<input type="range" id="hoodCY" min="150" max="350" value="260" oninput="up()"><span id="hoodCY_v">260</span></label>
+  <label>Hood Punta Y<input type="range" id="hoodPeakY" min="30" max="150" value="70" oninput="up()"><span id="hoodPeakY_v">70</span></label>
+  <label>Hood Spalle<input type="range" id="hoodShoulder" min="100" max="300" value="210" oninput="up()"><span id="hoodShoulder_v">210</span></label>
+  <label>Hood Base Y<input type="range" id="hoodBaseY" min="350" max="550" value="480" oninput="up()"><span id="hoodBaseY_v">480</span></label>
+  <label>Occhio Size<input type="range" id="eyeSize" min="10" max="60" value="40" oninput="up()"><span id="eyeSize_v">40</span></label>
+  <label>Occhio Distanza<input type="range" id="eyeDist" min="40" max="160" value="100" oninput="up()"><span id="eyeDist_v">100</span></label>
+  <label>Occhio Y<input type="range" id="eyeY" min="150" max="350" value="240" oninput="up()"><span id="eyeY_v">240</span></label>
+  <label>Glow Raggio<input type="range" id="glowR" min="20" max="120" value="55" oninput="up()"><span id="glowR_v">55</span></label>
+  <label>Ombra Forza<input type="range" id="shadowStr" min="0" max="100" value="60" oninput="up()"><span id="shadowStr_v">60</span></label>
+</div>
+
+<div class="display-wrap">
+  <h3>Preview live</h3>
+  <canvas id="display" width="560" height="560"></canvas>
+</div>
+
+<div class="note">
+  <strong>v4:</strong> Hood arrotondato stile avatar. Canvas 560x560 concept.
+</div>
+
+<script>
+const canvas = document.getElementById('display');
+const ctx = canvas.getContext('2d');
+const CW = 560, CH = 560;
+
+let COL = {
+  hood: '#3d1560', hoodEdge: '#6a2d9e',
+  eye: '#00ff41', glow: '#00ff41',
+  sigil: '#ff0040', bg: '#050208'
+};
+
+let P = {
+  hoodR: 200, hoodCY: 260, hoodPeakY: 70,
+  hoodShoulder: 210, hoodBaseY: 480,
+  eyeSize: 40, eyeDist: 100, eyeY: 240,
+  glowR: 55, shadowStr: 60
+};
+const pkeys = Object.keys(P);
+
+let currentState = 'IDLE', startTime = Date.now();
+
+function up() {
+  for (let k of pkeys) {
+    P[k] = parseInt(document.getElementById(k).value);
+    document.getElementById(k + '_v').textContent = P[k];
+  }
+}
+
+function updateColors() {
+  COL.hood = document.getElementById('colHood').value;
+  COL.hoodEdge = document.getElementById('colHoodEdge').value;
+  COL.eye = document.getElementById('colEye').value;
+  COL.glow = document.getElementById('colGlow').value;
+  COL.sigil = document.getElementById('colSigil').value;
+  COL.bg = document.getElementById('colBg').value;
+}
+
+function setState(s) {
+  currentState = s; startTime = Date.now();
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function applyPreset(name) {
+  const presets = {
+    purple:   { hood:'#3d1560', hoodEdge:'#6a2d9e', eye:'#00ff41', glow:'#00ff41', sigil:'#ff0040', bg:'#050208' },
+    dark:     { hood:'#1f0835', hoodEdge:'#3a1260', eye:'#00ff41', glow:'#00cc33', sigil:'#ff0050', bg:'#030108' },
+    midnight: { hood:'#0a1a3a', hoodEdge:'#1a3060', eye:'#00ccff', glow:'#0088ff', sigil:'#ff4060', bg:'#020208' },
+    crimson:  { hood:'#3a0a15', hoodEdge:'#5a1525', eye:'#ff4060', glow:'#ff2040', sigil:'#ff0040', bg:'#080204' },
+    green:    { hood:'#0a2010', hoodEdge:'#0f3518', eye:'#00ff41', glow:'#00ff41', sigil:'#ff0040', bg:'#020502' },
+  };
+  let p = presets[name]; if (!p) return;
+  Object.assign(COL, p);
+  for (let k of ['Hood','HoodEdge','Eye','Glow','Sigil','Bg']) {
+    document.getElementById('col'+k).value = COL[k.charAt(0).toLowerCase()+k.slice(1)];
+  }
+}
+
+// ══════════ HELPERS ══════════
+
+function hexToRgb(hex) {
+  if (typeof hex === 'string' && hex.startsWith('rgb')) {
+    let m = hex.match(/(\d+)/g);
+    return { r: parseInt(m[0]), g: parseInt(m[1]), b: parseInt(m[2]) };
+  }
+  hex = hex.replace('#','');
+  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  return { r: parseInt(hex.slice(0,2),16), g: parseInt(hex.slice(2,4),16), b: parseInt(hex.slice(4,6),16) };
+}
+
+function lerpColor(c1, c2, t) {
+  let a = hexToRgb(c1), b = hexToRgb(c2);
+  return `rgb(${a.r+(b.r-a.r)*t|0},${a.g+(b.g-a.g)*t|0},${a.b+(b.b-a.b)*t|0})`;
+}
+
+function rgbaStr(hex, alpha) {
+  let c = hexToRgb(hex);
+  return `rgba(${c.r},${c.g},${c.b},${alpha})`;
+}
+
+// ══════════ HOOD ══════════
+
+function drawHood(cx) {
+  const r = P.hoodR;
+  const hcy = P.hoodCY;
+  const peakY = P.hoodPeakY;
+  const shoulder = P.hoodShoulder;
+  const baseY = P.hoodBaseY;
+
+  // === Layer 1: Ambient glow (subtle) ===
+  let ambGrad = ctx.createRadialGradient(cx, hcy, r * 0.6, cx, hcy, r * 1.6);
+  ambGrad.addColorStop(0, rgbaStr(COL.hoodEdge, 0.06));
+  ambGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ambGrad;
+  ctx.fillRect(0, 0, CW, CH);
+
+  // ─── Reusable hood outer path ───
+  function hoodPath() {
+    ctx.beginPath();
+    ctx.moveTo(cx - shoulder, baseY);
+    ctx.bezierCurveTo(
+      cx - shoulder, hcy + r * 0.15,
+      cx - r * 0.85, hcy - r * 0.2,
+      cx - r * 0.5, peakY + 35
+    );
+    ctx.quadraticCurveTo(cx, peakY - 8, cx + r * 0.5, peakY + 35);
+    ctx.bezierCurveTo(
+      cx + r * 0.85, hcy - r * 0.2,
+      cx + shoulder, hcy + r * 0.15,
+      cx + shoulder, baseY
+    );
+    ctx.closePath();
+  }
+
+  // === Layer 2: Hood body (dark, subtle purple) ===
+  hoodPath();
+  let darkHood = lerpColor(COL.hood, '#000000', 0.45);
+  let midHood = lerpColor(COL.hood, '#000000', 0.15);
+  let hoodGrad = ctx.createLinearGradient(cx - shoulder, 0, cx + shoulder, 0);
+  hoodGrad.addColorStop(0, rgbaStr(darkHood, 0.3));
+  hoodGrad.addColorStop(0.12, darkHood);
+  hoodGrad.addColorStop(0.28, midHood);
+  hoodGrad.addColorStop(0.4, COL.hoodEdge);
+  hoodGrad.addColorStop(0.5, lerpColor(COL.hoodEdge, '#ffffff', 0.03));
+  hoodGrad.addColorStop(0.6, COL.hoodEdge);
+  hoodGrad.addColorStop(0.72, midHood);
+  hoodGrad.addColorStop(0.88, darkHood);
+  hoodGrad.addColorStop(1, rgbaStr(darkHood, 0.3));
+  ctx.fillStyle = hoodGrad;
+  ctx.fill();
+
+  // === Layer 3: Vertical shading ===
+  hoodPath();
+  let vertGrad = ctx.createLinearGradient(0, peakY, 0, baseY);
+  vertGrad.addColorStop(0, 'rgba(255,255,255,0.03)');
+  vertGrad.addColorStop(0.2, 'rgba(0,0,0,0)');
+  vertGrad.addColorStop(0.55, 'rgba(0,0,0,0.25)');
+  vertGrad.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = vertGrad;
+  ctx.fill();
+
+  // Radial center darkening (strong, gradual transition to face darkness)
+  hoodPath();
+  let centerDark = ctx.createRadialGradient(cx, hcy + 20, r * 0.05, cx, hcy + 20, r * 0.95);
+  centerDark.addColorStop(0, `rgba(0,0,0,${0.82 + P.shadowStr / 200})`);
+  centerDark.addColorStop(0.4, `rgba(0,0,0,${0.55 + P.shadowStr / 200})`);
+  centerDark.addColorStop(0.7, 'rgba(0,0,0,0.2)');
+  centerDark.addColorStop(0.9, 'rgba(0,0,0,0.05)');
+  centerDark.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = centerDark;
+  ctx.fill();
+
+  // === Layer 4: Face cavity shadow (soft, multi-layer) ===
+  let fow = r * 0.72;
+  let ovalCY = hcy + 25;
+
+  // Layer 4a: wide soft shadow — covers eye area fully
+  let sh1 = ctx.createRadialGradient(cx, ovalCY, fow * 0.15, cx, ovalCY, fow * 1.15);
+  sh1.addColorStop(0, `rgba(0,0,0,${0.88 + P.shadowStr / 300})`);
+  sh1.addColorStop(0.45, `rgba(0,0,0,${0.6 + P.shadowStr / 200})`);
+  sh1.addColorStop(0.75, 'rgba(0,0,0,0.15)');
+  sh1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh1;
+  ctx.beginPath();
+  ctx.ellipse(cx, ovalCY, fow * 1.15, fow * 0.95, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Layer 4b: deeper core below eyes
+  let sh2 = ctx.createRadialGradient(cx, ovalCY + 20, 0, cx, ovalCY + 20, fow * 0.55);
+  sh2.addColorStop(0, 'rgba(0,0,0,0.6)');
+  sh2.addColorStop(0.6, 'rgba(0,0,0,0.25)');
+  sh2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh2;
+  ctx.beginPath();
+  ctx.ellipse(cx, ovalCY + 20, fow * 0.55, fow * 0.45, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // === Layer 6: Eye-glow reflection inside hood ===
+  let eyeRefl = ctx.createRadialGradient(cx, P.eyeY, 0, cx, P.eyeY, fow * 0.5);
+  eyeRefl.addColorStop(0, rgbaStr(COL.glow, 0.03));
+  eyeRefl.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = eyeRefl;
+  ctx.beginPath(); ctx.arc(cx, P.eyeY, fow * 0.5, 0, Math.PI * 2); ctx.fill();
+
+  // === Layer 6: Outer hood edge highlight (subtle) ===
+  ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.2);
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx - shoulder + 10, baseY - 20);
+  ctx.bezierCurveTo(
+    cx - shoulder + 5, hcy + r * 0.15,
+    cx - r * 0.85, hcy - r * 0.2,
+    cx - r * 0.5, peakY + 35
+  );
+  ctx.quadraticCurveTo(cx, peakY - 8, cx + r * 0.5, peakY + 35);
+  ctx.bezierCurveTo(
+    cx + r * 0.85, hcy - r * 0.2,
+    cx + shoulder - 5, hcy + r * 0.15,
+    cx + shoulder - 10, baseY - 20
+  );
+  ctx.stroke();
+
+  // === Layer 7: Fabric folds (very subtle) ===
+  ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.07);
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.25, peakY + 30);
+  ctx.quadraticCurveTo(cx - r * 0.3, hcy, cx - r * 0.2, baseY - 30);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx + r * 0.25, peakY + 30);
+  ctx.quadraticCurveTo(cx + r * 0.3, hcy, cx + r * 0.2, baseY - 30);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx, peakY + 5);
+  ctx.quadraticCurveTo(cx + 1, peakY + 40, cx, peakY + 80);
+  ctx.stroke();
+}
+
+// ══════════ GLOWING EYE ══════════
+
+function drawGlowingEye(ex, ey, size, col, glowCol, glowR, intensity) {
+  intensity = intensity ?? 1.0;
+  let gc = hexToRgb(glowCol);
+
+  // Outer glow (large soft)
+  let g1 = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR * intensity);
+  g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},${0.5 * intensity})`);
+  g1.addColorStop(0.3, `rgba(${gc.r},${gc.g},${gc.b},${0.25 * intensity})`);
+  g1.addColorStop(0.6, `rgba(${gc.r},${gc.g},${gc.b},${0.08 * intensity})`);
+  g1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g1;
+  ctx.beginPath();
+  ctx.arc(ex, ey, glowR * intensity, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Eye shape — almond/mandorla
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(ex - size, ey);
+  ctx.bezierCurveTo(ex - size * 0.5, ey - size * 0.7, ex + size * 0.5, ey - size * 0.7, ex + size, ey);
+  ctx.bezierCurveTo(ex + size * 0.5, ey + size * 0.7, ex - size * 0.5, ey + size * 0.7, ex - size, ey);
+  ctx.closePath();
+  ctx.fill();
+
+  // Inner bright core
+  let core = ctx.createRadialGradient(ex, ey, 0, ex, ey, size * 0.5);
+  core.addColorStop(0, 'rgba(255,255,255,0.9)');
+  core.addColorStop(0.4, col);
+  core.addColorStop(1, rgbaStr(col, 0.5));
+  ctx.fillStyle = core;
+  ctx.beginPath();
+  ctx.ellipse(ex, ey, size * 0.55, size * 0.38, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Pupil
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.arc(ex, ey, size * 0.18, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Specular
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.beginPath();
+  ctx.ellipse(ex - size * 0.18, ey - size * 0.18, size * 0.1, size * 0.07, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ══════════ HAPPY EYE ^_^ ══════════
+
+function drawHappyEye(ex, ey, size, col, glowCol, glowR) {
+  let gc = hexToRgb(glowCol);
+  let g1 = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR * 0.7);
+  g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},0.25)`);
+  g1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g1;
+  ctx.beginPath(); ctx.arc(ex, ey, glowR * 0.7, 0, Math.PI * 2); ctx.fill();
+
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(ex, ey + size * 0.3, size * 0.8, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+}
+
+// ══════════ SIGIL ══════════
+
+function drawSigil(sx, sy, col, scale, rotation) {
+  scale = scale || 1;
+  rotation = rotation || 0;
+  let s = 12 * scale;
+
+  // Glow (drawn without rotation for smooth circle)
+  let gc = hexToRgb(col);
+  let g = ctx.createRadialGradient(sx, sy, 0, sx, sy, s * 2.5);
+  g.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},0.25)`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(sx, sy, s * 2.5, 0, Math.PI * 2); ctx.fill();
+
+  // Apply rotation around sigil center
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(rotation);
+
+  ctx.strokeStyle = col; ctx.lineCap = 'round';
+  // Cross
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(0, -s); ctx.lineTo(0, s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-s, 0); ctx.lineTo(s, 0); ctx.stroke();
+  // Diagonals
+  ctx.lineWidth = 1.5;
+  let d = s * 0.65;
+  ctx.beginPath(); ctx.moveTo(-d, -d); ctx.lineTo(d, d); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-d, d); ctx.lineTo(d, -d); ctx.stroke();
+  // Circle
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(0, 0, s * 0.35, 0, Math.PI * 2); ctx.stroke();
+  // Dots
+  ctx.fillStyle = col;
+  [[0,-s*1.3],[0,s*1.3],[-s*1.3,0],[s*1.3,0]].forEach(([dx,dy]) => {
+    ctx.beginPath(); ctx.arc(dx, dy, 2, 0, Math.PI*2); ctx.fill();
+  });
+
+  ctx.restore();
+}
+
+// ══════════ MOUTH ══════════
+
+function drawMouth(mx, my, w, col, curve) {
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(mx - w, my);
+  ctx.quadraticCurveTo(mx, my + curve, mx + w, my);
+  ctx.stroke();
+}
+
+// ══════════ RENDER ══════════
+
+function render() {
+  let now = Date.now() - startTime;
+  const cx = CW / 2;
+
+  // Clear entire canvas
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, CW, CH);
+
+  // Circular avatar clip
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, CH / 2, CW * 0.46, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.fillStyle = COL.bg;
+  ctx.fillRect(0, 0, CW, CH);
+
+  // Hood
+  drawHood(cx);
+
+  // Positions
+  const ey = P.eyeY;
+  const lx = cx - P.eyeDist, rx = cx + P.eyeDist;
+  const sigilY = ey - 70;
+  const mouthY = ey + 60;
+  const es = P.eyeSize;
+  const gr = P.glowR;
+
+  // ── States ──
+
+  if (currentState === 'IDLE') {
+    let breath = 0.8 + 0.2 * Math.sin(now / 4000 * Math.PI * 2);
+    let ec = lerpColor('#004415', COL.eye, breath);
+    let dx = 3 * Math.sin(now / 5000);
+    let dy = 2 * Math.cos(now / 7000);
+    drawGlowingEye(lx + dx, ey + dy, es, ec, COL.glow, gr, breath);
+    drawGlowingEye(rx + dx, ey + dy, es, ec, COL.glow, gr, breath);
+    // Dormant sigil — brain is present but sleeping
+    let sigilBreath = 0.10 + 0.05 * Math.sin(now / 3000);
+    drawSigil(cx, sigilY, rgbaStr(COL.sigil, sigilBreath), 0.6);
+    drawMouth(cx, mouthY, 20, rgbaStr(COL.eye, 0.25), 0);
+
+  } else if (currentState === 'THINKING') {
+    drawGlowingEye(lx, ey - 3, es, COL.eye, COL.glow, gr, 1);
+    drawGlowingEye(rx, ey - 3, es, COL.eye, COL.glow, gr, 1);
+    // Processing sigil — slow rotation, pulsing glow
+    let thinkRot = (now / 8000) * Math.PI * 2;
+    let thinkPulse = 0.8 + 0.2 * Math.sin(now / 600);
+    drawSigil(cx, sigilY, lerpColor('#000000', COL.sigil, thinkPulse), 1, thinkRot);
+    drawMouth(cx, mouthY, 16, rgbaStr(COL.eye, 0.4), 0);
+    let dots = ['', '.', '..', '...'][Math.floor(now / 400) % 4];
+    ctx.fillStyle = rgbaStr(COL.eye, 0.4);
+    ctx.font = '22px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(dots, cx, mouthY + 35);
+
+  } else if (currentState === 'WORKING') {
+    let sq = es * 0.45;
+    drawGlowingEye(lx, ey, sq, COL.eye, COL.glow, gr * 0.5, 0.6);
+    drawGlowingEye(rx, ey, sq, COL.eye, COL.glow, gr * 0.5, 0.6);
+    ctx.strokeStyle = rgbaStr(COL.eye, 0.6);
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(lx - es, ey - es - 6); ctx.lineTo(lx + es * 0.5, ey - es - 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx - es * 0.5, ey - es - 2); ctx.lineTo(rx + es, ey - es - 6); ctx.stroke();
+    // Turbo sigil — fast rotation
+    let workRot = (now / 3000) * Math.PI * 2;
+    drawSigil(cx, sigilY, rgbaStr(COL.eye, 0.5), 0.9, workRot);
+    drawMouth(cx, mouthY, 12, rgbaStr(COL.eye, 0.3), 0);
+    let dots2 = ['', '.', '..', '...'][Math.floor(now / 600) % 4];
+    ctx.fillStyle = rgbaStr(COL.eye, 0.3);
+    ctx.font = '20px "JetBrains Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(dots2, cx, mouthY + 32);
+
+  } else if (currentState === 'PROUD') {
+    let t = Math.min(1, now / 5000);
+    drawHappyEye(lx, ey, es, COL.eye, COL.glow, gr);
+    drawHappyEye(rx, ey, es, COL.eye, COL.glow, gr);
+    // Victorious sigil — bouncing scale + expanding ring
+    let proudScale = 1.1 + 0.1 * Math.sin(now / 500);
+    drawSigil(cx, sigilY, COL.sigil, proudScale);
+    // Expanding ring
+    let ringT = (now % 2000) / 2000;
+    let ringR = 15 + ringT * 30;
+    let ringA = 0.4 * (1 - ringT);
+    if (ringA > 0.01) {
+      ctx.strokeStyle = rgbaStr(COL.sigil, ringA);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx, sigilY, ringR, 0, Math.PI * 2); ctx.stroke();
+    }
+    drawMouth(cx, mouthY, 24, COL.eye, 10);
+    let okY = ey - 100 - 60 * t;
+    let fade = Math.max(0, 1 - t * 1.4);
+    if (fade > 0.01) {
+      ctx.fillStyle = `rgba(0,255,65,${fade})`;
+      ctx.font = 'bold 34px "JetBrains Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('OK', cx, okY);
+    }
+
+  } else if (currentState === 'SLEEPING') {
+    ctx.strokeStyle = rgbaStr(COL.eye, 0.3);
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(lx - es, ey); ctx.lineTo(lx + es, ey); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx - es, ey); ctx.lineTo(rx + es, ey); ctx.stroke();
+    let yO = 8 * Math.sin(now / 800);
+    ctx.fillStyle = rgbaStr(COL.eye, 0.3);
+    ctx.font = '16px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('z', cx + 65, ey - 55 + yO);
+    ctx.font = '26px "JetBrains Mono", monospace';
+    ctx.fillText('Z', cx + 85, ey - 80 + yO);
+    ctx.font = '16px "JetBrains Mono", monospace';
+    ctx.fillText('z', cx + 108, ey - 105 + yO);
+
+  } else if (currentState === 'HAPPY') {
+    drawHappyEye(lx, ey, es * 1.1, COL.eye, COL.glow, gr);
+    drawHappyEye(rx, ey, es * 1.1, COL.eye, COL.glow, gr);
+    // Dancing sigil — bounce Y + color flash
+    let sc = (Math.floor(now / 300) % 2 === 0) ? COL.sigil : lerpColor(COL.sigil, '#000000', 0.3);
+    let bounceY = sigilY + 5 * Math.sin(now / 400);
+    drawSigil(cx, bounceY, sc, 1.1);
+    drawMouth(cx, mouthY, 28, COL.eye, 12);
+    let sp = 0.5 + 0.5 * Math.sin(now / 600);
+    ctx.fillStyle = lerpColor('#000000', COL.eye, sp);
+    ctx.font = '20px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('*', cx - 85, ey - 45); ctx.fillText('*', cx + 85, ey - 45);
+    ctx.font = '14px "JetBrains Mono", monospace';
+    ctx.fillText('*', cx - 65, ey - 70); ctx.fillText('*', cx + 70, ey - 70);
+
+  } else if (currentState === 'CURIOUS') {
+    let scanX = 10 * Math.sin(now / 1500);
+    drawGlowingEye(lx + scanX, ey, es * 1.15, COL.eye, COL.glow, gr * 1.1, 1);
+    drawGlowingEye(rx + scanX, ey, es * 1.15, COL.eye, COL.glow, gr * 1.1, 1);
+    ctx.strokeStyle = COL.eye; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(lx - es - 2, ey - es - 2); ctx.lineTo(lx + es, ey - es - 12); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx - es, ey - es - 12); ctx.lineTo(rx + es + 2, ey - es - 2); ctx.stroke();
+    // Scanner sigil — tilting + pulsing scale
+    let curiousTilt = 0.25 * Math.sin(now / 1200);
+    let curiousScale = 0.9 + 0.2 * (0.5 + 0.5 * Math.sin(now / 1000 * Math.PI * 2));
+    drawSigil(cx, sigilY, COL.sigil, curiousScale, curiousTilt);
+    ctx.strokeStyle = COL.eye; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, mouthY, 7, 0, Math.PI * 2); ctx.stroke();
+    let qY = 4 * Math.sin(now / 800);
+    ctx.fillStyle = rgbaStr(COL.eye, 0.5);
+    ctx.font = '30px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('?', cx + 105, ey - 25 + qY);
+
+  } else if (currentState === 'ALERT') {
+    let alertCol = '#ffaa00';
+    let flash = Math.floor(now / 500) % 2 === 0;
+    drawGlowingEye(lx, ey, es, alertCol, alertCol, gr, 1);
+    drawGlowingEye(rx, ey, es, alertCol, alertCol, gr, 1);
+    // Alarm sigil — always visible, shaking
+    let shakeX = 3 * Math.sin(now / 80);
+    drawSigil(cx + shakeX, sigilY, flash ? COL.sigil : lerpColor(COL.sigil, '#000', 0.4), 1.2);
+    ctx.strokeStyle = alertCol; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      let mx = cx - 22 + i * 11, my = mouthY + ((i % 2 === 0) ? 0 : 7);
+      if (i === 0) ctx.moveTo(mx, my); else ctx.lineTo(mx, my);
+    }
+    ctx.stroke();
+    if (flash) {
+      ctx.fillStyle = COL.sigil;
+      ctx.font = 'bold 30px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+      ctx.fillText('!', cx + 115, ey - 10);
+    }
+
+  } else if (currentState === 'ERROR') {
+    let errCol = '#ff0040';
+    let gc2 = hexToRgb(errCol);
+    [-1, 1].forEach(side => {
+      let ex = side === -1 ? lx : rx;
+      let g = ctx.createRadialGradient(ex, ey, 0, ex, ey, gr * 0.6);
+      g.addColorStop(0, `rgba(${gc2.r},${gc2.g},${gc2.b},0.25)`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(ex, ey, gr * 0.6, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = errCol; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+      let xs = es * 0.65;
+      ctx.beginPath(); ctx.moveTo(ex - xs, ey - xs); ctx.lineTo(ex + xs, ey + xs); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex - xs, ey + xs); ctx.lineTo(ex + xs, ey - xs); ctx.stroke();
+    });
+    // Short-circuit sigil — flickering
+    if (Math.random() > 0.4) {
+      drawSigil(cx, sigilY, rgbaStr(errCol, 0.4), 0.7 + Math.random() * 0.3);
+    }
+    drawMouth(cx, mouthY + 5, 18, errCol, -6);
+    ctx.fillStyle = rgbaStr(errCol, 0.5);
+    ctx.font = '14px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('reconnecting', cx, mouthY + 50);
+
+  } else if (currentState === 'BORED') {
+    let phase = Math.floor((now / 5000) % 6);
+    let t = (now % 5000) / 5000;
+    let smooth = t * t * (3 - 2 * t); // hermite easing
+
+    if (phase === 0) {
+      // ── Eye Roll ──
+      let angle = t * Math.PI * 2;
+      let rollR = 12;
+      let ldx = Math.cos(angle) * rollR, ldy = Math.sin(angle) * rollR;
+      drawGlowingEye(lx + ldx, ey + ldy, es * 0.9, COL.eye, COL.glow, gr * 0.7, 0.7);
+      drawGlowingEye(rx + ldx, ey + ldy, es * 0.9, COL.eye, COL.glow, gr * 0.7, 0.7);
+      drawSigil(cx, sigilY, rgbaStr(COL.sigil, 0.15 + 0.05 * Math.sin(now / 2000)), 0.6);
+      drawMouth(cx, mouthY, 14, rgbaStr(COL.eye, 0.3), -3);
+      ctx.fillStyle = rgbaStr(COL.eye, 0.25);
+      ctx.font = '18px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+      ctx.fillText('...', cx, mouthY + 35);
+
+    } else if (phase === 1) {
+      // ── Wander (look around) ──
+      let lookX, lookY;
+      if (t < 0.25) { lookX = -25 * (t / 0.25); lookY = 0; }
+      else if (t < 0.5) { lookX = -25 + 50 * ((t - 0.25) / 0.25); lookY = 0; }
+      else if (t < 0.75) { lookX = 25 - 25 * ((t - 0.5) / 0.25); lookY = -15 * ((t - 0.5) / 0.25); }
+      else { lookX = 0; lookY = -15 + 15 * ((t - 0.75) / 0.25); }
+      drawGlowingEye(lx + lookX, ey + lookY, es, COL.eye, COL.glow, gr * 0.8, 0.8);
+      drawGlowingEye(rx + lookX, ey + lookY, es, COL.eye, COL.glow, gr * 0.8, 0.8);
+      let sigilUp = lookY < -5 ? 0.4 : 0.12;
+      drawSigil(cx, sigilY, rgbaStr(COL.sigil, sigilUp), 0.7);
+      drawMouth(cx, mouthY, 16, rgbaStr(COL.eye, 0.2), 0);
+      if (t > 0.6 && t < 0.85) {
+        ctx.fillStyle = rgbaStr(COL.eye, 0.2 * Math.sin((t - 0.6) / 0.25 * Math.PI));
+        ctx.font = '22px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+        ctx.fillText('?', cx + 90, ey - 30);
+      }
+
+    } else if (phase === 2) {
+      // ── Yawn ──
+      let yawnOpen = t < 0.3 ? t / 0.3 : t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3;
+      let lidClose = Math.max(0, yawnOpen - 0.3);
+      let eyeH = es * (1 - lidClose * 0.7);
+      drawGlowingEye(lx, ey, eyeH, COL.eye, COL.glow, gr * 0.5, 0.5 + 0.3 * (1 - yawnOpen));
+      drawGlowingEye(rx, ey, eyeH, COL.eye, COL.glow, gr * 0.5, 0.5 + 0.3 * (1 - yawnOpen));
+      let mouthW = 8 + yawnOpen * 16, mouthCurve = yawnOpen * 12;
+      drawMouth(cx, mouthY, mouthW, rgbaStr(COL.eye, 0.3 + yawnOpen * 0.2), mouthCurve);
+      drawSigil(cx, sigilY, rgbaStr(COL.sigil, 0.08 + 0.04 * (1 - yawnOpen)), 0.5);
+
+    } else if (phase === 3) {
+      // ── Juggle Sigil (play with brain) ──
+      let bounceT = Math.abs(Math.sin(t * Math.PI * 3));
+      let juggleY = sigilY + 30 - bounceT * 60;
+      let juggleRot = t * Math.PI * 4;
+      let juggleScale = 0.8 + bounceT * 0.4;
+      drawSigil(cx, juggleY, COL.sigil, juggleScale, juggleRot);
+      // Eyes track the sigil
+      let trackY = (juggleY - ey) * 0.15;
+      drawGlowingEye(lx, ey + trackY, es, COL.eye, COL.glow, gr * 0.8, 0.85);
+      drawGlowingEye(rx, ey + trackY, es, COL.eye, COL.glow, gr * 0.8, 0.85);
+      drawMouth(cx, mouthY, 16, rgbaStr(COL.eye, 0.3), 4);
+
+    } else if (phase === 4) {
+      // ── Doze Off (fight sleep) ──
+      let droopCycle = t < 0.7 ? t / 0.7 : 0; // droop for 70%, then snap
+      let snap = t >= 0.7 ? Math.min(1, (t - 0.7) / 0.1) : 0;
+      let eyeDroop = droopCycle * 0.8 * (1 - snap);
+      let eyeScale = es * (1 - eyeDroop * 0.6);
+      let eyeIntensity = 0.9 - eyeDroop * 0.5 + snap * 0.5;
+      drawGlowingEye(lx, ey + eyeDroop * 8, eyeScale, COL.eye, COL.glow, gr * 0.6, eyeIntensity);
+      drawGlowingEye(rx, ey + eyeDroop * 8, eyeScale, COL.eye, COL.glow, gr * 0.6, eyeIntensity);
+      // Sigil flickers as consciousness fades
+      if (eyeDroop < 0.5 || snap > 0 || Math.random() > 0.5) {
+        drawSigil(cx, sigilY, rgbaStr(COL.sigil, 0.12 * (1 - eyeDroop) + snap * 0.2), 0.5 + snap * 0.3);
+      }
+      drawMouth(cx, mouthY, 14, rgbaStr(COL.eye, 0.2), -2 * eyeDroop);
+      if (snap > 0.5) {
+        ctx.fillStyle = rgbaStr(COL.eye, 0.4 * (1 - (t - 0.8) / 0.2));
+        ctx.font = 'bold 20px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+        ctx.fillText('!', cx + 70, ey - 30);
+      }
+
+    } else if (phase === 5) {
+      // ── Whistle ──
+      drawGlowingEye(lx, ey - 6, es * 0.9, COL.eye, COL.glow, gr * 0.7, 0.75);
+      drawGlowingEye(rx, ey - 6, es * 0.9, COL.eye, COL.glow, gr * 0.7, 0.75);
+      // Sigil rotates like a vinyl record
+      let whistleRot = (now / 2000) * Math.PI * 2;
+      drawSigil(cx, sigilY, rgbaStr(COL.sigil, 0.3), 0.8, whistleRot);
+      // Pucker mouth
+      ctx.strokeStyle = rgbaStr(COL.eye, 0.35);
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, mouthY, 5, 0, Math.PI * 2); ctx.stroke();
+      // Floating notes
+      let notes = ['\u266A', '\u266B'];
+      for (let i = 0; i < 2; i++) {
+        let nt = (t + i * 0.4) % 1;
+        let nx = cx + 40 + i * 25 + 10 * Math.sin(nt * Math.PI * 2);
+        let ny = mouthY - nt * 80;
+        let na = nt < 0.8 ? 0.5 : 0.5 * (1 - (nt - 0.8) / 0.2);
+        ctx.fillStyle = rgbaStr(COL.eye, na);
+        ctx.font = `${14 + i * 4}px "JetBrains Mono", monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(notes[i], nx, ny);
+      }
+    }
+  }
+
+  // Scanlines
+  ctx.fillStyle = 'rgba(0,0,0,0.03)';
+  for (let y = 0; y < CH; y += 3) ctx.fillRect(0, y, CW, 1);
+
+  // Vignette (inside circle)
+  let vig = ctx.createRadialGradient(cx, CH / 2, CW * 0.15, cx, CH / 2, CW * 0.46);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = vig;
+  ctx.fillRect(0, 0, CW, CH);
+
+  // Restore from circular clip
+  ctx.restore();
+
+  // Circular avatar border (very subtle)
+  ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.12);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, CH / 2, CW * 0.46, 0, Math.PI * 2);
+  ctx.stroke();
+
+  requestAnimationFrame(render);
+}
+
+up();
+render();
+</script>
+</body>
+</html>
