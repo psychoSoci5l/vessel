@@ -51,6 +51,29 @@
   max-width: 120px;
 }
 
+.btn-sys-gear {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 16px;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all .15s;
+  min-height: 28px;
+  min-width: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.btn-sys-gear:hover,
+.btn-sys-gear:active {
+  color: var(--accent);
+  border-color: var(--accent3);
+}
+
 .dash-sep {
   color: var(--muted);
   font-size: 10px;

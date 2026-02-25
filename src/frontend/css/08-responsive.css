@@ -70,9 +70,6 @@
   #chat-input { font-size: 13px; }
   .msg { max-width: 75%; }
 
-  /* ── System Tab ── */
-  .sys-header { padding-bottom: 0; }
-
   /* ── Profile Tab: 2-column grid ── */
   #tab-profile .tab-scroll {
     display: grid;

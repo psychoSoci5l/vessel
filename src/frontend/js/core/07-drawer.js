@@ -4,6 +4,7 @@
     tokens:   { title: '¤ Token & API', actions: '<button class="btn-ghost btn-sm" onclick="loadTokens(this)">Carica</button>' },
     logs:     { title: '≡ Logs', actions: '<button class="btn-ghost btn-sm" onclick="loadLogs(this)">Carica</button>' },
     cron:     { title: '◇ Cron Jobs', actions: '<button class="btn-ghost btn-sm" onclick="loadCron(this)">Carica</button>' },
+    system:   { title: '⚙ System', actions: '<button class="btn-ghost btn-sm" onclick="requestStats()">Refresh</button>' },
   };
 
   function openDrawer(widgetId) {

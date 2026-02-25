@@ -45,6 +45,7 @@
             <span class="dash-temp" id="home-temp">--</span>
             <span class="dash-sep">&middot;</span>
             <span id="home-clock" class="dash-clock">--:--:--</span>
+            <button class="btn-sys-gear" onclick="openDrawer('system')" title="System">&#x2699;</button>
           </div>
 
           <!-- Stats 2x2 -->
@@ -201,34 +202,6 @@
         </div>
       </div>
 
-      <!-- ═══ TAB: SYSTEM ═══ -->
-      <div id="tab-system" class="tab-view">
-        <div class="tab-scroll">
-          <div class="sys-header">
-            <span class="sys-title">SYSTEM</span>
-            <span id="version-badge" class="version-badge">&mdash;</span>
-          </div>
-
-          <!-- Tmux -->
-          <div class="sys-section" id="sys-tmux">
-            <div class="sys-section-head">
-              <span class="sys-section-title">SESSIONI TMUX</span>
-              <button class="btn-ghost btn-sm" onclick="gatewayRestart()">&#x21BA; Gateway</button>
-            </div>
-            <div class="session-list" id="session-list">
-              <div class="no-items">Caricamento&hellip;</div>
-            </div>
-          </div>
-
-          <!-- Actions -->
-          <div class="sys-actions">
-            <button class="btn-ghost" onclick="requestStats()">&#x21BB; Refresh</button>
-            <button class="btn-red" onclick="showRebootModal()">&#x21BA; Reboot</button>
-            <button class="btn-red" onclick="showShutdownModal()">&#x23FB; Off</button>
-          </div>
-        </div>
-      </div>
-
       <!-- ═══ TAB: PROFILE ═══ -->
       <div id="tab-profile" class="tab-view">
         <div class="tab-scroll">
@@ -342,9 +315,6 @@
       <button class="nav-item" data-tab="code" onclick="switchView('code')">
         <span class="nav-icon">&gt;_</span><span class="nav-label">Code</span>
       </button>
-      <button class="nav-item" data-tab="system" onclick="switchView('system')">
-        <span class="nav-icon">&#x2699;</span><span class="nav-label">System</span>
-      </button>
       <button class="nav-item" data-tab="profile" onclick="switchView('profile')">
         <span class="nav-icon">&#x25C9;</span><span class="nav-label">Profile</span>
       </button>
@@ -372,6 +342,23 @@
         </div>
         <div class="drawer-widget" id="dw-cron">
           <div id="cron-body"><div class="widget-placeholder"><span class="ph-icon">&#x25C7;</span><span>Premi Carica per i cron</span></div></div>
+        </div>
+        <div class="drawer-widget" id="dw-system">
+          <div style="margin-bottom:12px;">
+            <span id="version-badge" class="version-badge">&mdash;</span>
+          </div>
+          <div class="sys-section-head">
+            <span class="sys-section-title">SESSIONI TMUX</span>
+            <button class="btn-ghost btn-sm" onclick="gatewayRestart()">&#x21BA; Gateway</button>
+          </div>
+          <div class="session-list" id="session-list">
+            <div class="no-items">Caricamento&hellip;</div>
+          </div>
+          <div class="sys-actions" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+            <button class="btn-ghost" onclick="requestStats()">&#x21BB; Refresh</button>
+            <button class="btn-red" onclick="showRebootModal()">&#x21BA; Reboot</button>
+            <button class="btn-red" onclick="showShutdownModal()">&#x23FB; Off</button>
+          </div>
         </div>
       </div>
     </div>
