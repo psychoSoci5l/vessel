@@ -4,6 +4,7 @@
     { id: 'amber', label: 'Amber CRT',     accent: '#ffb000' },
     { id: 'cyan',  label: 'Cyan Ice',       accent: '#00ffcc' },
     { id: 'red',   label: 'Red Alert',      accent: '#ff3333' },
+    { id: 'sigil', label: 'Sigil Violet',    accent: '#b44dff' },
     { id: 'ghost', label: 'Ghost White',    accent: '#e0e0e0' },
   ];
 

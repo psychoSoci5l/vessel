@@ -160,6 +160,19 @@ async def set_tamagotchi_state(request: Request):
         _mood_counter = {"happy": 0, "alert": 0, "error": 0}
     return {"ok": True, "state": state, "clients": len(_tamagotchi_connections)}
 
+@app.post("/api/tamagotchi/text")
+async def send_tamagotchi_text(request: Request):
+    """Invia un messaggio di testo all'ESP32 per scrolling display."""
+    try:
+        data = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "JSON non valido"}, status_code=400)
+    text = data.get("text", "").strip()
+    if not text or len(text) > 64:
+        return JSONResponse({"ok": False, "error": "Testo vuoto o troppo lungo (max 64)"}, status_code=400)
+    await broadcast_tamagotchi_raw({"type": "text", "text": text})
+    return {"ok": True, "text": text, "clients": len(_tamagotchi_connections)}
+
 @app.get("/api/tamagotchi/firmware")
 async def get_tamagotchi_firmware():
     """Serve il firmware .bin per OTA update ESP32."""

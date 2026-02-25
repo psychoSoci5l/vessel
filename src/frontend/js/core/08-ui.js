@@ -49,15 +49,7 @@
     setTimeout(() => { clearInterval(timer); clearInterval(tryReconnect); statusEl.textContent = 'Timeout — ricarica manualmente.'; }, 120000);
   }
 
-  // ── Sigil Indicator (Fase 38) ──
-  function updateSigilIndicator(state) {
-    const ind = document.getElementById('sigil-indicator');
-    if (!ind) return;
-    ind.setAttribute('data-state', state);
-    ind.title = 'Sigil: ' + state;
-    const label = document.getElementById('sigil-label');
-    if (label) label.textContent = state;
-  }
+  // ── Sigil Indicator → moved to sigil.js (Fase 44) ──
 
   // ── Logout ──
   async function doLogout() {

@@ -34,8 +34,18 @@
     padding: 36px 32px 28px; width: min(380px, 90vw); text-align: center;
     box-shadow: 0 0 60px rgba(0,255,65,0.04);
   }
-  .login-icon { width: 64px; height: 64px; border-radius: 50%; border: 2px solid var(--accent3);
-    filter: drop-shadow(0 0 10px var(--accent3)); margin-bottom: 18px; }
+  .login-icon { display: none; }
+  .login-sigil-wrap {
+    width: min(280px, 70vw);
+    aspect-ratio: 320 / 170;
+    margin: 0 auto 14px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #050208;
+  }
+  .login-sigil-canvas {
+    width: 100%; height: 100%; display: block;
+  }
   .login-title { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: 2px;
     text-shadow: 0 0 10px var(--accent3); margin-bottom: 6px; }
   .login-sub { font-size: 12px; color: var(--muted); margin-bottom: 24px; }
@@ -104,7 +114,9 @@
 </head>
 <body>
 <div class="login-box" id="login-box">
-  <img class="login-icon" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k=" alt="Vessel">
+  <div class="login-sigil-wrap">
+    <canvas id="login-sigil-canvas" class="login-sigil-canvas"></canvas>
+  </div>
   <div class="login-title">VESSEL</div>
   <div class="login-sub" id="login-sub">Inserisci PIN</div>
   <input id="pin-input" type="password" inputmode="none" pattern="[0-9]*"
@@ -131,6 +143,121 @@
   <div id="login-error"></div>
 </div>
 <script>
+// ── Sigil Engine (minimal for login) ──
+const _SC = {
+  hood: '#3d1560', hoodEdge: '#6a2d9e', eye: '#00ff41',
+  glow: '#00ff41', sigil: '#ff0040', bg: '#050208'
+};
+function _h2r(h){if(typeof h==='string'&&h.startsWith('rgb')){const m=h.match(/(\d+)/g);return{r:+m[0],g:+m[1],b:+m[2]};}h=h.replace('#','');return{r:parseInt(h.slice(0,2),16),g:parseInt(h.slice(2,4),16),b:parseInt(h.slice(4,6),16)};}
+function _lc(c1,c2,t){const a=_h2r(c1),b=_h2r(c2);return`rgb(${a.r+(b.r-a.r)*t|0},${a.g+(b.g-a.g)*t|0},${a.b+(b.b-a.b)*t|0})`;}
+function _ra(h,a){const c=_h2r(h);return`rgba(${c.r},${c.g},${c.b},${a})`;}
+
+function _drawLoginHood(ctx,W,H){
+  const cx=W/2,r=W*.297,hcy=H*.635,peakY=H*.071,shoulder=W*.328,baseY=H*1.03;
+  const ambG=ctx.createRadialGradient(cx,hcy,r*.6,cx,hcy,r*1.6);
+  ambG.addColorStop(0,_ra(_SC.hoodEdge,.06));ambG.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=ambG;ctx.fillRect(0,0,W,H);
+  function hp(){ctx.beginPath();ctx.moveTo(cx-shoulder,baseY);
+    ctx.bezierCurveTo(cx-shoulder,hcy+r*.15,cx-r*.85,hcy-r*.2,cx-r*.5,peakY+H*.103);
+    ctx.quadraticCurveTo(cx,peakY-H*.024,cx+r*.5,peakY+H*.103);
+    ctx.bezierCurveTo(cx+r*.85,hcy-r*.2,cx+shoulder,hcy+r*.15,cx+shoulder,baseY);ctx.closePath();}
+  hp();const dk=_lc(_SC.hood,'#000',.45),md=_lc(_SC.hood,'#000',.15);
+  const hg=ctx.createLinearGradient(cx-shoulder,0,cx+shoulder,0);
+  hg.addColorStop(0,_ra(dk,.3));hg.addColorStop(.12,dk);hg.addColorStop(.28,md);
+  hg.addColorStop(.4,_SC.hoodEdge);hg.addColorStop(.5,_lc(_SC.hoodEdge,'#fff',.03));
+  hg.addColorStop(.6,_SC.hoodEdge);hg.addColorStop(.72,md);hg.addColorStop(.88,dk);
+  hg.addColorStop(1,_ra(dk,.3));ctx.fillStyle=hg;ctx.fill();
+  hp();const vg=ctx.createLinearGradient(0,peakY,0,baseY);
+  vg.addColorStop(0,'rgba(255,255,255,.03)');vg.addColorStop(.2,'rgba(0,0,0,0)');
+  vg.addColorStop(.55,'rgba(0,0,0,.25)');vg.addColorStop(1,'rgba(0,0,0,.65)');
+  ctx.fillStyle=vg;ctx.fill();
+  hp();const cd=ctx.createRadialGradient(cx,hcy+H*.03,r*.05,cx,hcy+H*.03,r*.95);
+  cd.addColorStop(0,'rgba(0,0,0,.85)');cd.addColorStop(.4,'rgba(0,0,0,.6)');
+  cd.addColorStop(.7,'rgba(0,0,0,.2)');cd.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=cd;ctx.fill();
+  const fow=r*.72,oCY=hcy+H*.07;
+  const sh=ctx.createRadialGradient(cx,oCY,fow*.15,cx,oCY,fow*1.15);
+  sh.addColorStop(0,'rgba(0,0,0,.9)');sh.addColorStop(.45,'rgba(0,0,0,.6)');
+  sh.addColorStop(.75,'rgba(0,0,0,.15)');sh.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=sh;ctx.beginPath();ctx.ellipse(cx,oCY,fow*1.15,fow*.95,0,0,Math.PI*2);ctx.fill();
+}
+
+function _drawLoginEye(ctx,ex,ey,sz,col,gCol,gR,int){
+  int=int??1;const gc=_h2r(gCol);
+  const g1=ctx.createRadialGradient(ex,ey,0,ex,ey,gR*int);
+  g1.addColorStop(0,`rgba(${gc.r},${gc.g},${gc.b},${.5*int})`);
+  g1.addColorStop(.3,`rgba(${gc.r},${gc.g},${gc.b},${.25*int})`);
+  g1.addColorStop(.6,`rgba(${gc.r},${gc.g},${gc.b},${.08*int})`);
+  g1.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g1;
+  ctx.beginPath();ctx.arc(ex,ey,gR*int,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(ex-sz,ey);
+  ctx.bezierCurveTo(ex-sz*.5,ey-sz*.7,ex+sz*.5,ey-sz*.7,ex+sz,ey);
+  ctx.bezierCurveTo(ex+sz*.5,ey+sz*.7,ex-sz*.5,ey+sz*.7,ex-sz,ey);ctx.closePath();ctx.fill();
+  const cr=ctx.createRadialGradient(ex,ey,0,ex,ey,sz*.5);
+  cr.addColorStop(0,'rgba(255,255,255,.9)');cr.addColorStop(.4,col);cr.addColorStop(1,_ra(col,.5));
+  ctx.fillStyle=cr;ctx.beginPath();ctx.ellipse(ex,ey,sz*.55,sz*.38,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#000';ctx.beginPath();ctx.arc(ex,ey,sz*.18,0,Math.PI*2);ctx.fill();
+}
+
+function _drawLoginHappy(ctx,ex,ey,sz,col,gCol,gR){
+  const gc=_h2r(gCol);const g1=ctx.createRadialGradient(ex,ey,0,ex,ey,gR*.7);
+  g1.addColorStop(0,`rgba(${gc.r},${gc.g},${gc.b},.25)`);g1.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g1;ctx.beginPath();ctx.arc(ex,ey,gR*.7,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle=col;ctx.lineWidth=3.5;ctx.lineCap='round';ctx.beginPath();
+  ctx.arc(ex,ey+sz*.3,sz*.8,Math.PI*1.15,Math.PI*1.85);ctx.stroke();
+}
+
+function _drawLoginError(ctx,ex,ey,sz){
+  const col='#ff0040';ctx.strokeStyle=col;ctx.lineWidth=3.5;ctx.lineCap='round';
+  const xs=sz*.65;
+  ctx.beginPath();ctx.moveTo(ex-xs,ey-xs);ctx.lineTo(ex+xs,ey+xs);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(ex-xs,ey+xs);ctx.lineTo(ex+xs,ey-xs);ctx.stroke();
+}
+
+let _loginState='IDLE', _loginStart=Date.now(), _loginAnim=null;
+function _loginLoop(){
+  const c=document.getElementById('login-sigil-canvas');
+  if(!c)return;
+  const ctx=c.getContext('2d');
+  const dpr=window.devicePixelRatio||1;
+  const dW=c.clientWidth,dH=c.clientHeight;
+  if(c.width!==dW*dpr||c.height!==dH*dpr){c.width=dW*dpr;c.height=dH*dpr;}
+  const W=dW,H=dH,now=Date.now()-_loginStart;
+  ctx.save();ctx.scale(dpr,dpr);
+  ctx.fillStyle=_SC.bg;ctx.fillRect(0,0,W,H);
+  _drawLoginHood(ctx,W,H);
+  // Scanlines
+  ctx.fillStyle='rgba(0,0,0,.04)';
+  for(let y=0;y<H;y+=2)ctx.fillRect(0,y,W,1);
+  const sx=W/320,sy=H/170,s=Math.min(sx,sy),cx=W/2;
+  const ey=82*sy,ed=44*s,es=18*s,gr=28*s,lx=cx-ed,rx=cx+ed;
+
+  if(_loginState==='HAPPY'){
+    _drawLoginHappy(ctx,lx,ey,es,_SC.eye,_SC.glow,gr);
+    _drawLoginHappy(ctx,rx,ey,es,_SC.eye,_SC.glow,gr);
+    // Smile
+    ctx.strokeStyle=_SC.eye;ctx.lineWidth=2.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(cx-18,115*sy);ctx.quadraticCurveTo(cx,115*sy+8,cx+18,115*sy);ctx.stroke();
+  } else if(_loginState==='ERROR'){
+    _drawLoginError(ctx,lx,ey,es);_drawLoginError(ctx,rx,ey,es);
+    ctx.strokeStyle='#ff0040';ctx.lineWidth=2.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(cx-14,115*sy+3);ctx.quadraticCurveTo(cx,115*sy-5,cx+14,115*sy+3);ctx.stroke();
+  } else {
+    // IDLE breathing
+    const breath=.8+.2*Math.sin(now/4000*Math.PI*2);
+    const ec=_lc('#004415',_SC.eye,breath);
+    const dx=3*Math.sin(now/5000),dy=2*Math.cos(now/7000);
+    _drawLoginEye(ctx,lx+dx,ey+dy,es,ec,_SC.glow,gr,breath);
+    _drawLoginEye(ctx,rx+dx,ey+dy,es,ec,_SC.glow,gr,breath);
+    // Dim mouth
+    ctx.strokeStyle=_ra(_SC.eye,.25);ctx.lineWidth=2.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(cx-16,115*sy);ctx.lineTo(cx+16,115*sy);ctx.stroke();
+  }
+  ctx.restore();
+  _loginAnim=requestAnimationFrame(_loginLoop);
+}
+_loginLoop();
+
 const MAX_PIN = 4;
 let pinValue = '';
 
@@ -188,21 +315,28 @@ async function doLogin() {
     });
     const d = await r.json();
     if (d.ok) {
-      // CRT power-on animation before redirect
+      // Sigil HAPPY + CRT power-on animation before redirect
+      _loginState = 'HAPPY'; _loginStart = Date.now();
       document.body.classList.add('crt-glow');
-      const box = document.getElementById('login-box');
-      box.style.opacity = '0';
-      box.style.transition = 'opacity 0.2s';
       setTimeout(() => {
-        document.body.style.background = '#020502';
-        document.body.classList.add('crt-on');
-        setTimeout(() => { window.location.href = '/'; }, 700);
-      }, 250);
+        const box = document.getElementById('login-box');
+        box.style.opacity = '0';
+        box.style.transition = 'opacity 0.3s';
+        setTimeout(() => {
+          document.body.style.background = '#020502';
+          document.body.classList.add('crt-on');
+          setTimeout(() => { window.location.href = '/'; }, 700);
+        }, 300);
+      }, 600);
       return;
     } else {
+      _loginState = 'ERROR'; _loginStart = Date.now();
       errEl.textContent = d.error || 'PIN errato';
       document.getElementById('login-box').classList.add('shake');
-      setTimeout(() => document.getElementById('login-box').classList.remove('shake'), 400);
+      setTimeout(() => {
+        document.getElementById('login-box').classList.remove('shake');
+        _loginState = 'IDLE'; _loginStart = Date.now();
+      }, 1200);
       pinValue = '';
       updatePinDisplay();
     }

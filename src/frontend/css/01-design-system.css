@@ -126,6 +126,36 @@
   --btn-hover: #440000;
 }
 
+/* ── Theme: Sigil Violet ── */
+[data-theme="sigil"] {
+  --bg: #050208;
+  --bg2: #0a0614;
+  --card: #120820;
+  --card2: #180c2a;
+  --border: #251440;
+  --border2: #351e58;
+
+  --accent: #b44dff;
+  --accent2: #9b3de0;
+  --accent3: #6a2d9e;
+  --accent-dim: #1a0a2a;
+
+  --glow-sm: 0 0 4px rgba(180,77,255,0.4);
+  --glow-md: 0 0 8px rgba(180,77,255,0.3), 0 0 20px rgba(180,77,255,0.12);
+  --glow-text: 0 0 6px rgba(180,77,255,0.5), 0 0 14px rgba(180,77,255,0.2);
+
+  --amber: #e0a0ff;
+  --red: #ff0040;
+  --red-dim: #2a0018;
+  --cyan: #8866ff;
+
+  --text: #e0d0f0;
+  --text2: #9878b8;
+  --muted: #5a3878;
+
+  --btn-hover: #2a1048;
+}
+
 /* ── Theme: Ghost White ── */
 [data-theme="ghost"] {
   --bg: #020202;

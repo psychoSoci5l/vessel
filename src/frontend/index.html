@@ -36,8 +36,8 @@
               alt="V">
             <span class="dash-title">VESSEL</span>
             <div id="home-health-dot" class="health-dot" title="Salute Pi"></div>
-            <div id="sigil-indicator" class="sigil-indicator" data-state="IDLE" title="Sigil: IDLE">
-              <span class="sigil-dot"></span>
+            <div id="sigil-indicator" class="sigil-indicator" data-state="IDLE" title="Sigil: IDLE" onclick="scrollToSigilWidget()">
+              <canvas id="sigil-header-canvas" class="sigil-header-canvas" width="80" height="24"></canvas>
               <span class="sigil-label" id="sigil-label">SIGIL</span>
             </div>
             <span class="dash-spacer"></span>
@@ -72,6 +72,40 @@
               <div class="stat-value" id="hc-disk-val">--</div>
               <div class="stat-sub" id="hc-disk-sub"></div>
               <div class="stat-bar"><div class="stat-bar-fill" id="hc-disk-bar"></div></div>
+            </div>
+          </div>
+
+          <!-- Sigil Widget -->
+          <div class="sigil-widget" id="sigil-widget-wrap">
+            <div class="sigil-widget-header">
+              <span class="sigil-widget-title">SIGIL</span>
+              <span class="sigil-widget-status">
+                <span class="sigil-online-dot" id="sigil-online-dot"></span>
+                <span id="sigil-mood-info">IDLE</span>
+                <span class="sigil-mood-sep">&middot;</span>
+                <span id="sigil-mood-timer">0s</span>
+              </span>
+            </div>
+            <div class="sigil-canvas-wrap">
+              <canvas id="sigil-widget-canvas" class="sigil-widget-canvas"></canvas>
+            </div>
+            <div class="sigil-commands">
+              <button class="btn-sigil" onclick="sigilCommand('HAPPY')" title="Ridi">&#x1F604;</button>
+              <button class="btn-sigil" onclick="sigilCommand('THINKING')" title="Pensa">&#x1F914;</button>
+              <button class="btn-sigil" onclick="sigilCommand('SLEEPING')" title="Dormi">&#x1F634;</button>
+              <button class="btn-sigil" onclick="sigilCommand('ALERT')" title="Allerta">&#x26A0;</button>
+              <button class="btn-sigil" onclick="sigilCommand('PROUD')" title="Orgoglioso">&#x2728;</button>
+              <button class="btn-sigil" onclick="sigilCommand('CURIOUS')" title="Curioso">&#x2753;</button>
+              <button class="btn-sigil" onclick="sigilCommand('IDLE')" title="Idle">&#x1F7E2;</button>
+            </div>
+            <div class="sigil-text-row">
+              <input type="text" id="sigil-text-input" class="sigil-text-input" placeholder="messaggio per Sigil&hellip;" maxlength="64">
+              <button class="btn-sigil-send" onclick="sigilSendText()">&#x21B5;</button>
+            </div>
+            <div class="sigil-actions">
+              <button class="btn-ghost btn-sm" onclick="sigilOTA()" title="Aggiornamento firmware OTA">&#x2B06; OTA</button>
+              <button class="btn-ghost btn-sm" onclick="sigilCommand('BORED')" title="Stato BORED">&#x1F971; Bored</button>
+              <button class="btn-ghost btn-sm" onclick="sigilCommand('ERROR')" title="Test Error">&#x274C; Error</button>
             </div>
           </div>
 

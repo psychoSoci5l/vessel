@@ -55,6 +55,146 @@
 .health-dot.yellow { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .health-dot.red { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }
 
+/* ── Sigil Header Canvas ── */
+.sigil-header-canvas {
+  width: 40px;
+  height: 16px;
+  display: block;
+  cursor: pointer;
+}
+
+.sigil-indicator {
+  cursor: pointer;
+}
+
+/* ── Sigil Widget ── */
+.sigil-widget {
+  background: var(--card);
+  border: 1px solid var(--border2);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  position: relative;
+  overflow: hidden;
+}
+
+.sigil-widget::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #6a2d9e, #b44dff, #6a2d9e, transparent);
+}
+
+.sigil-widget-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.sigil-widget-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: #b44dff;
+  letter-spacing: 1.5px;
+  text-shadow: 0 0 8px rgba(180,77,255,0.4);
+}
+
+.sigil-widget-status {
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sigil-online-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  display: inline-block;
+}
+
+.sigil-mood-sep { opacity: 0.4; }
+
+.sigil-canvas-wrap {
+  width: 100%;
+  aspect-ratio: 320 / 170;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #050208;
+  margin-bottom: 10px;
+}
+
+.sigil-widget-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.sigil-commands {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.btn-sigil {
+  flex: 1 1 auto;
+  min-width: 36px;
+  min-height: 32px;
+  padding: 4px 8px;
+  font-size: 16px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all .15s;
+  line-height: 1;
+}
+.btn-sigil:active { border-color: #b44dff; background: #1a0a2a; }
+
+.sigil-text-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sigil-text-input {
+  flex: 1;
+  font-family: var(--font);
+  font-size: 11px;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  outline: none;
+}
+.sigil-text-input:focus { border-color: #6a2d9e; }
+.sigil-text-input::placeholder { color: var(--muted); }
+
+.btn-sigil-send {
+  min-width: 36px;
+  min-height: 32px;
+  font-size: 14px;
+  background: var(--bg2);
+  color: #b44dff;
+  border: 1px solid #6a2d9e;
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font);
+  transition: all .15s;
+}
+.btn-sigil-send:active { background: #1a0a2a; }
+
+.sigil-actions {
+  display: flex;
+  gap: 6px;
+}
+
 /* ── Stats Cards 2x2 ── */
 .dash-stats {
   display: flex;
