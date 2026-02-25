@@ -42,15 +42,28 @@
     margin: 0 auto;
   }
 
-  /* ── Dashboard Tab ── */
+  /* ── Dashboard Tab: 2 colonne (Sigil sinistra, resto destra) ── */
   .dash-header { padding: 0 0 16px; }
   .dash-stats { gap: 14px; }
   .stat-card { flex: 1 1 calc(25% - 12px); }
   .stat-value { font-size: 26px; }
-  #pi-chart { height: 120px; }
-  .dash-chart { margin-bottom: 18px; }
-  .dash-widgets { gap: 14px; }
-  .widget-card { flex: 1 1 calc(25% - 12px); }
+
+  #tab-dashboard .tab-scroll {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    align-content: start;
+  }
+  .dash-header { grid-column: 1 / -1; }
+  .dash-stats { grid-column: 1 / -1; }
+  .sigil-widget { grid-column: 1; margin-bottom: 0; }
+  .dash-right-col { grid-column: 2; display: flex; flex-direction: column; gap: 14px; }
+  .dash-right-col .dash-chart { margin-bottom: 0; }
+  .dash-right-col .dash-widgets { flex-direction: column; gap: 10px; }
+  .dash-right-col .widget-card { flex: none; width: 100%; }
+
+  #pi-chart { height: 100px; }
+  .dash-chart { margin-bottom: 14px; }
 
   /* ── Code Tab: Split-Pane ── */
   #tab-code.active {
@@ -156,19 +169,13 @@
   .nav-item .nav-icon { font-size: 24px; }
   .nav-item { font-size: 9px; padding: 16px 0; }
 
-  /* ── Dashboard: chart + widgets affiancati ── */
+  /* ── Dashboard: Sigil + colonna destra proporzionati ── */
   #tab-dashboard .tab-scroll {
-    display: grid;
     grid-template-columns: 3fr 2fr;
-    gap: 16px;
-    align-content: start;
+    gap: 18px;
   }
 
-  .dash-header { grid-column: 1 / -1; }
-  .dash-stats { grid-column: 1 / -1; }
-  .dash-chart { margin-bottom: 0; }
-  #pi-chart { height: 200px; }
-  .widget-card { flex: 1 1 calc(50% - 8px); }
+  #pi-chart { height: 140px; }
 
   /* ── Stats compatte ── */
   .stat-value { font-size: 28px; }

@@ -3,7 +3,7 @@
 
   const SigilEngine = (() => {
     const COL = {
-      hood: '#3d1560', hoodEdge: '#6a2d9e',
+      hood: '#2a0e42', hoodEdge: '#4a1d70',
       eye: '#00ff41', glow: '#00ff41',
       sigil: '#ff0040', bg: '#050208'
     };
@@ -33,9 +33,9 @@
       const cx = W/2, r = W*0.297, hcy = H*0.635, peakY = H*0.071;
       const shoulder = W*0.328, baseY = H*1.03;
 
-      // Ambient glow
+      // Ambient glow (molto sottile)
       const ambGrad = ctx.createRadialGradient(cx, hcy, r*0.6, cx, hcy, r*1.6);
-      ambGrad.addColorStop(0, rgbaStr(COL.hoodEdge, 0.06));
+      ambGrad.addColorStop(0, rgbaStr(COL.hoodEdge, 0.03));
       ambGrad.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = ambGrad;
       ctx.fillRect(0, 0, W, H);
@@ -49,20 +49,20 @@
         ctx.closePath();
       }
 
-      // Hood body gradient
+      // Hood body gradient (scuro come ESP32 — svanisce nel nero ai bordi)
       hoodPath();
-      const darkHood = lerpColor(COL.hood, '#000', 0.45);
-      const midHood = lerpColor(COL.hood, '#000', 0.15);
+      const darkHood = lerpColor(COL.hood, '#000', 0.55);
+      const midHood = lerpColor(COL.hood, '#000', 0.25);
       const hg = ctx.createLinearGradient(cx-shoulder, 0, cx+shoulder, 0);
-      hg.addColorStop(0, rgbaStr(darkHood, 0.3));
-      hg.addColorStop(0.12, darkHood);
-      hg.addColorStop(0.28, midHood);
-      hg.addColorStop(0.4, COL.hoodEdge);
-      hg.addColorStop(0.5, lerpColor(COL.hoodEdge, '#fff', 0.03));
-      hg.addColorStop(0.6, COL.hoodEdge);
-      hg.addColorStop(0.72, midHood);
-      hg.addColorStop(0.88, darkHood);
-      hg.addColorStop(1, rgbaStr(darkHood, 0.3));
+      hg.addColorStop(0, rgbaStr(darkHood, 0.15));
+      hg.addColorStop(0.15, darkHood);
+      hg.addColorStop(0.3, midHood);
+      hg.addColorStop(0.42, COL.hood);
+      hg.addColorStop(0.5, lerpColor(COL.hood, '#fff', 0.04));
+      hg.addColorStop(0.58, COL.hood);
+      hg.addColorStop(0.7, midHood);
+      hg.addColorStop(0.85, darkHood);
+      hg.addColorStop(1, rgbaStr(darkHood, 0.15));
       ctx.fillStyle = hg; ctx.fill();
 
       // Vertical shading
@@ -83,19 +83,27 @@
       cd.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = cd; ctx.fill();
 
-      // Face cavity
+      // Face cavity (3 strati come ESP32 drawFaceShadow — ellissi più scure)
       const fow = r*0.72, ovalCY = hcy+H*0.07;
-      const sh = ctx.createRadialGradient(cx, ovalCY, fow*0.15, cx, ovalCY, fow*1.15);
-      sh.addColorStop(0, 'rgba(0,0,0,0.9)');
-      sh.addColorStop(0.45, 'rgba(0,0,0,0.6)');
-      sh.addColorStop(0.75, 'rgba(0,0,0,0.15)');
-      sh.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = sh;
-      ctx.beginPath(); ctx.ellipse(cx, ovalCY, fow*1.15, fow*0.95, 0, 0, Math.PI*2); ctx.fill();
+      // Outer soft
+      const sh0 = ctx.createRadialGradient(cx, ovalCY, fow*0.1, cx, ovalCY, fow*1.2);
+      sh0.addColorStop(0, 'rgba(0,0,0,0.95)');
+      sh0.addColorStop(0.35, 'rgba(0,0,0,0.75)');
+      sh0.addColorStop(0.65, 'rgba(0,0,0,0.4)');
+      sh0.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = sh0;
+      ctx.beginPath(); ctx.ellipse(cx, ovalCY, fow*1.15, fow*1.05, 0, 0, Math.PI*2); ctx.fill();
+      // Deep core (quasi nero — come ESP32 shadow2)
+      const sh1 = ctx.createRadialGradient(cx, ovalCY+fow*0.12, fow*0.05, cx, ovalCY+fow*0.12, fow*0.7);
+      sh1.addColorStop(0, 'rgba(0,0,0,0.9)');
+      sh1.addColorStop(0.6, 'rgba(0,0,0,0.5)');
+      sh1.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = sh1;
+      ctx.beginPath(); ctx.ellipse(cx, ovalCY+fow*0.12, fow*0.7, fow*0.65, 0, 0, Math.PI*2); ctx.fill();
 
-      // Edge highlight
-      ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.2);
-      ctx.lineWidth = 1; ctx.lineCap = 'round';
+      // Edge highlight (sottile come ESP32 edgeHighlight)
+      ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.12);
+      ctx.lineWidth = 0.8; ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(cx-shoulder+5, baseY-10);
       ctx.bezierCurveTo(cx-shoulder+3, hcy+r*0.15, cx-r*0.85, hcy-r*0.2, cx-r*0.5, peakY+H*0.103);
@@ -104,37 +112,49 @@
       ctx.stroke();
     }
 
-    // ── Eye (mandorla) ──
+    // ── Eye (mandorla angolare — stile ESP32) ──
     function drawGlowingEye(ctx, ex, ey, size, col, glowCol, glowR, intensity) {
       intensity = intensity ?? 1.0;
       const gc = hexToRgb(glowCol);
-      const g1 = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR*intensity);
-      g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},${0.5*intensity})`);
-      g1.addColorStop(0.3, `rgba(${gc.r},${gc.g},${gc.b},${0.25*intensity})`);
-      g1.addColorStop(0.6, `rgba(${gc.r},${gc.g},${gc.b},${0.08*intensity})`);
+      // Glow più contenuto (come drawEyeGlow su ESP32: cerchi concentrici)
+      const g1 = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR*0.7*intensity);
+      g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},${0.18*intensity})`);
+      g1.addColorStop(0.5, `rgba(${gc.r},${gc.g},${gc.b},${0.08*intensity})`);
       g1.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g1;
-      ctx.beginPath(); ctx.arc(ex, ey, glowR*intensity, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey, glowR*0.7*intensity, 0, Math.PI*2); ctx.fill();
 
-      ctx.fillStyle = col;
+      // Mandorla angolare (due triangoli come ESP32 drawMandorlaEye)
+      const hw = size, hh = size*0.52;
+      ctx.save();
       ctx.beginPath();
-      ctx.moveTo(ex-size, ey);
-      ctx.bezierCurveTo(ex-size*0.5, ey-size*0.7, ex+size*0.5, ey-size*0.7, ex+size, ey);
-      ctx.bezierCurveTo(ex+size*0.5, ey+size*0.7, ex-size*0.5, ey+size*0.7, ex-size, ey);
-      ctx.closePath(); ctx.fill();
+      ctx.moveTo(ex-hw, ey);
+      ctx.lineTo(ex, ey-hh);
+      ctx.lineTo(ex+hw, ey);
+      ctx.lineTo(ex, ey+hh);
+      ctx.closePath();
+      ctx.clip();
 
-      const core = ctx.createRadialGradient(ex, ey, 0, ex, ey, size*0.5);
-      core.addColorStop(0, 'rgba(255,255,255,0.9)');
-      core.addColorStop(0.4, col);
-      core.addColorStop(1, rgbaStr(col, 0.5));
-      ctx.fillStyle = core;
-      ctx.beginPath(); ctx.ellipse(ex, ey, size*0.55, size*0.38, 0, 0, Math.PI*2); ctx.fill();
+      // Fill piatto (come ESP32 — niente gradient luminosi)
+      ctx.fillStyle = col;
+      ctx.fillRect(ex-hw, ey-hh, hw*2, hh*2);
 
+      // Scan-lines orizzontali dentro l'occhio (effetto TFT pixel grid)
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      for (let y = ey-hh; y < ey+hh; y += 3) {
+        ctx.fillRect(ex-hw, y, hw*2, 1);
+      }
+
+      // Palpebra superiore (lid cut come drawMandorlaEyeRelaxed, ~15%)
+      const lidCut = hh * 0.15;
+      ctx.fillStyle = COL.bg;
+      ctx.fillRect(ex-hw-1, ey-hh-1, hw*2+2, lidCut+1);
+
+      ctx.restore();
+
+      // Pupilla (più piccola, stile minimale)
       ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.arc(ex, ey, size*0.18, 0, Math.PI*2); ctx.fill();
-
-      ctx.fillStyle = 'rgba(255,255,255,0.8)';
-      ctx.beginPath(); ctx.ellipse(ex-size*0.18, ey-size*0.18, size*0.1, size*0.07, -0.3, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(ex, ey+1, size*0.13, 0, Math.PI*2); ctx.fill();
     }
 
     function drawHappyEye(ctx, ex, ey, size, col, glowCol, glowR) {
@@ -150,39 +170,45 @@
       ctx.stroke();
     }
 
-    // ── Sigil symbol ──
+    // ── Sigil symbol (scala ridotta per coerenza con ESP32) ──
     function drawSigil(ctx, sx, sy, col, sigScale, rotation) {
       sigScale = sigScale || 1;
       rotation = rotation || 0;
-      const s = 12 * sigScale;
+      const s = 8 * sigScale;
       const gc = hexToRgb(col);
-      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, s*2.5);
-      g.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},0.25)`);
+      // Glow minimo (come ESP32: fillCircle con colore appena visibile)
+      const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, s*2);
+      g.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},0.12)`);
+      g.addColorStop(0.6, `rgba(${gc.r},${gc.g},${gc.b},0.05)`);
       g.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.fillStyle = g;
-      ctx.beginPath(); ctx.arc(sx, sy, s*2.5, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(sx, sy, s*2, 0, Math.PI*2); ctx.fill();
       ctx.save();
       ctx.translate(sx, sy);
       ctx.rotate(rotation);
       ctx.strokeStyle = col; ctx.lineCap = 'round';
-      ctx.lineWidth = 2.5;
+      // Croce (come ESP32: drawWideLine vertical + horizontal)
+      ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(0,s); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(-s,0); ctx.lineTo(s,0); ctx.stroke();
-      ctx.lineWidth = 1.5;
+      // Diagonali (più sottili)
+      ctx.lineWidth = 1;
       const d = s*0.65;
       ctx.beginPath(); ctx.moveTo(-d,-d); ctx.lineTo(d,d); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(-d,d); ctx.lineTo(d,-d); ctx.stroke();
-      ctx.lineWidth = 1.5;
+      // Cerchietto al centro
+      ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(0, 0, s*0.35, 0, Math.PI*2); ctx.stroke();
+      // Punte esterne (pixel singoli come ESP32 drawPixel)
       ctx.fillStyle = col;
-      [[0,-s*1.3],[0,s*1.3],[-s*1.3,0],[s*1.3,0]].forEach(([dx,dy]) => {
-        ctx.beginPath(); ctx.arc(dx, dy, 2, 0, Math.PI*2); ctx.fill();
+      [[0,-s*1.2],[0,s*1.2],[-s*1.2,0],[s*1.2,0]].forEach(([dx,dy]) => {
+        ctx.beginPath(); ctx.arc(dx, dy, 1.2, 0, Math.PI*2); ctx.fill();
       });
       ctx.restore();
     }
 
     function drawMouth(ctx, mx, my, w, col, curve) {
-      ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+      ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.lineCap = 'round';
       ctx.beginPath();
       ctx.moveTo(mx-w, my);
       ctx.quadraticCurveTo(mx, my+curve, mx+w, my);
@@ -195,41 +221,42 @@
       const es = eyeSize, gr = glowR;
 
       if (state === 'IDLE') {
-        const breath = 0.8 + 0.2*Math.sin(now/4000*Math.PI*2);
-        const ec = lerpColor('#004415', COL.eye, breath);
-        const dx = 3*Math.sin(now/5000), dy = 2*Math.cos(now/7000);
-        drawGlowingEye(ctx, lx+dx, eyeY+dy, es, ec, COL.glow, gr, breath);
-        drawGlowingEye(ctx, rx+dx, eyeY+dy, es, ec, COL.glow, gr, breath);
-        const sb = 0.10+0.05*Math.sin(now/3000);
-        drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, sb), 0.6);
-        drawMouth(ctx, cx, mouthY, 16, rgbaStr(COL.eye, 0.25), 0);
+        const breath = 0.7 + 0.3*Math.sin(now/4000*Math.PI*2);
+        const ec = lerpColor('#003310', COL.eye, breath);
+        const dx = 2*Math.sin(now/5000), dy = 1.5*Math.cos(now/7000);
+        drawGlowingEye(ctx, lx+dx, eyeY+dy, es, ec, COL.glow, gr*0.7, breath);
+        drawGlowingEye(ctx, rx+dx, eyeY+dy, es, ec, COL.glow, gr*0.7, breath);
+        const sb = 0.08+0.04*Math.sin(now/3000);
+        drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, sb), 0.5);
+        drawMouth(ctx, cx, mouthY, 12, rgbaStr(COL.eye, 0.2), 0);
 
       } else if (state === 'THINKING') {
-        drawGlowingEye(ctx, lx, eyeY-3, es, COL.eye, COL.glow, gr, 1);
-        drawGlowingEye(ctx, rx, eyeY-3, es, COL.eye, COL.glow, gr, 1);
+        drawGlowingEye(ctx, lx, eyeY-2, es, COL.eye, COL.glow, gr*0.8, 1);
+        drawGlowingEye(ctx, rx, eyeY-2, es, COL.eye, COL.glow, gr*0.8, 1);
         const thinkRot = (now/8000)*Math.PI*2;
-        const thinkPulse = 0.8+0.2*Math.sin(now/600);
-        drawSigil(ctx, cx, sigilY, lerpColor('#000', COL.sigil, thinkPulse), 1, thinkRot);
-        drawMouth(ctx, cx, mouthY, 12, rgbaStr(COL.eye, 0.4), 0);
+        const thinkPulse = 0.6+0.2*Math.sin(now/600);
+        drawSigil(ctx, cx, sigilY, lerpColor('#000', COL.sigil, thinkPulse), 0.8, thinkRot);
+        drawMouth(ctx, cx, mouthY, 10, rgbaStr(COL.eye, 0.3), 0);
         const dots = ['','.','..','...'][Math.floor(now/400)%4];
-        ctx.fillStyle = rgbaStr(COL.eye, 0.4);
-        ctx.font = '18px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-        ctx.fillText(dots, cx, mouthY+28);
+        ctx.fillStyle = rgbaStr(COL.eye, 0.3);
+        ctx.font = '14px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+        ctx.fillText(dots, cx, mouthY+22);
 
       } else if (state === 'WORKING') {
         const sq = es*0.5;
-        drawGlowingEye(ctx, lx, eyeY, sq, COL.eye, COL.glow, gr*0.5, 0.6);
-        drawGlowingEye(ctx, rx, eyeY, sq, COL.eye, COL.glow, gr*0.5, 0.6);
-        ctx.strokeStyle = rgbaStr(COL.eye, 0.6); ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(lx-es, eyeY-es-5); ctx.lineTo(lx+es*0.5, eyeY-es-2); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(rx-es*0.5, eyeY-es-2); ctx.lineTo(rx+es, eyeY-es-5); ctx.stroke();
+        drawGlowingEye(ctx, lx, eyeY, sq, COL.eye, COL.glow, gr*0.4, 0.6);
+        drawGlowingEye(ctx, rx, eyeY, sq, COL.eye, COL.glow, gr*0.4, 0.6);
+        // Sopracciglia concentrate (come ESP32)
+        ctx.strokeStyle = rgbaStr(COL.eye, 0.4); ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(lx-es, eyeY-es*0.55-4); ctx.lineTo(lx+es*0.4, eyeY-es*0.55-2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(rx-es*0.4, eyeY-es*0.55-2); ctx.lineTo(rx+es, eyeY-es*0.55-4); ctx.stroke();
         const workRot = (now/3000)*Math.PI*2;
-        drawSigil(ctx, cx, sigilY, rgbaStr(COL.eye, 0.5), 0.9, workRot);
-        drawMouth(ctx, cx, mouthY, 10, rgbaStr(COL.eye, 0.3), 0);
+        drawSigil(ctx, cx, sigilY, rgbaStr(COL.eye, 0.3), 0.7, workRot);
+        drawMouth(ctx, cx, mouthY, 8, rgbaStr(COL.eye, 0.25), 0);
         const dots2 = ['','.','..','...'][Math.floor(now/600)%4];
-        ctx.fillStyle = rgbaStr(COL.eye, 0.3);
-        ctx.font = '16px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-        ctx.fillText(dots2, cx, mouthY+24);
+        ctx.fillStyle = rgbaStr(COL.eye, 0.25);
+        ctx.font = '12px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+        ctx.fillText(dots2, cx, mouthY+20);
 
       } else if (state === 'PROUD') {
         drawHappyEye(ctx, lx, eyeY, es, COL.eye, COL.glow, gr);
@@ -270,21 +297,17 @@
         ctx.fillText('*', cx-45, eyeY-25); ctx.fillText('*', cx+45, eyeY-25);
 
       } else if (state === 'CURIOUS') {
-        const scanX = 8*Math.sin(now/1500);
-        drawGlowingEye(ctx, lx+scanX, eyeY, es*1.15, COL.eye, COL.glow, gr*1.1, 1);
-        drawGlowingEye(ctx, rx+scanX, eyeY, es*1.15, COL.eye, COL.glow, gr*1.1, 1);
-        ctx.strokeStyle = COL.eye; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.moveTo(lx-es-2, eyeY-es-2); ctx.lineTo(lx+es, eyeY-es-8); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(rx-es, eyeY-es-8); ctx.lineTo(rx+es+2, eyeY-es-2); ctx.stroke();
-        const curiousTilt = 0.25*Math.sin(now/1200);
-        const curiousScale = 0.9+0.2*(0.5+0.5*Math.sin(now/1000*Math.PI*2));
-        drawSigil(ctx, cx, sigilY, COL.sigil, curiousScale, curiousTilt);
-        ctx.strokeStyle = COL.eye; ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(cx, mouthY, 5, 0, Math.PI*2); ctx.stroke();
-        const qY = 4*Math.sin(now/800);
-        ctx.fillStyle = rgbaStr(COL.eye, 0.5);
-        ctx.font = '22px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
-        ctx.fillText('?', cx+eyeDist+18, eyeY-12+qY);
+        const scanX = 5*Math.sin(now/1500);
+        drawGlowingEye(ctx, lx+scanX, eyeY, es*1.05, COL.eye, COL.glow, gr*0.9, 1);
+        drawGlowingEye(ctx, rx+scanX, eyeY, es*1.05, COL.eye, COL.glow, gr*0.9, 1);
+        // Sopracciglia sottili (come ESP32 — linee semplici)
+        ctx.strokeStyle = rgbaStr(COL.eye, 0.6); ctx.lineWidth = 1.5; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(lx-es, eyeY-es*0.6-2); ctx.lineTo(lx+es*0.6, eyeY-es*0.6-6); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(rx-es*0.6, eyeY-es*0.6-6); ctx.lineTo(rx+es, eyeY-es*0.6-2); ctx.stroke();
+        const curiousTilt = 0.2*Math.sin(now/1200);
+        const curiousScale = 0.6+0.15*(0.5+0.5*Math.sin(now/1000*Math.PI*2));
+        drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.5), curiousScale, curiousTilt);
+        drawMouth(ctx, cx, mouthY, 10, rgbaStr(COL.eye, 0.3), 0);
 
       } else if (state === 'ALERT') {
         const alertCol = '#ffaa00';

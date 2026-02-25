@@ -109,35 +109,38 @@
             </div>
           </div>
 
-          <!-- Chart -->
-          <div class="dash-chart">
-            <div class="chart-header">
-              <span class="chart-label">SERVER ACTIVITY (Last 15 Min)</span>
-              <div class="chart-legend">
-                <span><div class="dot-cpu"></div> <span>CPU</span></span>
-                <span><div class="dot-temp"></div> <span>Temp</span></span>
+          <!-- Right column (desktop: affiancata a Sigil) -->
+          <div class="dash-right-col">
+            <!-- Chart -->
+            <div class="dash-chart">
+              <div class="chart-header">
+                <span class="chart-label">SERVER ACTIVITY (Last 15 Min)</span>
+                <div class="chart-legend">
+                  <span><div class="dot-cpu"></div> <span>CPU</span></span>
+                  <span><div class="dot-temp"></div> <span>Temp</span></span>
+                </div>
               </div>
+              <canvas id="pi-chart"></canvas>
             </div>
-            <canvas id="pi-chart"></canvas>
-          </div>
 
-          <!-- Widget tiles 2x2 -->
-          <div class="dash-widgets">
-            <div class="widget-card" data-widget="briefing" onclick="openDrawer('briefing')">
-              <div class="wc-header"><span class="wc-label">BRIEFING</span><span class="wc-icon">&#x2630;</span></div>
-              <div class="wc-body" id="wt-briefing-preview">--</div>
-            </div>
-            <div class="widget-card" data-widget="tokens" onclick="openDrawer('tokens')">
-              <div class="wc-header"><span class="wc-label">TOKEN</span><span class="wc-icon">&#x00A4;</span></div>
-              <div class="wc-body" id="wt-tokens-preview">--</div>
-            </div>
-            <div class="widget-card" data-widget="logs" onclick="switchView('system');scrollToSys('sys-logs')">
-              <div class="wc-header"><span class="wc-label">LOGS</span><span class="wc-icon">&#x2261;</span></div>
-              <div class="wc-body" id="wt-logs-preview">--</div>
-            </div>
-            <div class="widget-card" data-widget="cron" onclick="switchView('system');scrollToSys('sys-cron')">
-              <div class="wc-header"><span class="wc-label">JOBS</span><span class="wc-icon">&#x25C7;</span></div>
-              <div class="wc-body" id="wt-cron-preview">--</div>
+            <!-- Widget tiles -->
+            <div class="dash-widgets">
+              <div class="widget-card" data-widget="briefing" onclick="openDrawer('briefing')">
+                <div class="wc-header"><span class="wc-label">BRIEFING</span><span class="wc-icon">&#x2630;</span></div>
+                <div class="wc-body" id="wt-briefing-preview">--</div>
+              </div>
+              <div class="widget-card" data-widget="tokens" onclick="openDrawer('tokens')">
+                <div class="wc-header"><span class="wc-label">TOKEN</span><span class="wc-icon">&#x00A4;</span></div>
+                <div class="wc-body" id="wt-tokens-preview">--</div>
+              </div>
+              <div class="widget-card" data-widget="logs" onclick="switchView('system');scrollToSys('sys-logs')">
+                <div class="wc-header"><span class="wc-label">LOGS</span><span class="wc-icon">&#x2261;</span></div>
+                <div class="wc-body" id="wt-logs-preview">--</div>
+              </div>
+              <div class="widget-card" data-widget="cron" onclick="switchView('system');scrollToSys('sys-cron')">
+                <div class="wc-header"><span class="wc-label">JOBS</span><span class="wc-icon">&#x25C7;</span></div>
+                <div class="wc-body" id="wt-cron-preview">--</div>
+              </div>
             </div>
           </div>
         </div>
