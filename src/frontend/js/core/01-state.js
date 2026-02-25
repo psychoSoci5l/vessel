@@ -9,7 +9,6 @@
   let chatProvider = 'cloud';
   let streamDiv = null;
   let activeDrawer = null;
-  let claudeRunning = false;
 
   function esc(s) {
     if (typeof s !== 'string') return s == null ? '' : String(s);

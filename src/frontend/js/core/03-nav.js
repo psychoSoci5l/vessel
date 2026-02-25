@@ -14,12 +14,6 @@
 
     // Ridisegna chart quando torniamo a dashboard
     if (tabName === 'dashboard') requestAnimationFrame(() => drawChart());
-
-    // Desktop split-pane: auto-load task data quando si apre Code
-    if (tabName === 'code' && window.matchMedia('(min-width: 768px)').matches) {
-      send({ action: 'check_bridge' });
-      send({ action: 'get_claude_tasks' });
-    }
   }
 
   function scrollToSys(sectionId) {
@@ -27,22 +21,6 @@
       const el = document.getElementById(sectionId);
       if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
-  }
-
-  // ── Code Panel toggle ──
-  function switchCodePanel(panel, btn) {
-    document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.code-panel').forEach(p => p.classList.remove('active'));
-
-    btn.classList.add('active');
-    const el = document.getElementById('code-' + panel);
-    if (el) el.classList.add('active');
-
-    // Auto-load bridge status quando si apre Task
-    if (panel === 'task') {
-      send({ action: 'check_bridge' });
-      send({ action: 'get_claude_tasks' });
-    }
   }
 
   // ── Memory Tabs ──

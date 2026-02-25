@@ -16,7 +16,6 @@
         send({ action: 'get_briefing' });
         send({ action: 'get_cron' });
         send({ action: 'get_logs' });
-        send({ action: 'check_bridge' });
         send({ action: 'get_entities' });
         send({ action: 'get_usage_report', period: 'day' });
         send({ action: 'get_saved_prompts' });
@@ -83,58 +82,6 @@
     else if (msg.type === 'toast')   { showToast(msg.text); }
     else if (msg.type === 'reboot_ack') { startRebootWait(); }
     else if (msg.type === 'shutdown_ack') { document.getElementById('reboot-overlay').classList.add('show'); document.getElementById('reboot-status').textContent = 'Il Pi si sta spegnendo…'; document.querySelector('.reboot-text').textContent = 'Spegnimento in corso…'; }
-    else if (msg.type === 'claude_thinking') {
-      _claudeLineBuf = '';
-      const wrap = document.getElementById('claude-output-wrap');
-      if (wrap) wrap.style.display = 'block';
-      const out = document.getElementById('claude-output');
-      if (out) { out.innerHTML = ''; out.appendChild(document.createTextNode('Connessione al bridge...\n')); }
-    }
-    else if (msg.type === 'claude_chunk') {
-      const out = document.getElementById('claude-output');
-      if (out) { appendClaudeChunk(out, msg.text); out.scrollTop = out.scrollHeight; }
-    }
-    else if (msg.type === 'claude_iteration') {
-      const out = document.getElementById('claude-output');
-      if (out) {
-        const m = document.createElement('div');
-        m.className = 'ralph-marker';
-        m.textContent = '═══ ITERAZIONE ' + msg.iteration + '/' + msg.max + ' ═══';
-        out.appendChild(m);
-        out.scrollTop = out.scrollHeight;
-      }
-    }
-    else if (msg.type === 'claude_supervisor') {
-      const out = document.getElementById('claude-output');
-      if (out) {
-        const m = document.createElement('div');
-        m.className = 'ralph-supervisor';
-        m.textContent = '▸ ' + msg.text;
-        out.appendChild(m);
-        out.scrollTop = out.scrollHeight;
-      }
-    }
-    else if (msg.type === 'claude_info') {
-      const out = document.getElementById('claude-output');
-      if (out) {
-        const m = document.createElement('div');
-        m.className = 'ralph-info';
-        m.textContent = msg.text;
-        out.appendChild(m);
-        out.scrollTop = out.scrollHeight;
-      }
-    }
-    else if (msg.type === 'claude_done') { finalizeClaudeTask(msg); }
-    else if (msg.type === 'claude_cancelled') {
-      claudeRunning = false;
-      const rb = document.getElementById('claude-run-btn');
-      const cb = document.getElementById('claude-cancel-btn');
-      if (rb) rb.disabled = false;
-      if (cb) cb.style.display = 'none';
-      showToast('Task cancellato');
-    }
-    else if (msg.type === 'bridge_status') { renderBridgeStatus(msg.data); }
-    else if (msg.type === 'claude_tasks') { renderClaudeTasks(msg.tasks); }
     else if (msg.type === 'saved_prompts') { renderSavedPrompts(msg.prompts); }
     else if (msg.type === 'sigil_state') { updateSigilIndicator(msg.state); }
     else if (msg.type && msg.type.startsWith('plugin_')) {

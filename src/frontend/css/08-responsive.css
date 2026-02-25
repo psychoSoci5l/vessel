@@ -65,23 +65,7 @@
   #pi-chart { height: 100px; }
   .dash-chart { margin-bottom: 14px; }
 
-  /* ── Code Tab: Split-Pane ── */
-  #tab-code.active {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    grid-template-rows: auto 1fr;
-  }
-
-  .code-header { grid-column: 1 / -1; }
-  .code-tabs { display: none; }
-
-  #tab-code .code-panel {
-    display: flex !important;
-    min-height: 0;
-  }
-
-  #code-chat { border-right: 1px solid var(--border); }
-
+  /* ── Code Tab ── */
   .code-input-area { padding-bottom: 10px; }
   #chat-input { font-size: 13px; }
   .msg { max-width: 75%; }
@@ -138,9 +122,6 @@
 
   /* ── Modal Desktop ── */
   .modal-box { max-width: 420px; }
-
-  /* ── Task prompt: testo non troncato ── */
-  .claude-task-prompt { white-space: normal; word-break: break-word; }
 
   /* ── Drawer push content ── */
   .app-content { transition: margin-right 0.3s ease; }

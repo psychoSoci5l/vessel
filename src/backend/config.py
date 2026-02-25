@@ -157,7 +157,7 @@ OLLAMA_PC_DEEP_SYSTEM = _build_system_prompt(
     "ma puoi aiutare con qualsiasi cosa."
 )
 
-# ─── Claude Bridge (Remote Code) ────────────────────────────────────────────
+# ─── Claude Bridge (PC Monitoring) ──────────────────────────────────────────
 # Config letta da ~/.nanobot/bridge.json (url, token)
 # oppure override via env var CLAUDE_BRIDGE_URL / CLAUDE_BRIDGE_TOKEN
 _bridge_cfg = _get_config("bridge.json")
@@ -166,8 +166,6 @@ if not _bridge_cfg:
 
 CLAUDE_BRIDGE_URL = os.environ.get("CLAUDE_BRIDGE_URL", _bridge_cfg.get("url", "http://localhost:8095"))
 CLAUDE_BRIDGE_TOKEN = os.environ.get("CLAUDE_BRIDGE_TOKEN", _bridge_cfg.get("token", ""))
-CLAUDE_TASKS_LOG = Path.home() / ".nanobot" / "claude_tasks.jsonl"
-TASK_TIMEOUT = 600  # 10 min max per task Claude Bridge
 
 # ─── OpenRouter (DeepSeek V3) ────────────────────────────────────────────────
 _or_cfg = _get_config("openrouter.json")
@@ -373,7 +371,7 @@ def _validate_config():
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         warnings.append("Telegram non configurato — polling/notifiche disabilitati")
     if not CLAUDE_BRIDGE_TOKEN:
-        warnings.append("Bridge token mancante — remote task disabilitati")
+        warnings.append("Bridge token mancante — monitoraggio PC disabilitato")
     if not GROQ_API_KEY:
         warnings.append("Groq API key mancante — trascrizione vocale non disponibile")
     for w in warnings:

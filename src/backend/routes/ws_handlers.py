@@ -168,42 +168,6 @@ async def handle_shutdown(websocket, msg, ctx):
     await asyncio.sleep(0.5)
     subprocess.run(["sudo", "shutdown", "-h", "now"])
 
-async def handle_claude_task(websocket, msg, ctx):
-    prompt = msg.get("prompt", "").strip()[:10000]
-    use_loop = msg.get("use_loop", False)
-    if not prompt:
-        await websocket.send_json({"type": "toast", "text": "⚠️ Prompt vuoto"})
-        return
-    if not CLAUDE_BRIDGE_TOKEN:
-        await websocket.send_json({"type": "toast", "text": "⚠️ Bridge non configurato"})
-        return
-    ip = websocket.client.host
-    if not _rate_limit(ip, "claude_task", 5, 3600):
-        await websocket.send_json({"type": "toast", "text": "⚠️ Limite task raggiunto (max 5/ora)"})
-        return
-    db_log_audit("claude_task", actor=ip, resource=prompt[:100])
-    await websocket.send_json({"type": "claude_thinking"})
-    await broadcast_tamagotchi("WORKING")
-    await run_claude_task_stream(websocket, prompt, use_loop=use_loop)
-    await broadcast_tamagotchi("PROUD")
-
-async def handle_claude_cancel(websocket, msg, ctx):
-    try:
-        payload = json.dumps({"token": CLAUDE_BRIDGE_TOKEN}).encode()
-        req = urllib.request.Request(f"{CLAUDE_BRIDGE_URL}/cancel", data=payload, headers={"Content-Type": "application/json"}, method="POST")
-        with urllib.request.urlopen(req, timeout=5): pass
-        await websocket.send_json({"type": "toast", "text": "✅ Task cancellato"})
-    except Exception as e:
-        await websocket.send_json({"type": "toast", "text": f"⚠️ Errore cancel: {e}"})
-
-async def handle_check_bridge(websocket, msg, ctx):
-    health = await bg(check_bridge_health)
-    await websocket.send_json({"type": "bridge_status", "data": health})
-
-async def handle_get_claude_tasks(websocket, msg, ctx):
-    tasks = get_claude_tasks(10)
-    await websocket.send_json({"type": "claude_tasks", "tasks": tasks})
-
 async def handle_search_memory(websocket, msg, ctx):
     results = await bg(db_search_chat,
                        msg.get("keyword", ""),
@@ -287,10 +251,6 @@ WS_DISPATCHER = {
     "gateway_restart": handle_gateway_restart,
     "reboot": handle_reboot,
     "shutdown": handle_shutdown,
-    "claude_task": handle_claude_task,
-    "claude_cancel": handle_claude_cancel,
-    "check_bridge": handle_check_bridge,
-    "get_claude_tasks": handle_get_claude_tasks,
     "search_memory": handle_search_memory,
     "get_entities": handle_get_entities,
     "toggle_memory": handle_toggle_memory,

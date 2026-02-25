@@ -44,7 +44,5 @@
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (activeDrawer) closeDrawer();
-      const outFs = document.getElementById('output-fullscreen');
-      if (outFs && outFs.classList.contains('show')) closeOutputFullscreen();
     }
   });

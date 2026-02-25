@@ -159,28 +159,6 @@ button {
 .cron-cmd { font-size: 11px; color: var(--text2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cron-desc { font-size: 10px; color: var(--muted); margin-top: 2px; }
 
-/* Remote Code */
-.claude-output { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-family: var(--font); font-size: 11px; line-height: 1.6; color: var(--text2); max-height: 500px; overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
-.claude-output-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
-.claude-output-header span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
-.output-fs-content { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: var(--font); font-size: 12px; line-height: 1.6; color: var(--text2); max-height: calc(90vh - 90px); overflow-y: auto; white-space: pre-wrap; word-break: break-word; }
-
-.claude-tasks-scroll { overflow-y: auto; }
-.claude-task-item { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin-bottom: 6px; transition: border-color .15s; }
-.claude-task-item:hover { border-color: var(--accent3); }
-.claude-task-prompt { font-size: 11px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
-.claude-task-meta { font-size: 10px; color: var(--muted); display: flex; gap: 10px; }
-.claude-task-status { font-weight: 600; }
-.claude-task-status.done { color: var(--accent); }
-.claude-task-status.error { color: var(--red); }
-.claude-task-status.cancelled { color: var(--muted); }
-
-.ralph-marker { color: var(--accent); font-weight: 700; padding: 6px 0 2px; font-size: 11px; border-top: 1px solid var(--border); margin-top: 4px; }
-.ralph-supervisor { color: #f0c040; font-size: 11px; padding: 2px 0; font-style: italic; }
-.ralph-info { color: var(--muted); font-size: 10px; padding: 2px 0; }
-.claude-tool-use { color: var(--cyan); font-size: 11px; padding: 2px 0; border-left: 2px solid var(--cyan); padding-left: 8px; margin: 2px 0; }
-.claude-tool-info { color: var(--text2); font-size: 11px; padding: 1px 0; opacity: 0.8; }
-
 /* ── Modals ── */
 .modal-overlay {
   position: fixed; inset: 0;

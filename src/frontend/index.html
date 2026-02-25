@@ -154,18 +154,13 @@
       <!-- ═══ TAB: CODE ═══ -->
       <div id="tab-code" class="tab-view">
         <div class="code-header">
-          <div class="code-tabs">
-            <button class="code-tab active" onclick="switchCodePanel('chat', this)">Chat</button>
-            <button class="code-tab" onclick="switchCodePanel('task', this)">Task</button>
-          </div>
           <span class="code-spacer"></span>
           <div id="chat-health-dot" class="health-dot" title="Salute Pi"></div>
           <span id="chat-temp" class="code-temp">--</span>
           <span id="chat-clock" class="code-clock">--:--:--</span>
         </div>
 
-        <!-- Chat panel -->
-        <div id="code-chat" class="code-panel active">
+        <div id="code-chat" class="code-panel">
           <div id="chat-messages">
             <div class="msg msg-bot">Eyyy, sono Vessel &#x1F408; &mdash; dimmi cosa vuoi, psychoSocial.</div>
           </div>
@@ -199,15 +194,6 @@
               <span style="flex:1;"></span>
               <button class="btn-icon" id="memory-toggle" onclick="toggleMemory()" title="Memoria persistente" style="opacity:0.4;">&#x1F9E0;</button>
               <button class="btn-icon" onclick="clearChat()" title="Pulisci chat">&#x2715;</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Task panel -->
-        <div id="code-task" class="code-panel">
-          <div class="task-scroll">
-            <div id="claude-body">
-              <div class="widget-placeholder"><span class="ph-icon">&gt;_</span><span>Carica per verificare lo stato del bridge</span></div>
             </div>
           </div>
         </div>
@@ -437,20 +423,6 @@
     <div class="reboot-status" id="reboot-status">In attesa che il Pi torni online</div>
   </div>
 
-  <!-- Overlay output fullscreen -->
-  <div class="modal-overlay" id="output-fullscreen" onclick="closeOutputFullscreen()">
-    <div class="modal-box modal-wide" onclick="event.stopPropagation()">
-      <div class="modal-wide-header">
-        <span>OUTPUT</span>
-        <div style="display:flex;gap:6px;">
-          <button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('output-fs-content').textContent)">&#x1F4CB; Copia</button>
-          <button class="btn-ghost btn-sm" onclick="closeOutputFullscreen()">&#x2715; Chiudi</button>
-        </div>
-      </div>
-      <div id="output-fs-content" class="output-fs-content"></div>
-    </div>
-  </div>
-
   <!-- Help modal -->
   <div class="modal-overlay" id="help-modal" onclick="closeHelpModal()">
     <div class="help-modal-box" onclick="event.stopPropagation()">
@@ -459,16 +431,6 @@
         <button class="btn-ghost btn-sm" onclick="closeHelpModal()">&#x2715;</button>
       </div>
       <div class="help-modal-body">
-        <div class="help-section">
-          <div class="help-section-title">WIDGET CODE &mdash; ROUTING</div>
-          <div class="help-table">
-            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">ANALIZZA</span><span class="help-kw">analizza &middot; spiega &middot; mostra &middot; log</span><span class="help-mode">one-shot</span></div>
-            <div class="help-row"><span class="help-badge" style="color:var(--accent);border-color:var(--accent);">CREA</span><span class="help-kw">crea &middot; genera &middot; scrivi &middot; implementa</span><span class="help-mode">one-shot</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">MODIFICA</span><span class="help-kw">modifica &middot; aggiorna &middot; cambia &middot; refactor</span><span class="help-mode loop">&#x27F3; loop</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#ff5555;border-color:#ff5555;">DEBUG</span><span class="help-kw">debug &middot; errore &middot; fix &middot; correggi</span><span class="help-mode loop">&#x27F3; loop</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">DEPLOY</span><span class="help-kw">deploy &middot; installa &middot; avvia &middot; setup</span><span class="help-mode loop">&#x27F3; loop</span></div>
-          </div>
-        </div>
         <div class="help-section">
           <div class="help-section-title">PROVIDER CHAT</div>
           <div class="help-table">

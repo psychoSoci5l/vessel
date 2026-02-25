@@ -19,44 +19,17 @@
   flex-shrink: 0;
 }
 
-.code-tabs {
-  display: flex;
-  gap: 4px;
-}
-
-.code-tab {
-  padding: 6px 14px;
-  border-radius: 4px;
-  font-size: 11px;
-  cursor: pointer;
-  background: transparent;
-  color: var(--muted);
-  border: 1px solid transparent;
-  font-family: var(--font);
-  font-weight: 600;
-  min-height: 32px;
-  transition: all .15s;
-}
-
-.code-tab.active {
-  background: var(--accent-dim);
-  color: var(--accent);
-  border-color: var(--accent3);
-  text-shadow: var(--glow-text);
-}
-
 .code-spacer { flex: 1; }
 .code-temp { font-size: 11px; color: var(--text2); }
 .code-clock { font-size: 11px; color: var(--amber); letter-spacing: 1px; }
 
-/* Code panels */
+/* Code panel */
 .code-panel {
-  display: none;
+  display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
 }
-.code-panel.active { display: flex; }
 
 /* Chat */
 #chat-messages {
@@ -282,11 +255,3 @@
 .agent-badge[data-agent="coder"]      { color: #00e5ff; border: 1px solid #00e5ff44; }
 .agent-badge[data-agent="sysadmin"]   { color: #ffab00; border: 1px solid #ffab0044; }
 .agent-badge[data-agent="researcher"] { color: #aa00ff; border: 1px solid #aa00ff44; }
-
-/* Task panel */
-.task-scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 14px;
-  -webkit-overflow-scrolling: touch;
-}
