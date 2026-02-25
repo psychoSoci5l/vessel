@@ -37,13 +37,13 @@
     el.innerHTML = `
       <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
         <input type="date" id="log-date-filter" value="${dateVal}" class="input-field input-date" style="min-width:130px;flex:0;">
-        <input type="text" id="log-search-filter" placeholder="🔍 cerca…" value="${searchVal}" class="input-field">
-        <button class="btn-green btn-sm" onclick="loadLogs()">🔍</button>
+        <input type="text" id="log-search-filter" placeholder="> cerca…" value="${searchVal}" class="input-field">
+        <button class="btn-green btn-sm" onclick="loadLogs()">></button>
         <button class="btn-ghost btn-sm" onclick="clearLogFilters()">✕</button>
       </div>
       <div style="font-size:10px;color:var(--muted);margin-bottom:6px;">${countInfo}</div>
       <div class="mono-block" style="max-height:240px;">${content}</div>
-      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost btn-sm" onclick="loadLogs()">↻</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">📋</button></div>`;
+      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost btn-sm" onclick="loadLogs()">↻</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.querySelector('#logs-body .mono-block')?.textContent||'')">[cp]</button></div>`;
     document.getElementById('log-search-filter')?.addEventListener('keydown', e => {
       if (e.key === 'Enter') loadLogs();
     });

@@ -42,6 +42,15 @@
   white-space: nowrap;
 }
 
+.dash-weather {
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
 .dash-sep {
   color: var(--muted);
   font-size: 10px;
@@ -82,7 +91,7 @@
   padding: 14px 16px;
   margin-bottom: 14px;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .sigil-widget::before {

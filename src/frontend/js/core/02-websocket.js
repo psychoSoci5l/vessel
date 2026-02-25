@@ -10,7 +10,6 @@
       }
       if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
       setTimeout(() => {
-        send({ action: 'get_crypto' });
         send({ action: 'plugin_weather' });
         send({ action: 'get_tokens' });
         send({ action: 'get_briefing' });
@@ -78,7 +77,7 @@
     else if (msg.type === 'tokens')  { renderTokens(msg.data); }
     else if (msg.type === 'usage_report') { renderUsageReport(msg.data); }
     else if (msg.type === 'briefing') { renderBriefing(msg.data); }
-    else if (msg.type === 'crypto')   { renderCrypto(msg.data); }
+    else if (msg.type === 'crypto')   { if (typeof renderCrypto === 'function') renderCrypto(msg.data); }
     else if (msg.type === 'toast')   { showToast(msg.text); }
     else if (msg.type === 'reboot_ack') { startRebootWait(); }
     else if (msg.type === 'shutdown_ack') { document.getElementById('reboot-overlay').classList.add('show'); document.getElementById('reboot-status').textContent = 'Il Pi si sta spegnendo…'; document.querySelector('.reboot-text').textContent = 'Spegnimento in corso…'; }

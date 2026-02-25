@@ -70,17 +70,8 @@
   #chat-input { font-size: 13px; }
   .msg { max-width: 75%; }
 
-  /* ── System Tab: 2-column grid ── */
-  #tab-system .tab-scroll {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
-    align-content: start;
-  }
-
-  .sys-header { grid-column: 1 / -1; padding-bottom: 0; }
-  .sys-actions { grid-column: 1 / -1; }
-  #sys-cron { grid-column: 1 / -1; }
+  /* ── System Tab ── */
+  .sys-header { padding-bottom: 0; }
 
   /* ── Profile Tab: 2-column grid ── */
   #tab-profile .tab-scroll {
@@ -92,6 +83,7 @@
 
   .prof-header { grid-column: 1 / -1; padding-bottom: 0; }
   .prof-section-mem { grid-column: 1 / -1; }
+  .prof-section:last-child { grid-column: 1 / -1; }
 
   /* ── Drawer Desktop: side panel destro (Fase 22) ── */
   .drawer {

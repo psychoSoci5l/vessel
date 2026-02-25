@@ -41,6 +41,7 @@
               <span class="sigil-label" id="sigil-label">SIGIL</span>
             </div>
             <span class="dash-spacer"></span>
+            <span class="dash-weather" id="home-weather-text"></span>
             <span class="dash-temp" id="home-temp">--</span>
             <span class="dash-sep">&middot;</span>
             <span id="home-clock" class="dash-clock">--:--:--</span>
@@ -138,11 +139,11 @@
                 <div class="wc-header"><span class="wc-label">TOKEN</span><span class="wc-icon">&#x00A4;</span></div>
                 <div class="wc-body" id="wt-tokens-preview">--</div>
               </div>
-              <div class="widget-card" data-widget="logs" onclick="switchView('system');scrollToSys('sys-logs')">
+              <div class="widget-card" data-widget="logs" onclick="openDrawer('logs')">
                 <div class="wc-header"><span class="wc-label">LOGS</span><span class="wc-icon">&#x2261;</span></div>
                 <div class="wc-body" id="wt-logs-preview">--</div>
               </div>
-              <div class="widget-card" data-widget="cron" onclick="switchView('system');scrollToSys('sys-cron')">
+              <div class="widget-card" data-widget="cron" onclick="openDrawer('cron')">
                 <div class="wc-header"><span class="wc-label">JOBS</span><span class="wc-icon">&#x25C7;</span></div>
                 <div class="wc-body" id="wt-cron-preview">--</div>
               </div>
@@ -162,7 +163,7 @@
 
         <div id="code-chat" class="code-panel">
           <div id="chat-messages">
-            <div class="msg msg-bot">Eyyy, sono Vessel &#x1F408; &mdash; dimmi cosa vuoi, psychoSocial.</div>
+            <div class="msg msg-bot">Eyyy, sono Vessel &mdash; dimmi cosa vuoi, psychoSocial.</div>
           </div>
           <div class="code-input-area">
             <div class="code-input-row">
@@ -190,10 +191,10 @@
               <select id="prompt-select" class="prompt-select" onchange="loadSavedPrompt()" title="Template salvati">
                 <option value="">Template...</option>
               </select>
-              <button class="btn-icon" onclick="saveCurrentPrompt()" title="Salva come template">&#x1F4BE;</button>
-              <button class="btn-icon" onclick="deleteSavedPrompt()" title="Elimina template">&#x1F5D1;</button>
+              <button class="btn-icon" onclick="saveCurrentPrompt()" title="Salva come template">[+]</button>
+              <button class="btn-icon" onclick="deleteSavedPrompt()" title="Elimina template">[-]</button>
               <span style="flex:1;"></span>
-              <button class="btn-icon" id="memory-toggle" onclick="toggleMemory()" title="Memoria persistente" style="opacity:0.4;">&#x1F9E0;</button>
+              <button class="btn-icon" id="memory-toggle" onclick="toggleMemory()" title="Memoria persistente" style="opacity:0.4;">&#x25C8;</button>
               <button class="btn-icon" onclick="clearChat()" title="Pulisci chat">&#x2715;</button>
             </div>
           </div>
@@ -216,28 +217,6 @@
             </div>
             <div class="session-list" id="session-list">
               <div class="no-items">Caricamento&hellip;</div>
-            </div>
-          </div>
-
-          <!-- Logs -->
-          <div class="sys-section" id="sys-logs">
-            <div class="sys-section-head">
-              <span class="sys-section-title">LOG</span>
-              <button class="btn-ghost btn-sm" onclick="loadLogs()">&#x21BB; Carica</button>
-            </div>
-            <div id="logs-body">
-              <div class="widget-placeholder"><span class="ph-icon">&#x2261;</span><span>Premi Carica per i log</span></div>
-            </div>
-          </div>
-
-          <!-- Cron -->
-          <div class="sys-section" id="sys-cron">
-            <div class="sys-section-head">
-              <span class="sys-section-title">CRON JOBS</span>
-              <button class="btn-ghost btn-sm" onclick="loadCron()">&#x21BB; Carica</button>
-            </div>
-            <div id="cron-body">
-              <div class="widget-placeholder"><span class="ph-icon">&#x25C7;</span><span>Premi Carica per i cron</span></div>
             </div>
           </div>
 
@@ -278,6 +257,7 @@
               <div class="prof-prov"><span class="dot dot-pc-coder"></span><span class="prof-prov-name">PC Coder</span><span class="prof-prov-info">Qwen 14B &mdash; LAN</span></div>
               <div class="prof-prov"><span class="dot dot-pc-deep"></span><span class="prof-prov-name">PC Deep</span><span class="prof-prov-info">Qwen 30B &mdash; LAN</span></div>
               <div class="prof-prov"><span class="dot dot-deepseek"></span><span class="prof-prov-name">DeepSeek</span><span class="prof-prov-info">DeepSeek V3 &mdash; cloud</span></div>
+              <div class="prof-prov"><span class="dot dot-brain"></span><span class="prof-prov-name">Brain</span><span class="prof-prov-info">Claude Code CLI &mdash; bridge</span></div>
             </div>
           </div>
 
@@ -300,16 +280,6 @@
             <div id="theme-selector" class="theme-selector"></div>
           </div>
 
-          <!-- Crypto + Meteo -->
-          <div class="prof-section">
-            <div class="prof-section-title">MERCATI &amp; METEO</div>
-            <div class="prof-market">
-              <span style="color:var(--amber);">&#x20BF; <span id="home-btc-price">--</span></span>
-              <span style="color:var(--cyan);">&#x039E; <span id="home-eth-price">--</span></span>
-              <span style="color:var(--text2);">&#x1F324; <span id="home-weather-text">--</span></span>
-            </div>
-          </div>
-
           <!-- Memoria -->
           <div class="prof-section prof-section-mem">
             <div class="prof-section-title">MEMORIA</div>
@@ -323,15 +293,15 @@
             <div class="mem-panels">
               <div id="tab-memory" class="tab-content active">
                 <div class="mono-block" id="memory-content">Caricamento&hellip;</div>
-                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshMemory()">&#x21BB;</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('memory-content').textContent)">&#x1F4CB;</button></div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshMemory()">&#x21BB;</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('memory-content').textContent)">[cp]</button></div>
               </div>
               <div id="tab-history" class="tab-content">
                 <div class="mono-block" id="history-content">Premi Carica&hellip;</div>
-                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshHistory()">&#x21BB; Carica</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('history-content').textContent)">&#x1F4CB;</button></div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshHistory()">&#x21BB; Carica</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('history-content').textContent)">[cp]</button></div>
               </div>
               <div id="tab-quickref" class="tab-content">
                 <div class="mono-block" id="quickref-content">Caricamento&hellip;</div>
-                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">&#x1F4CB;</button></div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">[cp]</button></div>
               </div>
               <div id="tab-search" class="tab-content">
                 <div class="search-row">
@@ -397,8 +367,11 @@
         <div class="drawer-widget" id="dw-tokens">
           <div id="tokens-body"><div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Premi Carica per i token</span></div></div>
         </div>
-        <div class="drawer-widget" id="dw-crypto">
-          <div id="crypto-body"><div class="widget-placeholder"><span class="ph-icon">&#x20BF;</span><span>Premi Carica per crypto</span></div></div>
+        <div class="drawer-widget" id="dw-logs">
+          <div id="logs-body"><div class="widget-placeholder"><span class="ph-icon">&#x2261;</span><span>Premi Carica per i log</span></div></div>
+        </div>
+        <div class="drawer-widget" id="dw-cron">
+          <div id="cron-body"><div class="widget-placeholder"><span class="ph-icon">&#x25C7;</span><span>Premi Carica per i cron</span></div></div>
         </div>
       </div>
     </div>
@@ -451,6 +424,7 @@
             <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">PC Coder</span><span class="help-kw">Qwen 14B &mdash; GPU LAN</span></div>
             <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">PC Deep</span><span class="help-kw">Qwen 30B &mdash; LAN</span></div>
             <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">DeepSeek</span><span class="help-kw">DeepSeek V3 &mdash; cloud</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#00d4ff;border-color:#00d4ff;">Brain</span><span class="help-kw">Claude Code CLI &mdash; bridge</span></div>
           </div>
         </div>
         <div class="help-section">

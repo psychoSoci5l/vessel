@@ -8,14 +8,14 @@
   // ── Clipboard ──
   function copyToClipboard(text) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(() => showToast('📋 Copiato')).catch(() => _fallbackCopy(text));
+      navigator.clipboard.writeText(text).then(() => showToast('[cp] Copiato')).catch(() => _fallbackCopy(text));
     } else { _fallbackCopy(text); }
   }
   function _fallbackCopy(text) {
     const ta = document.createElement('textarea');
     ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
     document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); showToast('📋 Copiato'); } catch(e) { showToast('Copia non riuscita'); }
+    try { document.execCommand('copy'); showToast('[cp] Copiato'); } catch(e) { showToast('Copia non riuscita'); }
     document.body.removeChild(ta);
   }
 
@@ -40,7 +40,7 @@
           if (r.ok) {
             clearInterval(timer); clearInterval(tryReconnect);
             document.getElementById('reboot-overlay').classList.remove('show');
-            showToast('✅ Pi riavviato');
+            showToast('[ok] Pi riavviato');
             if (ws) { try { ws.close(); } catch(e) {} }
             connect();
           }

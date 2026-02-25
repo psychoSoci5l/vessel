@@ -16,13 +16,6 @@
     if (tabName === 'dashboard') requestAnimationFrame(() => drawChart());
   }
 
-  function scrollToSys(sectionId) {
-    setTimeout(() => {
-      const el = document.getElementById(sectionId);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 100);
-  }
-
   // ── Memory Tabs ──
   function switchMemTab(name, btn) {
     const section = btn.closest('.prof-section');

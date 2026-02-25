@@ -28,7 +28,7 @@
       div.style.maxWidth = '100%';
       div.textContent = text;
       const btn = document.createElement('button');
-      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';
+      btn.className = 'copy-btn'; btn.textContent = '[cp]'; btn.title = 'Copia';
       btn.onclick = () => copyToClipboard(div.textContent);
       wrap.appendChild(div); wrap.appendChild(btn);
       box.appendChild(wrap);
@@ -78,7 +78,7 @@
       box.insertBefore(wrap, streamDiv);
       wrap.appendChild(streamDiv);
       const btn = document.createElement('button');
-      btn.className = 'copy-btn'; btn.textContent = '📋'; btn.title = 'Copia';
+      btn.className = 'copy-btn'; btn.textContent = '[cp]'; btn.title = 'Copia';
       btn.onclick = () => copyToClipboard(streamDiv.textContent);
       wrap.appendChild(btn);
     }
@@ -96,7 +96,7 @@
 
   function clearChat() {
     document.getElementById('chat-messages').innerHTML =
-      '<div class="msg msg-bot">Chat pulita 🧹</div>';
+      '<div class="msg msg-bot">Chat pulita</div>';
     send({ action: 'clear_chat' });
   }
 

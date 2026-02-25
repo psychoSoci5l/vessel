@@ -18,7 +18,7 @@ async def handle_chat(websocket, msg, ctx):
     if not text: return
     ip = websocket.client.host
     if not _rate_limit(ip, "chat", 20, 60):
-        await websocket.send_json({"type": "chat_reply", "text": "⚠️ Troppi messaggi. Attendi un momento."})
+        await websocket.send_json({"type": "chat_reply", "text": "[!] Troppi messaggi. Attendi un momento."})
         return
     await websocket.send_json({"type": "chat_thinking"})
     await broadcast_tamagotchi("THINKING")
@@ -84,29 +84,29 @@ async def handle_get_cron(websocket, msg, ctx):
 async def handle_add_cron(websocket, msg, ctx):
     ip = websocket.client.host
     if not _rate_limit(ip, "cron", 10, 60):
-        await websocket.send_json({"type": "toast", "text": "⚠️ Troppi tentativi"})
+        await websocket.send_json({"type": "toast", "text": "[!] Troppi tentativi"})
         return
     sched = msg.get("schedule", "")
     cmd = msg.get("command", "")
     result = await bg(add_cron_job, sched, cmd)
     if result == "ok":
         db_log_audit("cron_add", actor=ip, resource=f"{sched} {cmd}")
-        await websocket.send_json({"type": "toast", "text": "✅ Cron job aggiunto"})
+        await websocket.send_json({"type": "toast", "text": "[ok] Cron job aggiunto"})
         jobs = await bg(get_cron_jobs)
         await websocket.send_json({"type": "cron", "jobs": jobs})
     else:
-        await websocket.send_json({"type": "toast", "text": f"⚠️ {result}"})
+        await websocket.send_json({"type": "toast", "text": f"[!] {result}"})
 
 async def handle_delete_cron(websocket, msg, ctx):
     idx = msg.get("index", -1)
     result = await bg(delete_cron_job, idx)
     if result == "ok":
         db_log_audit("cron_delete", actor=websocket.client.host, resource=f"index={idx}")
-        await websocket.send_json({"type": "toast", "text": "✅ Cron job rimosso"})
+        await websocket.send_json({"type": "toast", "text": "[ok] Cron job rimosso"})
         jobs = await bg(get_cron_jobs)
         await websocket.send_json({"type": "cron", "jobs": jobs})
     else:
-        await websocket.send_json({"type": "toast", "text": f"⚠️ {result}"})
+        await websocket.send_json({"type": "toast", "text": f"[!] {result}"})
 
 async def handle_get_tokens(websocket, msg, ctx):
     ts = await bg(get_token_stats)
@@ -128,33 +128,33 @@ async def handle_get_briefing(websocket, msg, ctx):
     await websocket.send_json({"type": "briefing", "data": bd})
 
 async def handle_run_briefing(websocket, msg, ctx):
-    await websocket.send_json({"type": "toast", "text": "⏳ Generazione briefing…"})
+    await websocket.send_json({"type": "toast", "text": "[..] Generazione briefing…"})
     bd = await bg(run_briefing)
     await websocket.send_json({"type": "briefing", "data": bd})
-    await websocket.send_json({"type": "toast", "text": "✅ Briefing generato con successo", "notify": True})
+    await websocket.send_json({"type": "toast", "text": "[ok] Briefing generato con successo", "notify": True})
 
 async def handle_tmux_kill(websocket, msg, ctx):
     session = msg.get("session", "")
     active = {s["name"] for s in get_tmux_sessions()}
     if session not in active:
-        await websocket.send_json({"type": "toast", "text": "⚠️ Sessione non trovata tra quelle attive"})
+        await websocket.send_json({"type": "toast", "text": "[!] Sessione non trovata tra quelle attive"})
     elif not session.startswith("nanobot"):
-        await websocket.send_json({"type": "toast", "text": f"⚠️ Solo sessioni nanobot-* possono essere terminate"})
+        await websocket.send_json({"type": "toast", "text": f"[!] Solo sessioni nanobot-* possono essere terminate"})
     else:
         r = subprocess.run(["tmux", "kill-session", "-t", session], capture_output=True, text=True, timeout=10)
         result = (r.stdout + r.stderr).strip()
-        await websocket.send_json({"type": "toast", "text": f"✅ Sessione {session} terminata" if not result else f"⚠️ {result}"})
+        await websocket.send_json({"type": "toast", "text": f"[ok] Sessione {session} terminata" if not result else f"[!] {result}"})
 
 async def handle_gateway_restart(websocket, msg, ctx):
     subprocess.run(["tmux", "kill-session", "-t", "nanobot-gateway"], capture_output=True, text=True, timeout=10)
     await asyncio.sleep(1)
     subprocess.run(["tmux", "new-session", "-d", "-s", "nanobot-gateway", "nanobot", "gateway"], capture_output=True, text=True, timeout=10)
-    await websocket.send_json({"type": "toast", "text": "✅ Gateway riavviato"})
+    await websocket.send_json({"type": "toast", "text": "[ok] Gateway riavviato"})
 
 async def handle_reboot(websocket, msg, ctx):
     ip = websocket.client.host
     if not _rate_limit(ip, "reboot", 1, 300):
-        await websocket.send_json({"type": "toast", "text": "⚠️ Reboot già richiesto di recente"})
+        await websocket.send_json({"type": "toast", "text": "[!] Reboot già richiesto di recente"})
         return
     db_log_audit("reboot", actor=ip)
     await manager.broadcast({"type": "reboot_ack"})
@@ -164,7 +164,7 @@ async def handle_reboot(websocket, msg, ctx):
 async def handle_shutdown(websocket, msg, ctx):
     ip = websocket.client.host
     if not _rate_limit(ip, "shutdown", 1, 300):
-        await websocket.send_json({"type": "toast", "text": "⚠️ Shutdown già richiesto di recente"})
+        await websocket.send_json({"type": "toast", "text": "[!] Shutdown già richiesto di recente"})
         return
     db_log_audit("shutdown", actor=ip)
     await manager.broadcast({"type": "shutdown_ack"})

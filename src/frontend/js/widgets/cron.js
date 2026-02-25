@@ -28,7 +28,7 @@
   function addCron() {
     const sched = document.getElementById('cron-schedule').value.trim();
     const cmd = document.getElementById('cron-command').value.trim();
-    if (!sched || !cmd) { showToast('⚠️ Compila schedule e comando'); return; }
+    if (!sched || !cmd) { showToast('[!] Compila schedule e comando'); return; }
     send({ action: 'add_cron', schedule: sched, command: cmd });
   }
   function deleteCron(index) { send({ action: 'delete_cron', index: index }); }

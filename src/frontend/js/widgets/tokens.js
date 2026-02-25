@@ -10,7 +10,7 @@
       const model = (data.last_model || '').split('-').pop() || '';
       tp.textContent = fmt(inTok) + ' in / ' + fmt(outTok) + ' out' + (model ? ' · ' + model : '');
     }
-    const src = data.source === 'api' ? '🌐 API' : '📁 Local';
+    const src = data.source === 'api' ? '~ API' : '> Local';
     document.getElementById('tokens-body').innerHTML = `
       <div class="token-grid">
         <div class="token-item"><div class="token-label">Input</div><div class="token-value">${(data.today_input||0).toLocaleString()}</div></div>
@@ -21,7 +21,7 @@
         MODELLO: <span style="color:var(--cyan)">${esc(data.last_model||'N/A')}</span> · FONTE: <span style="color:var(--text2)">${src}</span>
       </div>
       <div class="mono-block" style="max-height:100px;">${(data.log_lines||[]).map(l=>esc(l)).join('\n')||'// nessun log'}</div>
-      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost btn-sm" onclick="loadTokens()">↻</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('tokens-body').textContent)">📋</button></div>`;
+      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost btn-sm" onclick="loadTokens()">↻</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('tokens-body').textContent)">[cp]</button></div>`;
   }
 
   // ── Usage Report ──

@@ -224,7 +224,7 @@ async def _execute_chat(message, chat_history, provider_id, system_prompt, model
             if on_chunk:
                 await on_chunk(last_error)
                 return "", actual_pid, 0
-            return f"⚠️ Provider non disponibile: {last_error}", actual_pid, 0
+            return f"[!] Provider non disponibile: {last_error}", actual_pid, 0
 
         if attempt > 0 and on_chunk:
             await on_chunk(f"\n⚡ Failover → {try_pid}\n")
