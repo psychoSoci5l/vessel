@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
+<script>(function(){var t=localStorage.getItem('vessel-theme');if(t)document.documentElement.setAttribute('data-theme',t);})()</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -15,11 +16,59 @@
 <title>Vessel — Login</title>
 <style>
   :root {
-    --bg: #060a06; --bg2: #0b110b; --card: #0e160e; --border: #1a2e1a;
-    --border2: #254025; --accent: #00ff41; --accent2: #00cc33; --accent3: #009922;
-    --accent-dim: #003311; --red: #ff3333; --muted: #3d6b3d; --text: #c8ffc8;
+    --bg: #020502; --bg2: #081208; --card: #0a1a0a; --card2: #0f220f;
+    --border: #162816; --border2: #1e3a1e;
+    --accent: #00ff41; --accent2: #00dd38; --accent3: #00aa2a; --accent-dim: #002a0e;
+    --glow-sm: 0 0 4px rgba(0,255,65,0.4);
+    --glow-md: 0 0 8px rgba(0,255,65,0.3), 0 0 20px rgba(0,255,65,0.12);
+    --red: #ff3333; --muted: #3d6b3d; --text: #c8ffc8; --text2: #7ab87a;
     --amber: #ffb000; --btn-hover: #004422;
     --font: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+  [data-theme="amber"] {
+    --bg: #050300; --bg2: #0f0a04; --card: #1a1008; --card2: #22160a;
+    --border: #2e2010; --border2: #3e2e18;
+    --accent: #ffb000; --accent2: #dd9800; --accent3: #aa7400; --accent-dim: #2a1a00;
+    --glow-sm: 0 0 4px rgba(255,176,0,0.4);
+    --glow-md: 0 0 8px rgba(255,176,0,0.3), 0 0 20px rgba(255,176,0,0.12);
+    --red: #ff3333; --muted: #6b5530; --text: #ffe0a0; --text2: #b89860;
+    --amber: #ff8800; --btn-hover: #442200;
+  }
+  [data-theme="cyan"] {
+    --bg: #000305; --bg2: #040a10; --card: #081420; --card2: #0c1c2a;
+    --border: #102838; --border2: #183a4e;
+    --accent: #00ffcc; --accent2: #00ddaa; --accent3: #00aa88; --accent-dim: #002a22;
+    --glow-sm: 0 0 4px rgba(0,255,204,0.4);
+    --glow-md: 0 0 8px rgba(0,255,204,0.3), 0 0 20px rgba(0,255,204,0.12);
+    --red: #ff3333; --muted: #305858; --text: #c0f0f0; --text2: #6aa8a8;
+    --amber: #44aaff; --btn-hover: #003344;
+  }
+  [data-theme="red"] {
+    --bg: #050000; --bg2: #100404; --card: #1a0808; --card2: #220c0c;
+    --border: #2e1414; --border2: #3e1e1e;
+    --accent: #ff3333; --accent2: #dd2828; --accent3: #aa1e1e; --accent-dim: #2a0808;
+    --glow-sm: 0 0 4px rgba(255,51,51,0.4);
+    --glow-md: 0 0 8px rgba(255,51,51,0.3), 0 0 20px rgba(255,51,51,0.12);
+    --red: #ff5555; --muted: #6b3d3d; --text: #ffc8c8; --text2: #b87a7a;
+    --amber: #ff8844; --btn-hover: #440000;
+  }
+  [data-theme="sigil"] {
+    --bg: #050208; --bg2: #0a0614; --card: #120820; --card2: #180c2a;
+    --border: #251440; --border2: #351e58;
+    --accent: #b44dff; --accent2: #9b3de0; --accent3: #6a2d9e; --accent-dim: #1a0a2a;
+    --glow-sm: 0 0 4px rgba(180,77,255,0.4);
+    --glow-md: 0 0 8px rgba(180,77,255,0.3), 0 0 20px rgba(180,77,255,0.12);
+    --red: #ff0040; --muted: #5a3878; --text: #e0d0f0; --text2: #9878b8;
+    --amber: #e0a0ff; --btn-hover: #2a1048;
+  }
+  [data-theme="ghost"] {
+    --bg: #020202; --bg2: #0a0a0a; --card: #111111; --card2: #1a1a1a;
+    --border: #252525; --border2: #333333;
+    --accent: #e0e0e0; --accent2: #bbbbbb; --accent3: #888888; --accent-dim: #1a1a1a;
+    --glow-sm: 0 0 4px rgba(224,224,224,0.3);
+    --glow-md: 0 0 8px rgba(224,224,224,0.2), 0 0 20px rgba(224,224,224,0.08);
+    --red: #cc4444; --muted: #555555; --text: #d0d0d0; --text2: #888888;
+    --amber: #aa9966; --btn-hover: #2a2a2a;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -32,7 +81,7 @@
   .login-box {
     background: var(--card); border: 1px solid var(--border2); border-radius: 8px;
     padding: 36px 32px 28px; width: min(380px, 90vw); text-align: center;
-    box-shadow: 0 0 60px rgba(0,255,65,0.04);
+    box-shadow: 0 0 60px var(--accent-dim);
   }
   .login-icon { display: none; }
   .login-sigil-wrap {
@@ -41,7 +90,7 @@
     margin: 0 auto 14px;
     border-radius: 6px;
     overflow: hidden;
-    background: #050208;
+    background: var(--bg);
   }
   .login-sigil-canvas {
     width: 100%; height: 100%; display: block;
@@ -105,9 +154,9 @@
     animation: crt-on 0.6s cubic-bezier(0.2, 0, 0.1, 1) forwards;
   }
   @keyframes crt-glow {
-    0% { box-shadow: 0 0 0px rgba(0,255,65,0); }
-    50% { box-shadow: 0 0 80px rgba(0,255,65,0.4), inset 0 0 40px rgba(0,255,65,0.1); }
-    100% { box-shadow: 0 0 20px rgba(0,255,65,0.15); }
+    0% { box-shadow: 0 0 0px transparent; }
+    50% { box-shadow: var(--glow-md), inset 0 0 40px var(--accent-dim); }
+    100% { box-shadow: var(--glow-sm); }
   }
   .crt-glow { animation: crt-glow 0.8s ease-out; }
 </style>
@@ -143,11 +192,16 @@
   <div id="login-error"></div>
 </div>
 <script>
-// ── Sigil Engine (minimal for login) ──
-const _SC = {
-  hood: '#3d1560', hoodEdge: '#6a2d9e', eye: '#00ff41',
-  glow: '#00ff41', sigil: '#ff0040', bg: '#050208'
-};
+// ── Sigil Engine (cinematic login) ──
+const _SC = (function() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (p, d) => cs.getPropertyValue(p).trim() || d;
+  return {
+    hood: v('--accent3', '#00aa2a'), hoodEdge: v('--accent2', '#00dd38'),
+    eye: v('--accent', '#00ff41'), glow: v('--accent', '#00ff41'),
+    sigil: '#ff0040', bg: v('--bg', '#020502')
+  };
+})();
 function _h2r(h){if(typeof h==='string'&&h.startsWith('rgb')){const m=h.match(/(\d+)/g);return{r:+m[0],g:+m[1],b:+m[2]};}h=h.replace('#','');return{r:parseInt(h.slice(0,2),16),g:parseInt(h.slice(2,4),16),b:parseInt(h.slice(4,6),16)};}
 function _lc(c1,c2,t){const a=_h2r(c1),b=_h2r(c2);return`rgb(${a.r+(b.r-a.r)*t|0},${a.g+(b.g-a.g)*t|0},${a.b+(b.b-a.b)*t|0})`;}
 function _ra(h,a){const c=_h2r(h);return`rgba(${c.r},${c.g},${c.b},${a})`;}
@@ -207,14 +261,61 @@ function _drawLoginHappy(ctx,ex,ey,sz,col,gCol,gR){
   ctx.arc(ex,ey+sz*.3,sz*.8,Math.PI*1.15,Math.PI*1.85);ctx.stroke();
 }
 
-function _drawLoginError(ctx,ex,ey,sz){
-  const col='#ff0040';ctx.strokeStyle=col;ctx.lineWidth=3.5;ctx.lineCap='round';
-  const xs=sz*.65;
-  ctx.beginPath();ctx.moveTo(ex-xs,ey-xs);ctx.lineTo(ex+xs,ey+xs);ctx.stroke();
-  ctx.beginPath();ctx.moveTo(ex-xs,ey+xs);ctx.lineTo(ex+xs,ey-xs);ctx.stroke();
+function _drawLoginEyeClosing(ctx,ex,ey,sz,col,gCol,gR,closeT){
+  const gc=_h2r(gCol);
+  const alpha=closeT<.8?1:(1-(closeT-.8)/.2);
+  const glowInt=Math.max(0,1-closeT*1.2);
+  if(glowInt>0){
+    const g1=ctx.createRadialGradient(ex,ey,0,ex,ey,gR*glowInt);
+    g1.addColorStop(0,`rgba(${gc.r},${gc.g},${gc.b},${.3*glowInt})`);
+    g1.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g1;ctx.beginPath();ctx.arc(ex,ey,gR*glowInt,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=alpha;
+  if(closeT<.5){
+    const hFactor=1-closeT*2;
+    ctx.fillStyle=col;ctx.beginPath();ctx.moveTo(ex-sz,ey);
+    ctx.bezierCurveTo(ex-sz*.5,ey-sz*.7*hFactor,ex+sz*.5,ey-sz*.7*hFactor,ex+sz,ey);
+    ctx.bezierCurveTo(ex+sz*.5,ey+sz*.7*hFactor,ex-sz*.5,ey+sz*.7*hFactor,ex-sz,ey);
+    ctx.closePath();ctx.fill();
+  } else {
+    ctx.strokeStyle=col;ctx.lineWidth=2.5;ctx.lineCap='round';
+    ctx.beginPath();ctx.moveTo(ex-sz,ey);ctx.lineTo(ex+sz,ey);ctx.stroke();
+  }
+  ctx.globalAlpha=1;
 }
 
-let _loginState='IDLE', _loginStart=Date.now(), _loginAnim=null;
+function _drawLoginBrainGlyph(ctx,gx,gy,col,scale,rotation,glowInt){
+  ctx.save();ctx.translate(gx,gy);ctx.rotate(rotation);ctx.scale(scale,scale);
+  const gc=_h2r(col);
+  if(glowInt>0){
+    const g1=ctx.createRadialGradient(0,0,0,0,0,22);
+    g1.addColorStop(0,`rgba(${gc.r},${gc.g},${gc.b},${.35*glowInt})`);
+    g1.addColorStop(.5,`rgba(${gc.r},${gc.g},${gc.b},${.12*glowInt})`);
+    g1.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g1;ctx.beginPath();ctx.arc(0,0,22,0,Math.PI*2);ctx.fill();
+  }
+  ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineCap='round';
+  ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,-9);ctx.lineTo(0,9);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-9,0);ctx.lineTo(9,0);ctx.stroke();
+  ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(-6,-6);ctx.lineTo(6,6);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(-6,6);ctx.lineTo(6,-6);ctx.stroke();
+  ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(0,0,4,0,Math.PI*2);ctx.stroke();
+  const dp=11;const dr=1.8;
+  ctx.beginPath();ctx.arc(0,-dp,dr,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(0,dp,dr,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(-dp,0,dr,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(dp,0,dr,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+// ── State machine ──
+const DIGIT_POS={'1':{x:-1,y:-1},'2':{x:0,y:-1},'3':{x:1,y:-1},'4':{x:-1,y:0},'5':{x:0,y:0},'6':{x:1,y:0},'7':{x:-1,y:1},'8':{x:0,y:1},'9':{x:1,y:1},'0':{x:0,y:1.5}};
+let _loginState='ALERT', _loginStart=Date.now(), _loginAnim=null;
+let _glanceTargetX=0, _glanceTargetY=0, _glanceTime=0;
+let _firstDigitPressed=false, _hoodRevealStart=0;
+
 function _loginLoop(){
   const c=document.getElementById('login-sigil-canvas');
   if(!c)return;
@@ -225,34 +326,107 @@ function _loginLoop(){
   const W=dW,H=dH,now=Date.now()-_loginStart;
   ctx.save();ctx.scale(dpr,dpr);
   ctx.fillStyle=_SC.bg;ctx.fillRect(0,0,W,H);
-  _drawLoginHood(ctx,W,H);
+
+  const sx=W/320,sy=H/170,s=Math.min(sx,sy),cx=W/2;
+  const eyY=82*sy,ed=44*s,es=18*s,gr=28*s,lx=cx-ed,rx=cx+ed;
+
+  // Glance offset (decays over 300ms)
+  const glElapsed=Date.now()-_glanceTime;
+  const glDecay=Math.max(0,1-glElapsed/300);
+  const glX=_glanceTargetX*glDecay*s;
+  const glY=_glanceTargetY*glDecay*s;
+
+  // Hood reveal
+  const showHood=_firstDigitPressed&&_loginState!=='UNLOCK';
+  if(showHood){
+    const hAlpha=Math.min(1,(Date.now()-_hoodRevealStart)/800);
+    if(hAlpha<1)ctx.globalAlpha=hAlpha;
+    _drawLoginHood(ctx,W,H);
+    ctx.globalAlpha=1;
+  }
+
   // Scanlines
   ctx.fillStyle='rgba(0,0,0,.04)';
   for(let y=0;y<H;y+=2)ctx.fillRect(0,y,W,1);
-  const sx=W/320,sy=H/170,s=Math.min(sx,sy),cx=W/2;
-  const ey=82*sy,ed=44*s,es=18*s,gr=28*s,lx=cx-ed,rx=cx+ed;
 
-  if(_loginState==='HAPPY'){
-    _drawLoginHappy(ctx,lx,ey,es,_SC.eye,_SC.glow,gr);
-    _drawLoginHappy(ctx,rx,ey,es,_SC.eye,_SC.glow,gr);
-    // Smile
-    ctx.strokeStyle=_SC.eye;ctx.lineWidth=2.5;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(cx-18,115*sy);ctx.quadraticCurveTo(cx,115*sy+8,cx+18,115*sy);ctx.stroke();
-  } else if(_loginState==='ERROR'){
-    _drawLoginError(ctx,lx,ey,es);_drawLoginError(ctx,rx,ey,es);
-    ctx.strokeStyle='#ff0040';ctx.lineWidth=2.5;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(cx-14,115*sy+3);ctx.quadraticCurveTo(cx,115*sy-5,cx+14,115*sy+3);ctx.stroke();
-  } else {
-    // IDLE breathing
+  if(_loginState==='ALERT'){
+    // Eyes wake up and scan around — someone knocked at the gate
+    const ramp=Math.min(1,now/200);
+    const intensity=.7*ramp;
+    const scanDx=10*Math.sin(now/400*Math.PI)*s*ramp;
+    const scanDy=3*Math.cos(now/600*Math.PI)*s*ramp;
+    const ec=_lc('#001a08',_SC.eye,intensity);
+    _drawLoginEye(ctx,lx+scanDx,eyY+scanDy,es*1.1,ec,_SC.glow,gr*.7,intensity);
+    _drawLoginEye(ctx,rx+scanDx,eyY+scanDy,es*1.1,ec,_SC.glow,gr*.7,intensity);
+    // Auto-transition to WATCHING after 2s
+    if(now>2000){_loginState='WATCHING';_loginStart=Date.now();}
+  } else if(_loginState==='WATCHING'){
+    // Dim eyes in the dark, breathing slowly
+    const breath=.3+.15*Math.sin(now/5000*Math.PI*2);
+    const ec=_lc('#001a08',_SC.eye,breath);
+    const dx=2*Math.sin(now/6000)+glX;
+    const dy=1.5*Math.cos(now/8000)+glY;
+    _drawLoginEye(ctx,lx+dx,eyY+dy,es*.85,ec,_SC.glow,gr*.5,breath*.6);
+    _drawLoginEye(ctx,rx+dx,eyY+dy,es*.85,ec,_SC.glow,gr*.5,breath*.6);
+  } else if(_loginState==='IDLE'){
+    // Full idle with visible hood, brighter eyes
     const breath=.8+.2*Math.sin(now/4000*Math.PI*2);
     const ec=_lc('#004415',_SC.eye,breath);
-    const dx=3*Math.sin(now/5000),dy=2*Math.cos(now/7000);
-    _drawLoginEye(ctx,lx+dx,ey+dy,es,ec,_SC.glow,gr,breath);
-    _drawLoginEye(ctx,rx+dx,ey+dy,es,ec,_SC.glow,gr,breath);
+    const dx=3*Math.sin(now/5000)+glX;
+    const dy=2*Math.cos(now/7000)+glY;
+    _drawLoginEye(ctx,lx+dx,eyY+dy,es,ec,_SC.glow,gr,breath);
+    _drawLoginEye(ctx,rx+dx,eyY+dy,es,ec,_SC.glow,gr,breath);
     // Dim mouth
     ctx.strokeStyle=_ra(_SC.eye,.25);ctx.lineWidth=2.5;ctx.lineCap='round';
     ctx.beginPath();ctx.moveTo(cx-16,115*sy);ctx.lineTo(cx+16,115*sy);ctx.stroke();
+  } else if(_loginState==='REJECT'){
+    // Eyes shift sideways in disappointment
+    const t=now;
+    let shiftX=0;
+    if(t<200) shiftX=8*s*(t/200);
+    else if(t<400) shiftX=8*s*(1-(t-200)/200)*-0.6;
+    else shiftX=0;
+    const dimFade=t>800?Math.max(.4,1-(t-800)/400):1;
+    const ec=_lc('#004415',_SC.eye,dimFade*.7);
+    _drawLoginEye(ctx,lx+shiftX,eyY,es,ec,_SC.glow,gr,dimFade*.7);
+    _drawLoginEye(ctx,rx+shiftX,eyY,es,ec,_SC.glow,gr,dimFade*.7);
+  } else if(_loginState==='UNLOCK'){
+    const t=now;
+    if(t<150){
+      // Brief happy flash
+      if(showHood){} // hood already drawn above
+      _drawLoginHappy(ctx,lx,eyY,es,_SC.eye,_SC.glow,gr);
+      _drawLoginHappy(ctx,rx,eyY,es,_SC.eye,_SC.glow,gr);
+      ctx.strokeStyle=_SC.eye;ctx.lineWidth=2.5;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(cx-18,115*sy);ctx.quadraticCurveTo(cx,115*sy+8,cx+18,115*sy);ctx.stroke();
+    } else if(t<500){
+      // Eyes closing
+      const closeT=(t-150)/350;
+      _drawLoginEyeClosing(ctx,lx,eyY,es,_SC.eye,_SC.glow,gr,closeT);
+      _drawLoginEyeClosing(ctx,rx,eyY,es,_SC.eye,_SC.glow,gr,closeT);
+    } else if(t<700){
+      // Hood fade out (if visible)
+      // Already dark since hood is drawn conditionally above
+    } else if(t<900){
+      // Dark pause
+    } else if(t<2500){
+      // Brain glyph fade-in + pulse
+      const glyphY=43*sy;
+      const fadeIn=Math.min(1,(t-900)/800);
+      const pulse=t>1800?1+.12*Math.sin((t-1800)/120*Math.PI*2):1;
+      const rot=(t-900)/8000*Math.PI*2;
+      _drawLoginBrainGlyph(ctx,cx,glyphY,_SC.sigil,pulse*fadeIn,rot,fadeIn);
+    } else if(t<2700){
+      // Flash
+      const glyphY=43*sy;
+      const flashT=(t-2500)/200;
+      _drawLoginBrainGlyph(ctx,cx,glyphY,'#ffffff',1.2,0,1);
+      ctx.fillStyle=`rgba(255,255,255,${.3*(1-flashT)})`;
+      ctx.fillRect(0,0,W,H);
+    }
+    // After 2700ms the login-box fades via JS in doLogin
   }
+
   ctx.restore();
   _loginAnim=requestAnimationFrame(_loginLoop);
 }
@@ -276,6 +450,14 @@ function updatePinDisplay() {
 
 function numpadPress(n) {
   if (pinValue.length >= MAX_PIN) return;
+  // Eye glance toward pressed digit
+  const pos = DIGIT_POS[String(n)];
+  if(pos){ _glanceTargetX=pos.x*4; _glanceTargetY=pos.y*2.5; _glanceTime=Date.now(); }
+  // First digit: begin hood reveal, transition to IDLE
+  if(!_firstDigitPressed){
+    _firstDigitPressed=true; _hoodRevealStart=Date.now();
+    if(_loginState==='WATCHING'||_loginState==='ALERT'){_loginState='IDLE';_loginStart=Date.now();}
+  }
   pinValue += n;
   updatePinDisplay();
   if (pinValue.length === MAX_PIN) setTimeout(doLogin, 150);
@@ -315,28 +497,34 @@ async function doLogin() {
     });
     const d = await r.json();
     if (d.ok) {
-      // Sigil HAPPY + CRT power-on animation before redirect
-      _loginState = 'HAPPY'; _loginStart = Date.now();
-      document.body.classList.add('crt-glow');
+      // UNLOCK cinematic sequence — brain glyph activation
+      _loginState = 'UNLOCK'; _loginStart = Date.now();
+      // Prefetch dashboard while animation plays (~3s of dead time)
+      const pfLink = document.createElement('link');
+      pfLink.rel = 'prefetch'; pfLink.href = '/';
+      document.head.appendChild(pfLink);
       setTimeout(() => {
         const box = document.getElementById('login-box');
         box.style.opacity = '0';
-        box.style.transition = 'opacity 0.3s';
+        box.style.transition = 'opacity 0.4s';
+        document.body.classList.add('crt-glow');
         setTimeout(() => {
-          document.body.style.background = '#020502';
+          document.body.style.background = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#020502';
           document.body.classList.add('crt-on');
           setTimeout(() => { window.location.href = '/'; }, 700);
-        }, 300);
-      }, 600);
+        }, 400);
+      }, 2700);
       return;
     } else {
-      _loginState = 'ERROR'; _loginStart = Date.now();
+      _loginState = 'REJECT'; _loginStart = Date.now();
       errEl.textContent = d.error || 'PIN errato';
       document.getElementById('login-box').classList.add('shake');
       setTimeout(() => {
         document.getElementById('login-box').classList.remove('shake');
-        _loginState = 'IDLE'; _loginStart = Date.now();
-      }, 1200);
+        // Return to WATCHING or IDLE based on hood state
+        _loginState = _firstDigitPressed ? 'IDLE' : 'WATCHING';
+        _loginStart = Date.now();
+      }, 1500);
       pinValue = '';
       updatePinDisplay();
     }
@@ -351,6 +539,9 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Escape') numpadClear();
   else if (e.key === 'Enter') doLogin();
 });
+
+// Warm-up server on page load (primes backend processes)
+fetch('/api/health').catch(()=>{});
 </script>
 </body>
 </html>

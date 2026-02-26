@@ -33,7 +33,7 @@
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   padding: 0 14px;
-  padding-top: calc(10px + var(--safe-top));
+  padding-top: 10px;
   padding-bottom: 12px;
 }
 

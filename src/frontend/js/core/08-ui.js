@@ -69,10 +69,8 @@
   // ── Clock ──
   setInterval(() => {
     const t = new Date().toLocaleTimeString('it-IT');
-    ['home-clock', 'chat-clock'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = t;
-    });
+    const el = document.getElementById('home-clock');
+    if (el) el.textContent = t;
   }, 1000);
 
   // ── iOS virtual keyboard ──

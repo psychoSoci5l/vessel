@@ -1,5 +1,12 @@
   // ── Input handlers + Theme selector ──
   document.addEventListener('DOMContentLoaded', () => {
+    // Move header to global position (visible on all tabs)
+    const hdr = document.querySelector('.dash-header');
+    if (hdr) {
+      hdr.className = 'app-header';
+      document.querySelector('.app-content').prepend(hdr);
+    }
+
     const chatInput = document.getElementById('chat-input');
     chatInput.addEventListener('keydown', e => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendChat(); }

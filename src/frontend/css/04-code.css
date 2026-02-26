@@ -8,21 +8,6 @@
 }
 #tab-code.active { display: flex; }
 
-.code-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  padding-top: calc(8px + var(--safe-top));
-  background: var(--card);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.code-spacer { flex: 1; }
-.code-temp { font-size: 11px; color: var(--text2); }
-.code-clock { font-size: 11px; color: var(--amber); letter-spacing: 1px; }
-
 /* Code panel */
 .code-panel {
   display: flex;

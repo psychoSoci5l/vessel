@@ -1,85 +1,107 @@
-# Roadmap — Fase 32+
+# Fase 50: Dashboard Coherence & Unified Header
 
-Fase 31 (Sigil Face + Deep Idle + QoL) completata e deployata 23/02/2026.
-
----
-
-## Fase 32a — Quick Fix ✅ DEPLOYATA 23/02/2026
-
-### 1. Default provider: Local → Haiku ✅
-- `chatProvider = 'cloud'` in main.js, dot+label Haiku in index.html
-
-### 2. Fix nomi LLM ✅
-- Dropdown/Profile/Help: "Deep" → "DeepSeek" per disambiguare da "PC Deep"
-- Telegram `/help`: corretto @deep da "DeepSeek-R1 PC" a "Qwen 30B (LAN)", @coder a "Qwen 14B (LAN)"
-- Aggiunto `@haiku` come prefisso Telegram (usa config Anthropic)
-
-### 3. Icone bottom bar più grandi ✅
-- `.nav-item .nav-icon` font-size da 18px → 24px
+## Obiettivo
+Coerenza visiva totale tra tutte le pagine (Dashboard, Code, Profile, PIN), header unificato, logout riorganizzato, settings accessibili.
 
 ---
 
-## Fase 32b — Token Usage Report ✅ DEPLOYATA 23/02/2026
+## 1. Header Unificato (tutte le tab)
 
-### 5. Report utilizzo token ✅
-- `db_get_usage_report(period)` in database.py — query aggregata per provider
-- Handler WS `get_usage_report` in routes.py
-- Sezione "UTILIZZO TOKEN" nel Profile tab con selettore Oggi/7gg/30gg
-- Tabella: Provider | In | Out | Tot | Calls + riga TOTALE verde
-- Auto-load su connessione WebSocket
+**Attuale**: 3 header diversi — Dashboard (ricco), Code (minimale), Profile (con Logout/Help)
 
----
+**Nuovo**: Un UNICO header fisso sopra `app-content`, visibile sempre su tutte e 3 le tab.
 
-## Fase 32c — Layout Desktop ✅ COMPILATA 23/02/2026
+### Contenuto header unificato:
+```
+[logo] VESSEL [health-dot] [sigil-indicator] ─── [weather] [temp] · [clock] [gear]
+```
 
-### 4. Layout desktop 16:9 ✅
-- Media query `@media (min-width: 768px)` in main.css — layout completo
-- **Sidebar Nav**: bottom nav → colonna verticale 70px a sinistra (`order: -1`)
-- **Dashboard**: stat cards 4 in riga (25%), chart 120px, widget tiles 4 in riga
-- **Code tab**: split-pane CSS Grid 3fr/2fr — chat + task sempre visibili su desktop
-- **System tab**: griglia 2 colonne (Tmux|Logs side-by-side, Cron full-width)
-- **Profile tab**: griglia 2 colonne (Pi|Provider|Token|Mercati 2x2, Memoria full-width)
-- **Drawer**: max-width 600px centrato
-- **Content area**: max-width 1200px, padding 32px
-- **JS**: auto-load task data su Code tab per desktop (main.js `switchView`)
-- Tema CRT verde mantenuto — funziona bene su desktop
+### Modifiche:
+- **index.html**: Estrarre `dash-header` da dentro `tab-dashboard` e posizionarlo sopra `app-content` (dentro `app-layout`, prima di `app-content`)
+- **Rimuovere** `code-header` dal tab Code
+- **Rimuovere** `prof-header` dal tab Profile
+- **CSS** (`03-dashboard.css`): `.dash-header` diventa `.app-header`, stesso stile
+- **CSS** (`04-code.css`): Rimuovere `.code-header` e stili correlati
+- **CSS** (`06-profile.css`): Rimuovere `.prof-header` e stili correlati
+- **JS** (`08-ui.js`): Il clock aggiorna solo `home-clock` (uno solo, globale). Rimuovere ref a `chat-clock`
 
 ---
 
-## Fase 33 — ESP32 Portatile via Cloudflare Tunnel ✅ FLASHATA 23/02/2026
+## 2. Logout -> System Drawer
 
-### 6. ESP32 fuori casa via tunnel ✅
-**Soluzione scelta**: Cloudflare Service Token (Opzione A)
+**Attuale**: Bottone rosso "Logout" nel prof-header
 
-#### Cloudflare Access ✅
-- Service Token "ESP32-Tamagotchi" creato (non in scadenza)
-- Access Policy "ESP32 Service Token" con azione Service Auth
-- Policy assegnata all'app "Nanobot Dashboard" su `nanobot.psychosoci5l.com`
+**Nuovo**: Bottone Logout nella riga `sys-actions` del System drawer (accanto a Refresh, Reboot, Off)
 
-#### ESP32 firmware (`main.cpp`) ✅
-- **WiFiMulti**: connessione automatica casa ("FrzTsu") o hotspot ("iPhone 14 pro max")
-- **ConnMode**: `CONN_LOCAL` (ws://) vs `CONN_TUNNEL` (wss://) in base a SSID
-- **connectWS()**: routing automatico — locale su rete casa, tunnel SSL su hotspot
-- **Header CF**: `CF-Access-Client-Id` + `CF-Access-Client-Secret` nell'handshake WSS
-- **Fallback**: se locale non connette in 15s → prova tunnel
-- **beginSSL()**: `setInsecure()` per skip cert validation (token CF protegge)
-- **Riconnessione**: su disconnect chiama `connectWS()` per ri-determinare modo
-
-#### Configurazione
-- `TUNNEL_HOST = "nanobot.psychosoci5l.com"` (porta 443)
-- `LOCAL_HOST = "192.168.178.48"` (porta 8090)
-- Token CF hardcoded nel firmware (revocabile da dashboard Cloudflare)
-
-#### Stato test
-- ⏳ **Test tunnel da fuori casa PENDENTE** — da verificare con hotspot iPhone
+### Modifiche:
+- **index.html**: Aggiungere `<button class="btn-red" onclick="doLogout()">&#x23FB; Logout</button>` nella riga `sys-actions`
+- La funzione `doLogout()` in `08-ui.js` resta invariata
+- Ordine bottoni: `Refresh | Logout | Reboot | Off`
 
 ---
 
-## Ordine suggerito
+## 3. PIN Screen — Coerenza con Dashboard + Temi
 
-1. ~~**32a** (quick fix)~~ ✅ FATTO
-2. ~~**32b** (token report)~~ ✅ FATTO
-3. ~~**32c** (desktop layout)~~ ✅ FATTO
-4. ~~**33** (ESP32 tunnel)~~ ✅ FATTO (test pendente)
+**Attuale**: CSS hardcoded Terminal Green, nessun supporto temi, Sigil face con colori fissi verde
 
-Ogni fase: build + test locale 8091, deploy solo su richiesta.
+**Nuovo**: Supporto completo theme engine, aspetto coerente con la dashboard
+
+### Modifiche su `login.html`:
+- **Aggiungere `data-theme` su `<html>`** leggendo da `localStorage('vessel-theme')`
+- **Aggiungere le 6 definizioni tema** (copia da `01-design-system.css`) come override CSS nel `<style>`
+- `:root` diventa il default Terminal Green, poi `[data-theme="sigil"]` etc. come la dashboard
+- **Colori Sigil face dinamici**: `_SC.eye` e `_SC.glow` leggono `--accent` dal computed style invece di hardcoded `#00ff41`
+- `_SC.hood` legge `--accent3` (cosicche' in Sigil Violet il cappuccio e' viola scuro, in green e' verde scuro, etc.)
+- **Scan-line CRT**: Aggiungere `body::after` overlay identico alla dashboard
+- **CRT transition**: Adattare i colori dell'animazione `crt-glow` per usare `--accent` invece di rgba hardcoded
+- **Numpad + bordi**: Tutti i colori usano var(--accent*) per seguire il tema attivo
+
+---
+
+## 4. Mini Settings Panel in Dashboard
+
+**Attuale**: Colonna destra ha Chart + 4 widget tiles, con spazio vuoto sotto
+
+**Nuovo**: Aggiungere un pannello "SETTINGS" sotto le widget tiles nella colonna destra
+
+### Contenuto del pannello:
+```
+SETTINGS
+├── Tema: [6 chip colorati selezionabili]
+├── Info: picoclaw.local · uptime: XX · vX.X.X
+└── [? Help]
+```
+
+### Modifiche:
+- **index.html**: Aggiungere `div.dash-settings` dentro `dash-right-col`, dopo `dash-widgets`
+  - Selettore temi (stessa struttura, riusando `buildThemeSelector()` o ID `theme-selector`)
+  - Riga info compatta: hostname, uptime (id riusato `hc-uptime-val`), version badge
+  - Bottone Help
+- **CSS** (`03-dashboard.css`): Stili per `.dash-settings` — card bg, bordo, padding compatto
+- **JS** (`00-theme.js`): `buildThemeSelector()` deve buildare nel nuovo target dashboard
+- **Profile tab**: RIMUOVERE la sezione TEMA (non duplicata, vive solo in Dashboard)
+- **Profile tab**: RIMUOVERE il bottone Help (spostato in settings dashboard)
+
+---
+
+## 5. Riepilogo file da modificare
+
+| File | Azione |
+|------|--------|
+| `src/frontend/index.html` | Header fuori da tab, rimuovere code-header e prof-header, logout in system drawer, aggiungere dash-settings, rimuovere tema/help da profile |
+| `src/frontend/login.html` | Theme engine, colori dinamici Sigil face, scan-lines |
+| `src/frontend/css/03-dashboard.css` | `.dash-header` -> `.app-header`, nuovo `.dash-settings` |
+| `src/frontend/css/04-code.css` | Rimuovere `.code-header` |
+| `src/frontend/css/06-profile.css` | Rimuovere `.prof-header` |
+| `src/frontend/css/08-responsive.css` | Verificare responsive header unificato |
+| `src/frontend/js/core/00-theme.js` | Theme selector target dashboard |
+| `src/frontend/js/core/08-ui.js` | Clock singolo, rimuovere ref chat-clock |
+
+---
+
+## 6. Ordine di esecuzione
+1. Header unificato (HTML + CSS + JS)
+2. Logout nel System drawer
+3. Mini settings panel in Dashboard (incluso spostamento tema)
+4. PIN screen coerenza temi
+5. Build + test locale porta 8091

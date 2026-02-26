@@ -149,19 +149,23 @@
                 <div class="wc-body" id="wt-cron-preview">--</div>
               </div>
             </div>
+            <!-- Settings -->
+            <div class="dash-settings">
+              <div class="prof-section-title">SETTINGS</div>
+              <div id="theme-selector" class="theme-selector"></div>
+              <div class="dash-settings-row">
+                <span>picoclaw.local</span>
+                <span class="dash-sep">&middot;</span>
+                <span style="flex:1;"></span>
+                <button class="btn-ghost btn-sm" onclick="showHelpModal()">? Help</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- ═══ TAB: CODE ═══ -->
       <div id="tab-code" class="tab-view">
-        <div class="code-header">
-          <span class="code-spacer"></span>
-          <div id="chat-health-dot" class="health-dot" title="Salute Pi"></div>
-          <span id="chat-temp" class="code-temp">--</span>
-          <span id="chat-clock" class="code-clock">--:--:--</span>
-        </div>
-
         <div id="code-chat" class="code-panel">
           <div id="chat-messages">
             <div class="msg msg-bot">Eyyy, sono Vessel &mdash; dimmi cosa vuoi, psychoSocial.</div>
@@ -205,12 +209,6 @@
       <!-- ═══ TAB: PROFILE ═══ -->
       <div id="tab-profile" class="tab-view">
         <div class="tab-scroll">
-          <div class="prof-header">
-            <span class="prof-title">PROFILE</span>
-            <button class="btn-ghost btn-sm" onclick="showHelpModal()">? Help</button>
-            <button class="btn-ghost btn-sm" onclick="doLogout()" style="color:var(--red);border-color:var(--red);">&#x23FB; Logout</button>
-          </div>
-
           <!-- Pi info -->
           <div class="prof-section">
             <div class="prof-section-title">RASPBERRY PI</div>
@@ -245,12 +243,6 @@
             <div id="usage-report-body">
               <div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Caricamento&hellip;</span></div>
             </div>
-          </div>
-
-          <!-- Theme -->
-          <div class="prof-section">
-            <div class="prof-section-title">TEMA</div>
-            <div id="theme-selector" class="theme-selector"></div>
           </div>
 
           <!-- Memoria -->
@@ -356,6 +348,7 @@
           </div>
           <div class="sys-actions" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
             <button class="btn-ghost" onclick="requestStats()">&#x21BB; Refresh</button>
+            <button class="btn-red" onclick="doLogout()">&#x23FB; Logout</button>
             <button class="btn-red" onclick="showRebootModal()">&#x21BA; Reboot</button>
             <button class="btn-red" onclick="showShutdownModal()">&#x23FB; Off</button>
           </div>
