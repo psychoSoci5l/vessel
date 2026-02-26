@@ -1,9 +1,10 @@
   // ── Drawer (bottom sheet per Briefing/Token/Crypto) ──
   const DRAWER_CFG = {
     briefing: { title: '▤ Morning Briefing', actions: '<button class="btn-ghost btn-sm" onclick="loadBriefing(this)">Carica</button>' },
-    logs:     { title: '≡ Logs', actions: '<button class="btn-ghost btn-sm" onclick="loadLogs(this)">Carica</button>' },
+    logs:     { title: '≡ Logs', actions: '<button class="btn-ghost btn-sm" onclick="loadLogs(this)">Logs</button><button class="btn-ghost btn-sm" onclick="loadChatHistory()">Chat</button>' },
     cron:     { title: '◇ Cron Jobs', actions: '<button class="btn-ghost btn-sm" onclick="loadCron(this)">Carica</button>' },
     system:   { title: '⚙ System', actions: '<button class="btn-ghost btn-sm" onclick="requestStats()">Refresh</button>' },
+    tracker:  { title: '◈ Bug Tracker', actions: '<button class="btn-ghost btn-sm" onclick="loadTracker()">Carica</button><button class="btn-green btn-sm" onclick="showTrackerForm()">+ Aggiungi</button>' },
   };
 
   function openDrawer(widgetId) {

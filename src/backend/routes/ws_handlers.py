@@ -265,6 +265,53 @@ async def handle_deep_learn(websocket, msg, ctx):
 async def handle_get_sigil_state(websocket, msg, ctx):
     await websocket.send_json({"type": "sigil_state", "state": _tamagotchi_state})
 
+async def handle_tracker_get(websocket, msg, ctx):
+    status = msg.get("status", "open")
+    if status not in ("open", "closed", "in-progress", ""):
+        status = "open"
+    items = await bg(db_get_tracker, status)
+    await websocket.send_json({"type": "tracker", "items": items})
+
+async def handle_tracker_add(websocket, msg, ctx):
+    title = (msg.get("title") or "").strip()[:200]
+    if not title:
+        await websocket.send_json({"type": "toast", "text": "Titolo obbligatorio"})
+        return
+    body = (msg.get("body") or "").strip()[:2000]
+    itype = (msg.get("itype") or "note").strip()
+    priority = (msg.get("priority") or "P2").strip()
+    tags = (msg.get("tags") or "").strip()[:200]
+    item_id = await bg(db_add_tracker, title, body, itype, priority, tags)
+    await websocket.send_json({"type": "toast", "text": f"[ok] Item #{item_id} salvato"})
+    items = await bg(db_get_tracker, "open")
+    await websocket.send_json({"type": "tracker", "items": items})
+
+async def handle_tracker_update(websocket, msg, ctx):
+    item_id = msg.get("id")
+    status = msg.get("status", "open")
+    if not item_id or not isinstance(item_id, int):
+        await websocket.send_json({"type": "toast", "text": "ID non valido"})
+        return
+    ok = await bg(db_update_tracker_status, item_id, status)
+    if ok:
+        items = await bg(db_get_tracker, "")
+        await websocket.send_json({"type": "tracker", "items": items})
+    else:
+        await websocket.send_json({"type": "toast", "text": "Item non trovato"})
+
+async def handle_tracker_delete(websocket, msg, ctx):
+    item_id = msg.get("id")
+    if not item_id or not isinstance(item_id, int):
+        await websocket.send_json({"type": "toast", "text": "ID non valido"})
+        return
+    ok = await bg(db_delete_tracker, item_id)
+    if ok:
+        await websocket.send_json({"type": "toast", "text": "Item eliminato"})
+        items = await bg(db_get_tracker, "")
+        await websocket.send_json({"type": "tracker", "items": items})
+    else:
+        await websocket.send_json({"type": "toast", "text": "Item non trovato"})
+
 WS_DISPATCHER = {
     "chat": handle_chat,
     "clear_chat": handle_clear_chat,
@@ -295,4 +342,8 @@ WS_DISPATCHER = {
     "delete_saved_prompt": handle_delete_saved_prompt,
     "get_sigil_state": handle_get_sigil_state,
     "deep_learn": handle_deep_learn,
+    "tracker_get": handle_tracker_get,
+    "tracker_add": handle_tracker_add,
+    "tracker_update": handle_tracker_update,
+    "tracker_delete": handle_tracker_delete,
 }

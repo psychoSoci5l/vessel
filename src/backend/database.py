@@ -1,6 +1,6 @@
 # ─── Database SQLite ──────────────────────────────────────────────────────────
 DB_PATH = Path.home() / ".nanobot" / "vessel.db"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _db_conn():
@@ -144,6 +144,18 @@ def init_db():
             CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
             CREATE INDEX IF NOT EXISTS idx_events_cat ON events(category);
             CREATE INDEX IF NOT EXISTS idx_events_cat_action ON events(category, action);
+
+            CREATE TABLE IF NOT EXISTS tracker (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts       TEXT NOT NULL,
+                title    TEXT NOT NULL,
+                body     TEXT DEFAULT '',
+                type     TEXT NOT NULL DEFAULT 'note',
+                priority TEXT NOT NULL DEFAULT 'P2',
+                status   TEXT NOT NULL DEFAULT 'open',
+                tags     TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_tracker_status ON tracker(status, type);
         """)
         # Schema version + migrations
         row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -164,6 +176,9 @@ def init_db():
         if current_ver < 3:
             # events table già creata dal CREATE IF NOT EXISTS sopra
             print("[DB] Migrazione v3: tabella 'events' per observability")
+        if current_ver < 4:
+            # tracker table già creata dal CREATE IF NOT EXISTS sopra
+            print("[DB] Migrazione v4: tabella 'tracker' per bug/note tracking")
         if current_ver < SCHEMA_VERSION:
             conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
 
@@ -745,6 +760,58 @@ def db_cleanup_old_events(days: int = 90) -> int:
     with _db_conn() as conn:
         cur = conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
         return cur.rowcount
+
+
+# ─── Tracker (Fase 55b) ──────────────────────────────────────────────────────
+
+def db_add_tracker(title: str, body: str = "", type: str = "note",
+                   priority: str = "P2", tags: str = "") -> int:
+    """Aggiunge un item al tracker. Ritorna l'id."""
+    valid_types = ("bug", "feature", "note")
+    valid_priorities = ("P0", "P1", "P2", "P3")
+    t = type if type in valid_types else "note"
+    p = priority if priority in valid_priorities else "P2"
+    with _db_conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO tracker (ts, title, body, type, priority, status, tags) VALUES (?, ?, ?, ?, ?, 'open', ?)",
+            (time.strftime("%Y-%m-%dT%H:%M:%S"), title[:200], body[:2000], t, p, tags[:200])
+        )
+        return cur.lastrowid
+
+
+def db_get_tracker(status: str = "", limit: int = 50) -> list:
+    """Legge items dal tracker, filtrabile per status. '' = tutti."""
+    with _db_conn() as conn:
+        if status:
+            rows = conn.execute(
+                "SELECT id, ts, title, body, type, priority, status, tags FROM tracker "
+                "WHERE status = ? ORDER BY CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END, id DESC LIMIT ?",
+                (status, limit)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, ts, title, body, type, priority, status, tags FROM tracker "
+                "ORDER BY CASE status WHEN 'open' THEN 0 ELSE 1 END, "
+                "CASE priority WHEN 'P0' THEN 0 WHEN 'P1' THEN 1 WHEN 'P2' THEN 2 ELSE 3 END, id DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def db_update_tracker_status(item_id: int, status: str) -> bool:
+    """Aggiorna lo status di un item. Ritorna True se aggiornato."""
+    valid = ("open", "closed", "in-progress")
+    s = status if status in valid else "open"
+    with _db_conn() as conn:
+        cur = conn.execute("UPDATE tracker SET status = ? WHERE id = ?", (s, item_id))
+        return cur.rowcount > 0
+
+
+def db_delete_tracker(item_id: int) -> bool:
+    """Elimina un item dal tracker. Ritorna True se eliminato."""
+    with _db_conn() as conn:
+        cur = conn.execute("DELETE FROM tracker WHERE id = ?", (item_id,))
+        return cur.rowcount > 0
 
 
 def db_search_entity(name: str) -> dict | None:

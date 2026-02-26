@@ -155,7 +155,7 @@ async def set_tamagotchi_state(request: Request):
     detail = data.get("detail", "")
     text   = data.get("text", "")
     mood   = data.get("mood", None)
-    valid_states = {"IDLE", "THINKING", "WORKING", "PROUD", "SLEEPING", "ERROR", "BOOTING", "HAPPY", "ALERT", "CURIOUS", "BORED"}
+    valid_states = {"IDLE", "THINKING", "WORKING", "PROUD", "SLEEPING", "ERROR", "BOOTING", "HAPPY", "ALERT", "CURIOUS", "BORED", "PEEKING"}
     if state not in valid_states:
         return JSONResponse({"ok": False, "error": f"Stato non valido. Validi: {valid_states}"}, status_code=400)
     await broadcast_tamagotchi(state, detail, text, mood)

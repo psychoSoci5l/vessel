@@ -89,6 +89,7 @@
     else if (msg.type === 'shutdown_ack') { document.getElementById('reboot-overlay').classList.add('show'); document.getElementById('reboot-status').textContent = 'Il Pi si sta spegnendo…'; document.querySelector('.reboot-text').textContent = 'Spegnimento in corso…'; }
     else if (msg.type === 'saved_prompts') { renderSavedPrompts(msg.prompts); }
     else if (msg.type === 'sigil_state') { updateSigilIndicator(msg.state); }
+    else if (msg.type === 'tracker')   { renderTracker(msg.items); }
     else if (msg.type === 'deep_learn_result') {
       const el = document.getElementById('deep-learn-text');
       const wrap = document.getElementById('deep-learn-result');

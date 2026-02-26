@@ -1,4 +1,6 @@
 # ─── Background broadcaster ───────────────────────────────────────────────────
+_PEEKING_THRESHOLD = 300  # secondi di idle prima di inviare PEEKING (5 min)
+
 async def stats_broadcaster():
     cycle = 0
     while True:
@@ -6,6 +8,12 @@ async def stats_broadcaster():
         cycle += 1
         if cycle % 60 == 0:
             _cleanup_expired()
+        # PEEKING trigger: ogni 60s controlla idle ESP32
+        if cycle % 12 == 0 and _tamagotchi_connections:
+            idle_secs = time.time() - get_last_chat_ts()
+            if (idle_secs > _PEEKING_THRESHOLD
+                    and _tamagotchi_state not in ("PEEKING", "SLEEPING", "THINKING", "WORKING")):
+                await broadcast_tamagotchi("PEEKING")
         if manager.connections:
             pi = await get_pi_stats()
             tmux = await bg(get_tmux_sessions)
@@ -268,6 +276,58 @@ async def api_events_stats(request: Request, since: str = ""):
     if not _is_authenticated(token):
         return JSONResponse({"error": "Non autenticato"}, status_code=401)
     return db_get_event_stats(since=since)
+
+@app.get("/api/chat/history")
+async def api_chat_history(request: Request, channel: str = "dashboard",
+                           provider: str = "", date: str = "today", limit: int = 50):
+    """Storia conversazioni con metadata diagnostici (ctx_pruned, sys_hash, mem_types)."""
+    token = request.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        return JSONResponse({"error": "Non autenticato"}, status_code=401)
+    limit = min(max(limit, 1), 200)
+    if date == "today":
+        date_from = time.strftime("%Y-%m-%d")
+        date_to = ""
+    elif date:
+        date_from = date
+        date_to = date
+    else:
+        date_from = ""
+        date_to = ""
+    msgs = db_search_chat(keyword="", provider=provider,
+                          date_from=date_from, date_to=date_to, limit=limit)
+    if channel:
+        msgs = [m for m in msgs if m.get("channel", "dashboard") == channel]
+    # Carica eventi chat per arricchire con metadata
+    since = (date_from + "T00:00:00") if date_from else ""
+    evts_list = db_get_events(category="chat", action="response", since=since, limit=500)
+    # Indicizza eventi per timestamp troncato al minuto (YYYY-MM-DDTHH:MM)
+    evts_by_min: dict = {}
+    for evt in evts_list:
+        key = evt["ts"][:16]
+        evts_by_min.setdefault(key, []).append(evt)
+    enriched = []
+    for m in msgs:
+        entry = dict(m)
+        if m["role"] == "assistant":
+            for evt in evts_by_min.get(m["ts"][:16], []):
+                try:
+                    p = json.loads(evt.get("payload", "{}"))
+                    entry.update({
+                        "model": p.get("model"),
+                        "tokens_in": p.get("tokens_in"),
+                        "tokens_out": p.get("tokens_out"),
+                        "ctx_pruned": p.get("ctx_pruned"),
+                        "ctx_msgs": p.get("ctx_msgs"),
+                        "sys_hash": p.get("sys_hash"),
+                        "mem_types": p.get("mem_types"),
+                        "latency_ms": evt.get("latency_ms"),
+                    })
+                except Exception:
+                    pass
+                break
+        enriched.append(entry)
+    return {"messages": enriched, "total": len(enriched), "channel": channel, "date": date}
 
 @app.get("/api/export")
 async def export_data(request: Request):

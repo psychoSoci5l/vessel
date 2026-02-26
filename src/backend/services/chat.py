@@ -69,6 +69,12 @@ def detect_agent(message: str) -> str:
         return get_default_agent()
     return max(scores, key=scores.get)
 
+# ─── Shared state per trigger PEEKING (Fase 55b) ────────────────────────────
+_last_chat_ts: float = 0.0  # epoch seconds, aggiornato ad ogni chat completata
+
+def get_last_chat_ts() -> float:
+    return _last_chat_ts
+
 # ─── Chat Core (unified streaming + buffered) ────────────────────────────────
 
 def _provider_worker(provider, queue):
@@ -169,6 +175,23 @@ def _provider_worker(provider, queue):
         queue.put_nowait(("end", None))
 
 
+def _get_injected_memory_types(system_prompt: str) -> list:
+    """Rileva quali blocchi memoria sono stati injected nel system prompt."""
+    types = []
+    sp = system_prompt
+    if "## Weekly Summary" in sp or "## Riepilogo Settimanale" in sp:
+        types.append("weekly")
+    if "## Note" in sp or "## Memoria Recente" in sp:
+        types.append("notes")
+    if "## Entit" in sp or "Knowledge Graph" in sp or "## Elenco Entità" in sp:
+        types.append("kg")
+    if "## Elenco Amici" in sp or "## Amici" in sp:
+        types.append("friends")
+    if "Data odierna" in sp or "Oggi è" in sp or "Aggiornamento data" in sp:
+        types.append("date")
+    return types
+
+
 def _enrich_system_prompt(system_prompt: str, memory_enabled: bool, message: str, provider_id: str) -> str:
     """Arricchisce il system prompt con friends, memoria, weekly summary, topic recall."""
     friends_ctx = _load_friends()
@@ -198,6 +221,7 @@ async def _execute_chat(message, chat_history, provider_id, system_prompt, model
     db_save_chat_message(provider_id, channel, "user", message, agent=agent)
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
+    history_len_before = len(chat_history)
 
     # Chain: provider primario + eventuale fallback
     providers_chain = [(provider_id, model)]
@@ -211,6 +235,7 @@ async def _execute_chat(message, chat_history, provider_id, system_prompt, model
     actual_pid = provider_id
     actual_model = model
     last_error = ""
+    trimmed = []
     loop = asyncio.get_running_loop()
 
     for attempt, (try_pid, try_model) in enumerate(providers_chain):
@@ -277,8 +302,14 @@ async def _execute_chat(message, chat_history, provider_id, system_prompt, model
                  latency_ms=elapsed,
                  payload={"model": actual_model, "tokens_in": in_tok,
                           "tokens_out": out_tok, "channel": channel,
-                          "chars": len(full_reply)},
+                          "chars": len(full_reply),
+                          "ctx_pruned": history_len_before > len(trimmed),
+                          "ctx_msgs": len(trimmed),
+                          "sys_hash": hashlib.md5(system.encode()).hexdigest()[:8],
+                          "mem_types": _get_injected_memory_types(system)},
                  error=last_error if evt_status == "error" else "")
+    global _last_chat_ts
+    _last_chat_ts = time.time()
     if full_reply:
         loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
     return full_reply, actual_pid, elapsed

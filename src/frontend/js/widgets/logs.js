@@ -55,3 +55,61 @@
     if (s) s.value = '';
     loadLogs();
   }
+
+  // ── Chat history diagnostica ──
+  async function loadChatHistory(date) {
+    const el = document.getElementById('logs-body');
+    if (!el) return;
+    el.innerHTML = '<div class="mono-block" style="color:var(--muted)">Caricamento…</div>';
+    const d = date || new Date().toISOString().slice(0, 10);
+    try {
+      const r = await fetch('/api/chat/history?channel=dashboard&date=' + d + '&limit=100');
+      const data = await r.json();
+      renderChatHistory(data.messages || [], d);
+    } catch(e) {
+      el.innerHTML = '<div class="mono-block">Errore: ' + esc(String(e)) + '</div>';
+    }
+  }
+
+  function renderChatHistory(messages, date) {
+    const el = document.getElementById('logs-body');
+    if (!el) return;
+    let rows = '';
+    if (!messages.length) {
+      rows = '<div class="no-items">Nessun messaggio per ' + esc(date) + '</div>';
+    } else {
+      rows = messages.map(m => {
+        const roleColor = m.role === 'user' ? 'var(--accent2)' : 'var(--accent)';
+        const pruned = m.ctx_pruned
+          ? ' <span class="badge badge-amber" title="Contesto troncato prima dell\'invio">prune</span>' : '';
+        const memTags = (m.mem_types || []).map(t =>
+          `<span class="badge badge-muted">${esc(t)}</span>`).join(' ');
+        const meta = m.role === 'assistant' ? `
+          <div style="font-size:9px;color:var(--muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:4px;">
+            ${m.model ? '<span>' + esc(m.model) + '</span>' : ''}
+            ${m.tokens_in ? '<span>' + m.tokens_in + '+' + m.tokens_out + 't</span>' : ''}
+            ${m.latency_ms ? '<span>' + m.latency_ms + 'ms</span>' : ''}
+            ${m.sys_hash ? '<span>sys:' + esc(m.sys_hash) + '</span>' : ''}
+            ${pruned} ${memTags}
+          </div>` : '';
+        const snippet = (m.content || '').slice(0, 280);
+        const more = (m.content || '').length > 280 ? '…' : '';
+        return `<div style="border-bottom:1px solid var(--border);padding:6px 0;">
+          <div style="font-size:9px;color:var(--muted);">
+            ${esc((m.ts||'').replace('T',' '))}
+            <span style="color:${roleColor};">[${esc(m.role)}]</span>
+            ${m.provider ? '· ' + esc(m.provider) : ''}
+          </div>
+          <div style="font-size:11px;margin-top:3px;white-space:pre-wrap;word-break:break-word;">${esc(snippet)}${more}</div>
+          ${meta}
+        </div>`;
+      }).join('');
+    }
+    el.innerHTML = `
+      <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center;">
+        <input type="date" id="chat-hist-date" value="${esc(date)}" class="input-field input-date" style="flex:1;min-width:130px;">
+        <button class="btn-green btn-sm" onclick="loadChatHistory(document.getElementById('chat-hist-date').value)">></button>
+        <button class="btn-ghost btn-sm" onclick="loadLogs()">Logs</button>
+      </div>
+      <div style="max-height:280px;overflow-y:auto;">${rows}</div>`;
+  }

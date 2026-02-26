@@ -956,6 +956,82 @@ void renderState() {
             fb.drawString("*", cx + 45, noteY2, 1);
         }
 
+    } else if (currentState == "PEEKING") {
+        // ── PEEKING: nessuna hood, occhi che si avvicinano allo schermo e spiano ──
+        // Fase 1 (0-2s): zoom-in — occhi partono dal centro piccoli e crescono
+        // Fase 2 (2s+): exploration loop 4 direzioni (su/giù/sx/dx), ciclo 6s
+        unsigned long peekElapsed = now - stateStartedAt;
+
+        if (peekElapsed < 2000) {
+            // Fase 1: zoom-in dal centro
+            float progress = (float)peekElapsed / 2000.0f;
+            float ease = progress * progress * (3.0f - 2.0f * progress);  // hermite
+
+            // Interpolazione: posizione (centro→normale) e dimensione (piccola→normale)
+            int plx = cx + (int)((lx - cx) * ease);    // lx parte da cx
+            int prx = cx + (int)((rx - cx) * ease);    // rx parte da cx
+            int pey = eyeY;                              // Y rimane stabile
+            int phw = max(4, (int)(hw * ease));
+            int phh = max(2, (int)(hh * ease));
+            int ppr = max(2, (int)(4 * ease));
+
+            // Dim glow sottile — quasi invisibile
+            if (ease > 0.3f) {
+                drawEyeGlow(plx, pey, COL_DIM, ease * 0.4f);
+                drawEyeGlow(prx, pey, COL_DIM, ease * 0.4f);
+            }
+            drawMandorlaEye(plx, pey, phw, phh, COL_DIM);
+            drawMandorlaEye(prx, pey, phw, phh, COL_DIM);
+            if (ppr >= 2) {
+                fb.fillCircle(plx, pey, ppr, COL_BG);
+                fb.fillCircle(prx, pey, ppr, COL_BG);
+            }
+
+        } else {
+            // Fase 2: exploration loop — 4 fasi da 1.5s (ciclo 6s)
+            unsigned long loopElapsed = peekElapsed - 2000;
+            int loopPhase = (loopElapsed / 1500) % 4;
+            float lt = (float)(loopElapsed % 1500) / 1500.0f;
+            float ls = lt * lt * (3.0f - 2.0f * lt);  // hermite ease
+
+            // Ampiezza sguardo per fase: 0=su, 1=giù, 2=sx, 3=dx
+            const float LOOK_DY_UP   = -14.0f;
+            const float LOOK_DY_DOWN =  14.0f;
+            const float LOOK_DX_L    = -20.0f;
+            const float LOOK_DX_R    =  20.0f;
+
+            // Pupille: oscillazione verso la direzione target e ritorno
+            // Il movimento è: 0→0.4 andata, 0.4→0.7 pausa (fermo), 0.7→1.0 ritorno
+            float moveT;
+            if      (lt < 0.4f) moveT =  lt / 0.4f;
+            else if (lt < 0.7f) moveT =  1.0f;
+            else                moveT =  1.0f - (lt - 0.7f) / 0.3f;
+            float ease2 = moveT * moveT * (3.0f - 2.0f * moveT);
+
+            float pdx = 0.0f, pdy = 0.0f;
+            if      (loopPhase == 0) pdy = LOOK_DY_UP   * ease2;
+            else if (loopPhase == 1) pdy = LOOK_DY_DOWN  * ease2;
+            else if (loopPhase == 2) pdx = LOOK_DX_L    * ease2;
+            else                     pdx = LOOK_DX_R    * ease2;
+
+            // Glow dim — Sigil "spento" (solo sfondo scuro)
+            drawEyeGlow(lx, eyeY, COL_DIM, 0.35f);
+            drawEyeGlow(rx, eyeY, COL_DIM, 0.35f);
+            // Mandorle dimensione normale, colore DIM
+            drawMandorlaEye(lx, eyeY, hw, hh, COL_DIM);
+            drawMandorlaEye(rx, eyeY, hw, hh, COL_DIM);
+            // Pupille nella direzione target
+            fb.fillCircle(lx + (int)pdx, eyeY + (int)pdy, 4, COL_BG);
+            fb.fillCircle(rx + (int)pdx, eyeY + (int)pdy, 4, COL_BG);
+
+            // Blink normale se attivo
+            if (blink.phase != BLINK_NONE && blink.openness < 1.0f) {
+                int blinkH = max(1, (int)(hh * blink.openness));
+                drawMandorlaEye(lx, eyeY, hw, blinkH, COL_DIM);
+                drawMandorlaEye(rx, eyeY, hw, blinkH, COL_DIM);
+            }
+        }
+
     } else if (currentState == "ERROR") {
         // ── ERROR: X rosse, cappuccio rosso, sigil flicker ───────────────────
         drawHoodFilled(cx, cy, COL_RED);
@@ -2216,6 +2292,16 @@ void loop() {
         static unsigned long lastBoredDraw = 0;
         if (now - lastBoredDraw >= 33) {  // ~30 FPS
             lastBoredDraw = now;
+            renderState();
+        }
+        return;
+    }
+
+    // ── PEEKING: zoom-in + exploration, redraw continuo 30 FPS ──────────────
+    if (currentState == "PEEKING") {
+        static unsigned long lastPeekDraw = 0;
+        if (now - lastPeekDraw >= 33) {  // ~30 FPS
+            lastPeekDraw = now;
             renderState();
         }
         return;
