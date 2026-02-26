@@ -64,3 +64,7 @@ crontab_backup.txt
 MEMORY.md
 ROADMAP.md
 DEPLOY.md
+
+# Preview/temp files
+_preview.html
+benchmark_results_*.json

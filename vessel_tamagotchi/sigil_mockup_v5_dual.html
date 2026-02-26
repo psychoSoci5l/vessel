@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Sigil v5 — Dual Orientation Mockup</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #00ff41;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  h1 { font-size: 18px; margin-bottom: 4px; }
+  .subtitle { color: #005516; font-size: 11px; margin-bottom: 14px; }
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; justify-content: center; }
+  .controls button {
+    background: #020502; color: #00ff41; border: 1px solid #00ff41;
+    padding: 6px 12px; cursor: pointer; font-family: inherit;
+    font-size: 12px; border-radius: 4px; transition: all 0.15s;
+  }
+  .controls button:hover { background: #00ff41; color: #020502; }
+  .controls button.active { background: #00ff41; color: #020502; font-weight: bold; }
+  .displays {
+    display: flex; gap: 32px; flex-wrap: wrap; justify-content: center;
+    align-items: flex-start;
+  }
+  .display-wrap {
+    border: 2px solid #00ff4133; border-radius: 12px;
+    padding: 12px; background: #020502; display: inline-block;
+  }
+  .display-wrap h3 {
+    font-size: 11px; color: #005516; margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: 2px; text-align: center;
+  }
+  canvas { display: block; border-radius: 4px; }
+  .note {
+    margin-top: 14px; padding: 8px; border: 1px solid #005516;
+    border-radius: 4px; font-size: 10px; color: #005516; max-width: 700px; text-align: center;
+  }
+  .scale-info { font-size: 10px; color: #005516; text-align: center; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>Sigil v5 — Dual Orientation</h1>
+<p class="subtitle">LANDSCAPE (desk + cable) vs PORTRAIT (battery + handheld)</p>
+
+<div class="controls">
+  <button class="active" onclick="setState('IDLE')">IDLE</button>
+  <button onclick="setState('THINKING')">THINKING</button>
+  <button onclick="setState('WORKING')">WORKING</button>
+  <button onclick="setState('PROUD')">PROUD</button>
+  <button onclick="setState('SLEEPING')">SLEEPING</button>
+  <button onclick="setState('HAPPY')">HAPPY</button>
+  <button onclick="setState('CURIOUS')">CURIOUS</button>
+  <button onclick="setState('ALERT')">ALERT</button>
+  <button onclick="setState('ERROR')">ERROR</button>
+  <button onclick="setState('BORED')">BORED</button>
+</div>
+
+<div class="displays">
+  <div class="display-wrap">
+    <h3>Landscape 320x170 (desk)</h3>
+    <canvas id="cLand" width="640" height="340"></canvas>
+    <p class="scale-info">2x scale — actual: 320x170</p>
+  </div>
+  <div class="display-wrap">
+    <h3>Portrait 170x320 (handheld)</h3>
+    <canvas id="cPort" width="340" height="640"></canvas>
+    <p class="scale-info">2x scale — actual: 170x320</p>
+  </div>
+</div>
+
+<div class="note">
+  <strong>v5 dual:</strong> Hood landscape = wide arc. Hood portrait = tall narrow cowl.
+  Due design separati, stessi stati.
+</div>
+
+<script>
+const COL = {
+  hood: '#3d1560', hoodEdge: '#6a2d9e',
+  eye: '#00ff41', glow: '#00ff41',
+  sigil: '#ff0040', bg: '#050208'
+};
+
+let currentState = 'IDLE', startTime = Date.now();
+
+function setState(s) {
+  currentState = s; startTime = Date.now();
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+// ══════════ HELPERS ══════════
+
+function hexToRgb(hex) {
+  if (typeof hex === 'string' && hex.startsWith('rgb')) {
+    let m = hex.match(/(\d+)/g);
+    return { r: +m[0], g: +m[1], b: +m[2] };
+  }
+  hex = hex.replace('#','');
+  if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+  return { r: parseInt(hex.slice(0,2),16), g: parseInt(hex.slice(2,4),16), b: parseInt(hex.slice(4,6),16) };
+}
+
+function lerpColor(c1, c2, t) {
+  let a = hexToRgb(c1), b = hexToRgb(c2);
+  return `rgb(${a.r+(b.r-a.r)*t|0},${a.g+(b.g-a.g)*t|0},${a.b+(b.b-a.b)*t|0})`;
+}
+
+function rgbaStr(hex, alpha) {
+  let c = hexToRgb(hex);
+  return `rgba(${c.r},${c.g},${c.b},${alpha})`;
+}
+
+// ══════════ LANDSCAPE HOOD (wide arc — existing v4 style) ══════════
+
+function drawHoodLandscape(ctx, S) {
+  // S = scale factor (2 for 2x display)
+  const W = 320*S, H = 170*S;
+  const cx = 160*S;
+  const r = 95*S, hcy = 108*S, peakY = 12*S;
+  const shoulder = 105*S, baseY = 175*S;
+
+  // Ambient glow
+  let ambGrad = ctx.createRadialGradient(cx, hcy, r*0.6, cx, hcy, r*1.6);
+  ambGrad.addColorStop(0, rgbaStr(COL.hoodEdge, 0.06));
+  ambGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ambGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  function hoodPath() {
+    ctx.beginPath();
+    ctx.moveTo(cx - shoulder, baseY);
+    ctx.bezierCurveTo(cx-shoulder, hcy+r*0.15, cx-r*0.85, hcy-r*0.2, cx-r*0.5, peakY+35*S/2);
+    ctx.quadraticCurveTo(cx, peakY-8*S/2, cx+r*0.5, peakY+35*S/2);
+    ctx.bezierCurveTo(cx+r*0.85, hcy-r*0.2, cx+shoulder, hcy+r*0.15, cx+shoulder, baseY);
+    ctx.closePath();
+  }
+
+  // Hood body gradient
+  hoodPath();
+  let darkHood = lerpColor(COL.hood, '#000', 0.45);
+  let midHood = lerpColor(COL.hood, '#000', 0.15);
+  let hg = ctx.createLinearGradient(cx-shoulder, 0, cx+shoulder, 0);
+  hg.addColorStop(0, rgbaStr(darkHood, 0.3));
+  hg.addColorStop(0.12, darkHood);
+  hg.addColorStop(0.28, midHood);
+  hg.addColorStop(0.4, COL.hoodEdge);
+  hg.addColorStop(0.5, lerpColor(COL.hoodEdge, '#fff', 0.03));
+  hg.addColorStop(0.6, COL.hoodEdge);
+  hg.addColorStop(0.72, midHood);
+  hg.addColorStop(0.88, darkHood);
+  hg.addColorStop(1, rgbaStr(darkHood, 0.3));
+  ctx.fillStyle = hg; ctx.fill();
+
+  // Vertical shading
+  hoodPath();
+  let vg = ctx.createLinearGradient(0, peakY, 0, baseY);
+  vg.addColorStop(0, 'rgba(255,255,255,0.03)');
+  vg.addColorStop(0.2, 'rgba(0,0,0,0)');
+  vg.addColorStop(0.55, 'rgba(0,0,0,0.25)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = vg; ctx.fill();
+
+  // Center dark
+  hoodPath();
+  let cd = ctx.createRadialGradient(cx, hcy+10*S, r*0.05, cx, hcy+10*S, r*0.95);
+  cd.addColorStop(0, 'rgba(0,0,0,0.85)');
+  cd.addColorStop(0.4, 'rgba(0,0,0,0.6)');
+  cd.addColorStop(0.7, 'rgba(0,0,0,0.2)');
+  cd.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = cd; ctx.fill();
+
+  // Face cavity
+  let fow = r*0.72;
+  let ovalCY = hcy+12*S;
+  let sh = ctx.createRadialGradient(cx, ovalCY, fow*0.15, cx, ovalCY, fow*1.15);
+  sh.addColorStop(0, 'rgba(0,0,0,0.9)');
+  sh.addColorStop(0.45, 'rgba(0,0,0,0.6)');
+  sh.addColorStop(0.75, 'rgba(0,0,0,0.15)');
+  sh.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh;
+  ctx.beginPath(); ctx.ellipse(cx, ovalCY, fow*1.15, fow*0.95, 0, 0, Math.PI*2); ctx.fill();
+
+  // Edge highlight
+  ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.2);
+  ctx.lineWidth = 1.5*S/2; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx-shoulder+10*S/2, baseY-20*S/2);
+  ctx.bezierCurveTo(cx-shoulder+5*S/2, hcy+r*0.15, cx-r*0.85, hcy-r*0.2, cx-r*0.5, peakY+35*S/2);
+  ctx.quadraticCurveTo(cx, peakY-8*S/2, cx+r*0.5, peakY+35*S/2);
+  ctx.bezierCurveTo(cx+r*0.85, hcy-r*0.2, cx+shoulder-5*S/2, hcy+r*0.15, cx+shoulder-10*S/2, baseY-20*S/2);
+  ctx.stroke();
+
+  // Folds
+  ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.07);
+  ctx.lineWidth = 1.5*S/2;
+  ctx.beginPath(); ctx.moveTo(cx-r*0.25, peakY+30*S/2);
+  ctx.quadraticCurveTo(cx-r*0.3, hcy, cx-r*0.2, baseY-30*S/2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx+r*0.25, peakY+30*S/2);
+  ctx.quadraticCurveTo(cx+r*0.3, hcy, cx+r*0.2, baseY-30*S/2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx, peakY+5*S/2);
+  ctx.quadraticCurveTo(cx+1, peakY+40*S/2, cx, peakY+80*S/2); ctx.stroke();
+}
+
+// ══════════ PORTRAIT HOOD (rounded arch — monk/assassin style) ══════════
+
+function drawHoodPortrait(ctx, S) {
+  const W = 170*S, H = 320*S;
+  const cx = 85*S;
+
+  // Hood dimensions — wide rounded arch, not pointed
+  const archTopY = 18*S;        // top of the rounded arch
+  const archR = 72*S;           // radius of the top arch (wide dome)
+  const shoulderW = 82*S;       // half-width at shoulders (nearly full width)
+  const shoulderY = 95*S;       // where arch meets the straight sides
+  const baseY = 320*S;          // bottom (off-screen, hood fills to edge)
+  const faceCY = 140*S;         // center of face opening
+
+  // Ambient glow
+  let ambGrad = ctx.createRadialGradient(cx, faceCY, 30*S, cx, faceCY, 120*S);
+  ambGrad.addColorStop(0, rgbaStr(COL.hoodEdge, 0.05));
+  ambGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = ambGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Hood outer shape — rounded arch top + straight sides
+  function hoodPath() {
+    ctx.beginPath();
+    // Start bottom-left
+    ctx.moveTo(cx - shoulderW, baseY);
+    // Left side — slightly tapered inward going up
+    ctx.lineTo(cx - shoulderW, shoulderY);
+    // Left shoulder curving up into arch
+    ctx.bezierCurveTo(
+      cx - shoulderW, shoulderY - 30*S,     // control: transition to curve
+      cx - archR, archTopY + 10*S,           // control: left side of arch
+      cx, archTopY                            // top center of arch
+    );
+    // Arch top to right shoulder
+    ctx.bezierCurveTo(
+      cx + archR, archTopY + 10*S,           // control: right side of arch
+      cx + shoulderW, shoulderY - 30*S,      // control: transition from curve
+      cx + shoulderW, shoulderY               // right shoulder
+    );
+    // Right side straight down
+    ctx.lineTo(cx + shoulderW, baseY);
+    ctx.closePath();
+  }
+
+  // Hood body — horizontal gradient for cylindrical volume
+  hoodPath();
+  let darkHood = lerpColor(COL.hood, '#000', 0.5);
+  let midHood = lerpColor(COL.hood, '#000', 0.15);
+  let hg = ctx.createLinearGradient(cx-shoulderW, 0, cx+shoulderW, 0);
+  hg.addColorStop(0, rgbaStr(darkHood, 0.15));
+  hg.addColorStop(0.08, darkHood);
+  hg.addColorStop(0.22, midHood);
+  hg.addColorStop(0.35, COL.hoodEdge);
+  hg.addColorStop(0.5, lerpColor(COL.hoodEdge, '#fff', 0.04));
+  hg.addColorStop(0.65, COL.hoodEdge);
+  hg.addColorStop(0.78, midHood);
+  hg.addColorStop(0.92, darkHood);
+  hg.addColorStop(1, rgbaStr(darkHood, 0.15));
+  ctx.fillStyle = hg; ctx.fill();
+
+  // Vertical shading — darker at bottom
+  hoodPath();
+  let vg = ctx.createLinearGradient(0, archTopY, 0, baseY);
+  vg.addColorStop(0, 'rgba(255,255,255,0.03)');
+  vg.addColorStop(0.12, 'rgba(0,0,0,0)');
+  vg.addColorStop(0.4, 'rgba(0,0,0,0.1)');
+  vg.addColorStop(0.7, 'rgba(0,0,0,0.35)');
+  vg.addColorStop(1, 'rgba(0,0,0,0.65)');
+  ctx.fillStyle = vg; ctx.fill();
+
+  // Face cavity — deep oval shadow, positioned in upper half
+  let cavityW = shoulderW * 0.6;
+  let cavityH = 55*S;
+
+  // Radial center darkening (the void inside the hood)
+  hoodPath();
+  let centerDark = ctx.createRadialGradient(cx, faceCY+5*S, archR*0.05, cx, faceCY+5*S, archR*0.85);
+  centerDark.addColorStop(0, 'rgba(0,0,0,0.88)');
+  centerDark.addColorStop(0.35, 'rgba(0,0,0,0.6)');
+  centerDark.addColorStop(0.65, 'rgba(0,0,0,0.2)');
+  centerDark.addColorStop(0.85, 'rgba(0,0,0,0.05)');
+  centerDark.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = centerDark; ctx.fill();
+
+  // Soft oval face shadow
+  let sh1 = ctx.createRadialGradient(cx, faceCY, 8*S, cx, faceCY, cavityW*1.2);
+  sh1.addColorStop(0, 'rgba(0,0,0,0.9)');
+  sh1.addColorStop(0.4, 'rgba(0,0,0,0.65)');
+  sh1.addColorStop(0.7, 'rgba(0,0,0,0.2)');
+  sh1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh1;
+  ctx.beginPath(); ctx.ellipse(cx, faceCY, cavityW*1.2, cavityH*1.1, 0, 0, Math.PI*2); ctx.fill();
+
+  // Eye glow reflection
+  let eyeY = 140*S;
+  let eyeRefl = ctx.createRadialGradient(cx, eyeY, 0, cx, eyeY, cavityW*0.45);
+  eyeRefl.addColorStop(0, rgbaStr(COL.glow, 0.03));
+  eyeRefl.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = eyeRefl;
+  ctx.beginPath(); ctx.arc(cx, eyeY, cavityW*0.45, 0, Math.PI*2); ctx.fill();
+
+  // Edge highlight — follows the arch
+  ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.2);
+  ctx.lineWidth = 1.5*S/2; ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(cx-shoulderW+3*S/2, baseY-20*S);
+  ctx.lineTo(cx-shoulderW+3*S/2, shoulderY);
+  ctx.bezierCurveTo(cx-shoulderW+3*S/2, shoulderY-30*S, cx-archR+2*S, archTopY+10*S, cx, archTopY+2*S);
+  ctx.bezierCurveTo(cx+archR-2*S, archTopY+10*S, cx+shoulderW-3*S/2, shoulderY-30*S, cx+shoulderW-3*S/2, shoulderY);
+  ctx.lineTo(cx+shoulderW-3*S/2, baseY-20*S);
+  ctx.stroke();
+
+  // Fabric folds — vertical lines suggesting draping
+  ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.06);
+  ctx.lineWidth = 1*S/2;
+  // Left fold
+  ctx.beginPath();
+  ctx.moveTo(cx-25*S, shoulderY+10*S);
+  ctx.quadraticCurveTo(cx-27*S, faceCY+40*S, cx-22*S, baseY-20*S);
+  ctx.stroke();
+  // Right fold
+  ctx.beginPath();
+  ctx.moveTo(cx+25*S, shoulderY+10*S);
+  ctx.quadraticCurveTo(cx+27*S, faceCY+40*S, cx+22*S, baseY-20*S);
+  ctx.stroke();
+  // Center seam on arch
+  ctx.strokeStyle = rgbaStr(COL.hoodEdge, 0.05);
+  ctx.beginPath();
+  ctx.moveTo(cx, archTopY+3*S);
+  ctx.quadraticCurveTo(cx+1, archTopY+35*S, cx, shoulderY-10*S);
+  ctx.stroke();
+}
+
+// ══════════ SHARED DRAWING PRIMITIVES ══════════
+
+function drawGlowingEye(ctx, ex, ey, size, col, glowCol, glowR, intensity) {
+  intensity = intensity ?? 1.0;
+  let gc = hexToRgb(glowCol);
+
+  let g1 = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR*intensity);
+  g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},${0.5*intensity})`);
+  g1.addColorStop(0.3, `rgba(${gc.r},${gc.g},${gc.b},${0.25*intensity})`);
+  g1.addColorStop(0.6, `rgba(${gc.r},${gc.g},${gc.b},${0.08*intensity})`);
+  g1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g1;
+  ctx.beginPath(); ctx.arc(ex, ey, glowR*intensity, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.moveTo(ex-size, ey);
+  ctx.bezierCurveTo(ex-size*0.5, ey-size*0.7, ex+size*0.5, ey-size*0.7, ex+size, ey);
+  ctx.bezierCurveTo(ex+size*0.5, ey+size*0.7, ex-size*0.5, ey+size*0.7, ex-size, ey);
+  ctx.closePath(); ctx.fill();
+
+  let core = ctx.createRadialGradient(ex, ey, 0, ex, ey, size*0.5);
+  core.addColorStop(0, 'rgba(255,255,255,0.9)');
+  core.addColorStop(0.4, col);
+  core.addColorStop(1, rgbaStr(col, 0.5));
+  ctx.fillStyle = core;
+  ctx.beginPath(); ctx.ellipse(ex, ey, size*0.55, size*0.38, 0, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.arc(ex, ey, size*0.18, 0, Math.PI*2); ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.beginPath(); ctx.ellipse(ex-size*0.18, ey-size*0.18, size*0.1, size*0.07, -0.3, 0, Math.PI*2); ctx.fill();
+}
+
+function drawHappyEye(ctx, ex, ey, size, col, glowCol, glowR) {
+  let gc = hexToRgb(glowCol);
+  let g1 = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR*0.7);
+  g1.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},0.25)`);
+  g1.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g1;
+  ctx.beginPath(); ctx.arc(ex, ey, glowR*0.7, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 3.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(ex, ey+size*0.3, size*0.8, Math.PI*1.15, Math.PI*1.85);
+  ctx.stroke();
+}
+
+function drawSigil(ctx, sx, sy, col, sigScale, rotation) {
+  sigScale = sigScale || 1;
+  rotation = rotation || 0;
+  let s = 12 * sigScale;
+
+  let gc = hexToRgb(col);
+  let g = ctx.createRadialGradient(sx, sy, 0, sx, sy, s*2.5);
+  g.addColorStop(0, `rgba(${gc.r},${gc.g},${gc.b},0.25)`);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(sx, sy, s*2.5, 0, Math.PI*2); ctx.fill();
+
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.rotate(rotation);
+  ctx.strokeStyle = col; ctx.lineCap = 'round';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(0,s); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-s,0); ctx.lineTo(s,0); ctx.stroke();
+  ctx.lineWidth = 1.5;
+  let d = s*0.65;
+  ctx.beginPath(); ctx.moveTo(-d,-d); ctx.lineTo(d,d); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-d,d); ctx.lineTo(d,-d); ctx.stroke();
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(0, 0, s*0.35, 0, Math.PI*2); ctx.stroke();
+  ctx.fillStyle = col;
+  [[0,-s*1.3],[0,s*1.3],[-s*1.3,0],[s*1.3,0]].forEach(([dx,dy]) => {
+    ctx.beginPath(); ctx.arc(dx, dy, 2, 0, Math.PI*2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+function drawMouth(ctx, mx, my, w, col, curve) {
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(mx-w, my);
+  ctx.quadraticCurveTo(mx, my+curve, mx+w, my);
+  ctx.stroke();
+}
+
+// ══════════ STATE RENDERING (parameterized by layout) ══════════
+
+function renderStates(ctx, cx, eyeY, eyeDist, eyeSize, sigilY, mouthY, glowR, now) {
+  const lx = cx - eyeDist, rx = cx + eyeDist;
+  const es = eyeSize, gr = glowR;
+
+  if (currentState === 'IDLE') {
+    let breath = 0.8 + 0.2*Math.sin(now/4000*Math.PI*2);
+    let ec = lerpColor('#004415', COL.eye, breath);
+    let dx = 3*Math.sin(now/5000), dy = 2*Math.cos(now/7000);
+    drawGlowingEye(ctx, lx+dx, eyeY+dy, es, ec, COL.glow, gr, breath);
+    drawGlowingEye(ctx, rx+dx, eyeY+dy, es, ec, COL.glow, gr, breath);
+    let sb = 0.10+0.05*Math.sin(now/3000);
+    drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, sb), 0.6);
+    drawMouth(ctx, cx, mouthY, 16, rgbaStr(COL.eye, 0.25), 0);
+
+  } else if (currentState === 'THINKING') {
+    drawGlowingEye(ctx, lx, eyeY-3, es, COL.eye, COL.glow, gr, 1);
+    drawGlowingEye(ctx, rx, eyeY-3, es, COL.eye, COL.glow, gr, 1);
+    let thinkRot = (now/8000)*Math.PI*2;
+    let thinkPulse = 0.8+0.2*Math.sin(now/600);
+    drawSigil(ctx, cx, sigilY, lerpColor('#000', COL.sigil, thinkPulse), 1, thinkRot);
+    drawMouth(ctx, cx, mouthY, 12, rgbaStr(COL.eye, 0.4), 0);
+    let dots = ['','.','..','...'][Math.floor(now/400)%4];
+    ctx.fillStyle = rgbaStr(COL.eye, 0.4);
+    ctx.font = '18px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText(dots, cx, mouthY+28);
+
+  } else if (currentState === 'WORKING') {
+    let sq = es*0.5;
+    drawGlowingEye(ctx, lx, eyeY, sq, COL.eye, COL.glow, gr*0.5, 0.6);
+    drawGlowingEye(ctx, rx, eyeY, sq, COL.eye, COL.glow, gr*0.5, 0.6);
+    ctx.strokeStyle = rgbaStr(COL.eye, 0.6); ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(lx-es, eyeY-es-5); ctx.lineTo(lx+es*0.5, eyeY-es-2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx-es*0.5, eyeY-es-2); ctx.lineTo(rx+es, eyeY-es-5); ctx.stroke();
+    let workRot = (now/3000)*Math.PI*2;
+    drawSigil(ctx, cx, sigilY, rgbaStr(COL.eye, 0.5), 0.9, workRot);
+    drawMouth(ctx, cx, mouthY, 10, rgbaStr(COL.eye, 0.3), 0);
+    let dots2 = ['','.','..','...'][Math.floor(now/600)%4];
+    ctx.fillStyle = rgbaStr(COL.eye, 0.3);
+    ctx.font = '16px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText(dots2, cx, mouthY+24);
+
+  } else if (currentState === 'PROUD') {
+    drawHappyEye(ctx, lx, eyeY, es, COL.eye, COL.glow, gr);
+    drawHappyEye(ctx, rx, eyeY, es, COL.eye, COL.glow, gr);
+    let proudScale = 1.1+0.1*Math.sin(now/500);
+    drawSigil(ctx, cx, sigilY, COL.sigil, proudScale);
+    let ringT = (now%2000)/2000;
+    let ringR = 12+ringT*25;
+    let ringA = 0.4*(1-ringT);
+    if (ringA>0.01) {
+      ctx.strokeStyle = rgbaStr(COL.sigil, ringA); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx, sigilY, ringR, 0, Math.PI*2); ctx.stroke();
+    }
+    drawMouth(ctx, cx, mouthY, 18, COL.eye, 8);
+
+  } else if (currentState === 'SLEEPING') {
+    ctx.strokeStyle = rgbaStr(COL.eye, 0.3); ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(lx-es, eyeY); ctx.lineTo(lx+es, eyeY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx-es, eyeY); ctx.lineTo(rx+es, eyeY); ctx.stroke();
+    let yO = 6*Math.sin(now/800);
+    ctx.fillStyle = rgbaStr(COL.eye, 0.3);
+    ctx.font = '12px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('z', cx+30, eyeY-25+yO);
+    ctx.font = '20px "JetBrains Mono", monospace';
+    ctx.fillText('Z', cx+45, eyeY-42+yO);
+    ctx.font = '12px "JetBrains Mono", monospace';
+    ctx.fillText('z', cx+58, eyeY-58+yO);
+
+  } else if (currentState === 'HAPPY') {
+    drawHappyEye(ctx, lx, eyeY, es*1.1, COL.eye, COL.glow, gr);
+    drawHappyEye(ctx, rx, eyeY, es*1.1, COL.eye, COL.glow, gr);
+    let sc = (Math.floor(now/300)%2===0) ? COL.sigil : lerpColor(COL.sigil,'#000',0.3);
+    let bounceY = sigilY+4*Math.sin(now/400);
+    drawSigil(ctx, cx, bounceY, sc, 1.1);
+    drawMouth(ctx, cx, mouthY, 22, COL.eye, 10);
+    let sp = 0.5+0.5*Math.sin(now/600);
+    ctx.fillStyle = lerpColor('#000', COL.eye, sp);
+    ctx.font = '16px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('*', cx-45, eyeY-25); ctx.fillText('*', cx+45, eyeY-25);
+
+  } else if (currentState === 'CURIOUS') {
+    let scanX = 8*Math.sin(now/1500);
+    drawGlowingEye(ctx, lx+scanX, eyeY, es*1.15, COL.eye, COL.glow, gr*1.1, 1);
+    drawGlowingEye(ctx, rx+scanX, eyeY, es*1.15, COL.eye, COL.glow, gr*1.1, 1);
+    ctx.strokeStyle = COL.eye; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(lx-es-2, eyeY-es-2); ctx.lineTo(lx+es, eyeY-es-8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx-es, eyeY-es-8); ctx.lineTo(rx+es+2, eyeY-es-2); ctx.stroke();
+    let curiousTilt = 0.25*Math.sin(now/1200);
+    let curiousScale = 0.9+0.2*(0.5+0.5*Math.sin(now/1000*Math.PI*2));
+    drawSigil(ctx, cx, sigilY, COL.sigil, curiousScale, curiousTilt);
+    ctx.strokeStyle = COL.eye; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, mouthY, 5, 0, Math.PI*2); ctx.stroke();
+    let qY = 4*Math.sin(now/800);
+    ctx.fillStyle = rgbaStr(COL.eye, 0.5);
+    ctx.font = '22px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('?', cx+eyeDist+18, eyeY-12+qY);
+
+  } else if (currentState === 'ALERT') {
+    let alertCol = '#ffaa00';
+    let flash = Math.floor(now/500)%2===0;
+    drawGlowingEye(ctx, lx, eyeY, es, alertCol, alertCol, gr, 1);
+    drawGlowingEye(ctx, rx, eyeY, es, alertCol, alertCol, gr, 1);
+    let shakeX = 3*Math.sin(now/80);
+    drawSigil(ctx, cx+shakeX, sigilY, flash ? COL.sigil : lerpColor(COL.sigil,'#000',0.4), 1.2);
+    ctx.strokeStyle = alertCol; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i=0;i<5;i++) {
+      let mx=cx-18+i*9, my=mouthY+((i%2===0)?0:5);
+      if(i===0) ctx.moveTo(mx,my); else ctx.lineTo(mx,my);
+    }
+    ctx.stroke();
+    if (flash) {
+      ctx.fillStyle = COL.sigil;
+      ctx.font = 'bold 24px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+      ctx.fillText('!', cx+eyeDist+22, eyeY-5);
+    }
+
+  } else if (currentState === 'ERROR') {
+    let errCol = '#ff0040';
+    let gc2 = hexToRgb(errCol);
+    [-1,1].forEach(side => {
+      let ex = side===-1 ? lx : rx;
+      let g = ctx.createRadialGradient(ex, eyeY, 0, ex, eyeY, gr*0.6);
+      g.addColorStop(0, `rgba(${gc2.r},${gc2.g},${gc2.b},0.25)`);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(ex, eyeY, gr*0.6, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = errCol; ctx.lineWidth = 3.5; ctx.lineCap = 'round';
+      let xs = es*0.65;
+      ctx.beginPath(); ctx.moveTo(ex-xs, eyeY-xs); ctx.lineTo(ex+xs, eyeY+xs); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(ex-xs, eyeY+xs); ctx.lineTo(ex+xs, eyeY-xs); ctx.stroke();
+    });
+    if (Math.random()>0.4) drawSigil(ctx, cx, sigilY, rgbaStr(errCol, 0.4), 0.7+Math.random()*0.3);
+    drawMouth(ctx, cx, mouthY+3, 14, errCol, -5);
+    ctx.fillStyle = rgbaStr(errCol, 0.5);
+    ctx.font = '11px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+    ctx.fillText('reconnecting', cx, mouthY+32);
+
+  } else if (currentState === 'BORED') {
+    let phase = Math.floor((now/5000)%6);
+    let t = (now%5000)/5000;
+
+    if (phase === 0) {
+      let angle = t*Math.PI*2, rollR = 10;
+      let ldx = Math.cos(angle)*rollR, ldy = Math.sin(angle)*rollR;
+      drawGlowingEye(ctx, lx+ldx, eyeY+ldy, es*0.9, COL.eye, COL.glow, gr*0.7, 0.7);
+      drawGlowingEye(ctx, rx+ldx, eyeY+ldy, es*0.9, COL.eye, COL.glow, gr*0.7, 0.7);
+      drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.15), 0.6);
+      drawMouth(ctx, cx, mouthY, 12, rgbaStr(COL.eye, 0.3), -2);
+      ctx.fillStyle = rgbaStr(COL.eye, 0.25);
+      ctx.font = '14px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+      ctx.fillText('...', cx, mouthY+24);
+
+    } else if (phase === 1) {
+      let lookX, lookY;
+      if (t<0.25) { lookX=-18*(t/0.25); lookY=0; }
+      else if (t<0.5) { lookX=-18+36*((t-0.25)/0.25); lookY=0; }
+      else if (t<0.75) { lookX=18-18*((t-0.5)/0.25); lookY=-10*((t-0.5)/0.25); }
+      else { lookX=0; lookY=-10+10*((t-0.75)/0.25); }
+      drawGlowingEye(ctx, lx+lookX, eyeY+lookY, es, COL.eye, COL.glow, gr*0.8, 0.8);
+      drawGlowingEye(ctx, rx+lookX, eyeY+lookY, es, COL.eye, COL.glow, gr*0.8, 0.8);
+      let sigilUp = lookY<-5 ? 0.4 : 0.12;
+      drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, sigilUp), 0.7);
+      drawMouth(ctx, cx, mouthY, 14, rgbaStr(COL.eye, 0.2), 0);
+      if (t>0.6 && t<0.85) {
+        ctx.fillStyle = rgbaStr(COL.eye, 0.2*Math.sin((t-0.6)/0.25*Math.PI));
+        ctx.font = '16px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+        ctx.fillText('?', cx+eyeDist+12, eyeY-14);
+      }
+
+    } else if (phase === 2) {
+      let yawnOpen = t<0.3 ? t/0.3 : t<0.7 ? 1 : 1-(t-0.7)/0.3;
+      let lidClose = Math.max(0, yawnOpen-0.3);
+      let eyeH = es*(1-lidClose*0.7);
+      drawGlowingEye(ctx, lx, eyeY, eyeH, COL.eye, COL.glow, gr*0.5, 0.5+0.3*(1-yawnOpen));
+      drawGlowingEye(ctx, rx, eyeY, eyeH, COL.eye, COL.glow, gr*0.5, 0.5+0.3*(1-yawnOpen));
+      drawMouth(ctx, cx, mouthY, 6+yawnOpen*12, rgbaStr(COL.eye, 0.3+yawnOpen*0.2), yawnOpen*10);
+      drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.08+0.04*(1-yawnOpen)), 0.5);
+
+    } else if (phase === 3) {
+      let bounceT = Math.abs(Math.sin(t*Math.PI*3));
+      let juggleY = sigilY+20-bounceT*40;
+      let juggleRot = t*Math.PI*4;
+      drawSigil(ctx, cx, juggleY, COL.sigil, 0.8+bounceT*0.4, juggleRot);
+      let trackY = (juggleY-eyeY)*0.15;
+      drawGlowingEye(ctx, lx, eyeY+trackY, es, COL.eye, COL.glow, gr*0.8, 0.85);
+      drawGlowingEye(ctx, rx, eyeY+trackY, es, COL.eye, COL.glow, gr*0.8, 0.85);
+      drawMouth(ctx, cx, mouthY, 14, rgbaStr(COL.eye, 0.3), 3);
+
+    } else if (phase === 4) {
+      let droopCycle = t<0.7 ? t/0.7 : 0;
+      let snap = t>=0.7 ? Math.min(1,(t-0.7)/0.1) : 0;
+      let eyeDroop = droopCycle*0.8*(1-snap);
+      let eyeScale = es*(1-eyeDroop*0.6);
+      let eyeInt = 0.9-eyeDroop*0.5+snap*0.5;
+      drawGlowingEye(ctx, lx, eyeY+eyeDroop*6, eyeScale, COL.eye, COL.glow, gr*0.6, eyeInt);
+      drawGlowingEye(ctx, rx, eyeY+eyeDroop*6, eyeScale, COL.eye, COL.glow, gr*0.6, eyeInt);
+      if (eyeDroop<0.5||snap>0||Math.random()>0.5)
+        drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.12*(1-eyeDroop)+snap*0.2), 0.5+snap*0.3);
+      drawMouth(ctx, cx, mouthY, 12, rgbaStr(COL.eye, 0.2), -2*eyeDroop);
+      if (snap>0.5) {
+        ctx.fillStyle = rgbaStr(COL.eye, 0.4*(1-(t-0.8)/0.2));
+        ctx.font = 'bold 16px "JetBrains Mono", monospace'; ctx.textAlign = 'center';
+        ctx.fillText('!', cx+eyeDist+8, eyeY-14);
+      }
+
+    } else if (phase === 5) {
+      drawGlowingEye(ctx, lx, eyeY-4, es*0.9, COL.eye, COL.glow, gr*0.7, 0.75);
+      drawGlowingEye(ctx, rx, eyeY-4, es*0.9, COL.eye, COL.glow, gr*0.7, 0.75);
+      drawSigil(ctx, cx, sigilY, rgbaStr(COL.sigil, 0.3), 0.8, (now/2000)*Math.PI*2);
+      ctx.strokeStyle = rgbaStr(COL.eye, 0.35); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(cx, mouthY, 4, 0, Math.PI*2); ctx.stroke();
+      let notes = ['\u266A','\u266B'];
+      for (let i=0;i<2;i++) {
+        let nt = (t+i*0.4)%1;
+        let nx = cx+20+i*12+6*Math.sin(nt*Math.PI*2);
+        let ny = mouthY-nt*45;
+        let na = nt<0.8 ? 0.5 : 0.5*(1-(nt-0.8)/0.2);
+        ctx.fillStyle = rgbaStr(COL.eye, na);
+        ctx.font = `${12+i*3}px "JetBrains Mono", monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(notes[i], nx, ny);
+      }
+    }
+  }
+}
+
+// ══════════ MAIN LOOP ══════════
+
+const cLand = document.getElementById('cLand');
+const cPort = document.getElementById('cPort');
+const ctxL = cLand.getContext('2d');
+const ctxP = cPort.getContext('2d');
+
+function loop() {
+  let now = Date.now() - startTime;
+
+  // ── LANDSCAPE (320x170 at 2x = 640x340) ──
+  ctxL.save();
+  ctxL.fillStyle = COL.bg;
+  ctxL.fillRect(0, 0, 640, 340);
+  ctxL.scale(2, 2);
+  drawHoodLandscape(ctxL, 1);
+  // Scanlines
+  ctxL.fillStyle = 'rgba(0,0,0,0.04)';
+  for (let y=0; y<170; y+=2) ctxL.fillRect(0, y, 320, 1);
+  // Face elements — landscape coords
+  renderStates(ctxL, 160, 82, 44, 18, 38, 115, 28, now);
+  ctxL.restore();
+
+  // ── PORTRAIT (170x320 at 2x = 340x640) ──
+  ctxP.save();
+  ctxP.fillStyle = COL.bg;
+  ctxP.fillRect(0, 0, 340, 640);
+  ctxP.scale(2, 2);
+  drawHoodPortrait(ctxP, 1);
+  // Scanlines
+  ctxP.fillStyle = 'rgba(0,0,0,0.04)';
+  for (let y=0; y<320; y+=2) ctxP.fillRect(0, y, 170, 1);
+  // Face elements — portrait coords
+  renderStates(ctxP, 85, 140, 34, 16, 88, 190, 26, now);
+  ctxP.restore();
+
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

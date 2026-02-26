@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Sigil Face Mockup v2 — Design Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #00ff41;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    padding: 20px;
+  }
+  h1 { font-size: 18px; margin-bottom: 6px; color: #00ff41; }
+  .sub { color: #005516; font-size: 12px; margin-bottom: 14px; }
+
+  /* ── Toolbar rows ── */
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+  .toolbar .lbl { font-size: 10px; color: #005516; margin-right: 2px; text-transform: uppercase; letter-spacing: 1px; }
+  .toolbar button, .toggle-group button {
+    background: #020502; color: #00ff41; border: 1px solid #00ff41;
+    padding: 6px 12px; cursor: pointer; font-family: inherit;
+    font-size: 11px; border-radius: 3px; transition: all 0.12s;
+  }
+  .toolbar button:hover, .toggle-group button:hover { background: #00ff4122; }
+  .toolbar button.active, .toggle-group button.active { background: #00ff41; color: #020502; font-weight: bold; }
+  .toggle-group { display: inline-flex; gap: 0; }
+  .toggle-group button { border-radius: 0; border-right: none; }
+  .toggle-group button:first-child { border-radius: 3px 0 0 3px; }
+  .toggle-group button:last-child { border-radius: 0 3px 3px 0; border-right: 1px solid #00ff41; }
+  .sep { width: 1px; height: 24px; background: #00ff4133; margin: 0 6px; }
+
+  .slider-group {
+    display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px;
+  }
+  .slider-group label {
+    display: flex; flex-direction: column; gap: 2px;
+    font-size: 9px; color: #005516;
+  }
+  .slider-group input[type="range"] { width: 130px; accent-color: #00ff41; }
+  .slider-group span { color: #00ff41; font-size: 11px; }
+  .display-wrap {
+    border: 2px solid #00ff4133; border-radius: 8px;
+    padding: 12px; background: #020502; display: inline-block;
+  }
+  .display-wrap h3 {
+    font-size: 10px; color: #005516; margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: 2px;
+  }
+  canvas { display: block; image-rendering: pixelated; }
+  .export-row { margin-top: 12px; display: flex; gap: 10px; align-items: center; }
+  .export-row button {
+    background: #00ff41; color: #020502; border: none;
+    padding: 8px 16px; cursor: pointer; font-family: inherit;
+    font-size: 12px; font-weight: bold; border-radius: 4px;
+  }
+  #copyFeedback { color: #00ff41; font-size: 11px; opacity: 0; transition: opacity 0.3s; }
+  #paramPreview {
+    margin-top: 6px; padding: 6px; border: 1px solid #005516;
+    border-radius: 4px; font-size: 10px; color: #005516;
+    font-family: monospace; white-space: pre-wrap; max-width: 750px; word-break: break-all;
+  }
+</style>
+</head>
+<body>
+
+<h1>⬡ Sigil v2 — Design Lab</h1>
+<p class="sub">Cappuccio toggle · forme occhi · balloon fumetto · tutti gli stati animati</p>
+
+<!-- ── Row 1: States ── -->
+<div class="toolbar" id="stateBar">
+  <span class="lbl">Stato:</span>
+  <button class="active" onclick="setState('IDLE')">IDLE</button>
+  <button onclick="setState('THINKING')">THINKING</button>
+  <button onclick="setState('WORKING')">WORKING</button>
+  <button onclick="setState('PROUD')">PROUD</button>
+  <button onclick="setState('SLEEPING')">SLEEPING</button>
+  <button onclick="setState('HAPPY')">HAPPY</button>
+  <button onclick="setState('CURIOUS')">CURIOUS</button>
+  <button onclick="setState('ALERT')">ALERT</button>
+  <button onclick="setState('ERROR')">ERROR</button>
+  <button onclick="setState('STANDALONE')">STANDALONE</button>
+</div>
+
+<!-- ── Row 2: Toggles ── -->
+<div class="toolbar">
+  <span class="lbl">Hood:</span>
+  <div class="toggle-group" id="hoodToggle">
+    <button class="active" onclick="setOpt('hood',true,this)">ON</button>
+    <button onclick="setOpt('hood',false,this)">OFF</button>
+  </div>
+  <div class="sep"></div>
+  <span class="lbl">Occhi:</span>
+  <div class="toggle-group" id="eyeToggle">
+    <button class="active" onclick="setOpt('eyeShape','dot',this)">Dot</button>
+    <button onclick="setOpt('eyeShape','mandorla',this)">Mandorla</button>
+    <button onclick="setOpt('eyeShape','oval',this)">Ovale</button>
+    <button onclick="setOpt('eyeShape','pixel',this)">Pixel</button>
+  </div>
+  <div class="sep"></div>
+  <span class="lbl">Balloon:</span>
+  <div class="toggle-group" id="balloonToggle">
+    <button class="active" onclick="setOpt('balloon','thought',this)">Thought</button>
+    <button onclick="setOpt('balloon','speech',this)">Speech</button>
+    <button onclick="setOpt('balloon','none',this)">Off</button>
+  </div>
+</div>
+
+<!-- ── Sliders ── -->
+<div class="slider-group">
+  <label>Testa raggio<input type="range" id="headR" min="28" max="60" value="44" oninput="up()"><span id="headR_v">44</span></label>
+  <label>Hood estensione<input type="range" id="hoodExt" min="0" max="30" value="14" oninput="up()"><span id="hoodExt_v">14</span></label>
+  <label>Occhio dim<input type="range" id="eyeR" min="2" max="12" value="4" oninput="up()"><span id="eyeR_v">4</span></label>
+  <label>Distanza occhi<input type="range" id="eyeDist" min="10" max="45" value="22" oninput="up()"><span id="eyeDist_v">22</span></label>
+  <label>Occhi Y<input type="range" id="eyeYOff" min="-20" max="10" value="-2" oninput="up()"><span id="eyeYOff_v">-2</span></label>
+  <label>Bocca larg<input type="range" id="mouthW" min="4" max="28" value="10" oninput="up()"><span id="mouthW_v">10</span></label>
+  <label>Bocca Y<input type="range" id="mouthYOff" min="5" max="35" value="16" oninput="up()"><span id="mouthYOff_v">16</span></label>
+  <label>Pupilla<input type="range" id="pupilR" min="1" max="6" value="2" oninput="up()"><span id="pupilR_v">2</span></label>
+  <label>Sigil scala<input type="range" id="sigilScale" min="0" max="14" value="7" oninput="up()"><span id="sigilScale_v">7</span></label>
+  <label>Sigil Y<input type="range" id="sigilYOff" min="-55" max="-10" value="-34" oninput="up()"><span id="sigilYOff_v">-34</span></label>
+  <label>Contorno<input type="range" id="outlineW" min="1" max="4" value="2" oninput="up()"><span id="outlineW_v">2</span></label>
+  <label>Palpebra %<input type="range" id="eyelidPct" min="0" max="50" value="0" oninput="up()"><span id="eyelidPct_v">0</span></label>
+</div>
+
+<div class="display-wrap">
+  <h3>▸ Preview live</h3>
+  <canvas id="display" width="640" height="340"></canvas>
+</div>
+
+<div class="export-row">
+  <button onclick="copyParams()">📋 COPIA VALORI</button>
+  <span id="copyFeedback"></span>
+</div>
+<div id="paramPreview"></div>
+
+<script>
+const canvas = document.getElementById('display');
+const ctx = canvas.getContext('2d');
+const S = 2;
+
+const COL_BG='#020502', COL_GREEN='#00ff41', COL_DIM='#005516',
+      COL_RED='#ff0040', COL_YELLOW='#ffaa00', COL_SCAN='#001405';
+
+let currentState = 'IDLE';
+let startTime = Date.now();
+
+// ── Options (toggles) ──
+let opts = { hood: true, eyeShape: 'dot', balloon: 'thought' };
+
+// ── Slider params ──
+let P = {
+  headR:44, hoodExt:14, eyeR:4, eyeDist:22, eyeYOff:-2,
+  mouthW:10, mouthYOff:16, pupilR:2,
+  sigilScale:7, sigilYOff:-34, outlineW:2, eyelidPct:0
+};
+const sliderKeys = Object.keys(P);
+
+function up() {
+  for (let k of sliderKeys) {
+    P[k] = parseInt(document.getElementById(k).value);
+    document.getElementById(k+'_v').textContent = P[k];
+  }
+  updatePreview();
+}
+
+function setState(s) {
+  currentState = s; startTime = Date.now();
+  document.querySelectorAll('#stateBar button').forEach(b=>b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+function setOpt(key, val, btn) {
+  opts[key] = val;
+  btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  updatePreview();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// DRAWING PRIMITIVES
+// ════════════════════════════════════════════════════════════════════
+
+function fillRect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x*S,y*S,w*S,h*S)}
+function fillCircle(x,y,r,c){ctx.fillStyle=c;ctx.beginPath();ctx.arc(x*S,y*S,r*S,0,Math.PI*2);ctx.fill()}
+function strokeCircle(x,y,r,c,w){ctx.strokeStyle=c;ctx.lineWidth=w*S;ctx.beginPath();ctx.arc(x*S,y*S,r*S,0,Math.PI*2);ctx.stroke()}
+function line(x1,y1,x2,y2,w,c){ctx.strokeStyle=c;ctx.lineWidth=w*S;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x1*S,y1*S);ctx.lineTo(x2*S,y2*S);ctx.stroke()}
+function txt(t,x,y,sz,c,al){ctx.fillStyle=c;ctx.textAlign=al||'center';ctx.textBaseline='middle';ctx.font=`${sz*S}px "JetBrains Mono",monospace`;ctx.fillText(t,x*S,y*S)}
+function scanlines(){ctx.fillStyle=COL_SCAN;for(let y=0;y<170;y+=2)ctx.fillRect(0,y*S,320*S,S)}
+
+// ════════════════════════════════════════════════════════════════════
+// HOOD (toggle-able)
+// ════════════════════════════════════════════════════════════════════
+
+function drawHood(cx, cy, col) {
+  const r=P.headR, ext=P.hoodExt, w=P.outlineW;
+  // Cerchio testa — SEMPRE visibile
+  strokeCircle(cx, cy, r, col, w);
+  // Estensioni cappuccio — solo se hood ON
+  if (!opts.hood) return;
+  ctx.strokeStyle=col; ctx.lineWidth=w*S; ctx.lineCap='round';
+  // Sinistra
+  ctx.beginPath();
+  ctx.moveTo((cx-r*0.7)*S,(cy-r*0.72)*S);
+  ctx.quadraticCurveTo((cx-r-ext*0.7)*S,(cy-r*0.1)*S,(cx-r*0.45-ext*0.3)*S,(cy+r*0.65+ext*0.6)*S);
+  ctx.stroke();
+  // Destra
+  ctx.beginPath();
+  ctx.moveTo((cx+r*0.7)*S,(cy-r*0.72)*S);
+  ctx.quadraticCurveTo((cx+r+ext*0.7)*S,(cy-r*0.1)*S,(cx+r*0.45+ext*0.3)*S,(cy+r*0.65+ext*0.6)*S);
+  ctx.stroke();
+  // Arco superiore
+  ctx.beginPath();
+  ctx.arc(cx*S,cy*S,(r+ext*0.25)*S,-Math.PI*0.82,-Math.PI*0.18);
+  ctx.stroke();
+}
+
+// ════════════════════════════════════════════════════════════════════
+// EYE SHAPES
+// ════════════════════════════════════════════════════════════════════
+
+function drawEye(ex, ey, col, sizeBoost) {
+  const r = P.eyeR + (sizeBoost||0);
+  const shape = opts.eyeShape;
+  const lid = P.eyelidPct;
+
+  if (shape === 'dot') {
+    fillCircle(ex, ey, r, col);
+    // Palpebra: copri parte superiore
+    if (lid > 0) {
+      let cutH = r * 2 * (lid/100);
+      fillRect(ex-r-1, ey-r-1, r*2+2, cutH+1, COL_BG);
+    }
+
+  } else if (shape === 'mandorla') {
+    // Rombo 4 punti (dal firmware originale)
+    let hw = r * 2.2, hh = r * 1.2;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.moveTo((ex-hw)*S, ey*S);
+    ctx.lineTo(ex*S, (ey-hh)*S);
+    ctx.lineTo((ex+hw)*S, ey*S);
+    ctx.lineTo(ex*S, (ey+hh)*S);
+    ctx.closePath();
+    ctx.fill();
+    if (lid > 0) {
+      let cutH = hh * 2 * (lid/100);
+      fillRect(ex-hw-1, ey-hh-1, hw*2+2, cutH+1, COL_BG);
+    }
+
+  } else if (shape === 'oval') {
+    // Ellisse orizzontale
+    let rw = r * 1.8, rh = r * 0.9;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.ellipse(ex*S, ey*S, rw*S, rh*S, 0, 0, Math.PI*2);
+    ctx.fill();
+    if (lid > 0) {
+      let cutH = rh * 2 * (lid/100);
+      fillRect(ex-rw-1, ey-rh-1, rw*2+2, cutH+1, COL_BG);
+    }
+
+  } else if (shape === 'pixel') {
+    // Quadratino pixel art
+    let sz = Math.max(2, Math.floor(r * 1.4));
+    fillRect(ex-sz, ey-sz, sz*2, sz*2, col);
+    if (lid > 0) {
+      let cutH = sz * 2 * (lid/100);
+      fillRect(ex-sz-1, ey-sz-1, sz*2+2, cutH+1, COL_BG);
+    }
+  }
+}
+
+function drawEyeClosed(ex, ey, col) {
+  const r = P.eyeR;
+  const shape = opts.eyeShape;
+  let w = (shape==='mandorla') ? r*2.2 : (shape==='oval') ? r*1.8 : (shape==='pixel') ? r*1.4 : r*1.5;
+  line(ex-w, ey, ex+w, ey, 1.5, col);
+}
+
+function drawPupil(ex, ey, dx, dy) {
+  fillCircle(ex+(dx||0), ey+(dy||0), P.pupilR, COL_BG);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// SIGIL GLYPH
+// ════════════════════════════════════════════════════════════════════
+
+function drawSigil(sx, sy, col) {
+  if (P.sigilScale <= 0) return;
+  const s = P.sigilScale;
+  line(sx,sy-s,sx,sy+s,1.5,col);
+  line(sx-s,sy,sx+s,sy,1.5,col);
+  const d=s*0.65;
+  line(sx-d,sy-d,sx+d,sy+d,1,col);
+  line(sx-d,sy+d,sx+d,sy-d,1,col);
+  strokeCircle(sx,sy,s*0.4,col,1);
+  const p=s*1.3;
+  ctx.fillStyle=col;
+  ctx.fillRect(sx*S-S/2,(sy-p)*S-S/2,S,S);
+  ctx.fillRect(sx*S-S/2,(sy+p)*S-S/2,S,S);
+  ctx.fillRect((sx-p)*S-S/2,sy*S-S/2,S,S);
+  ctx.fillRect((sx+p)*S-S/2,sy*S-S/2,S,S);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// BALLOONS (thought / speech)
+// ════════════════════════════════════════════════════════════════════
+
+function drawBalloon(bx, by, text, col, forceType) {
+  if (opts.balloon === 'none' && !forceType) return;
+  const type = forceType || opts.balloon;
+  if (type === 'none') return;
+
+  const textW = text.length * 5 + 14;
+  const bw = Math.max(28, textW);
+  const bh = 22;
+  const rx = 6; // border-radius
+
+  if (type === 'thought') {
+    // ── Nuvoletta pensiero ──
+    // Corpo: rettangolo arrotondato
+    ctx.fillStyle = COL_BG;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5 * S;
+    ctx.beginPath();
+    ctx.roundRect((bx-bw/2)*S, (by-bh/2)*S, bw*S, bh*S, rx*S);
+    ctx.fill();
+    ctx.stroke();
+    // Pallini di collegamento
+    fillCircle(bx - bw*0.3, by + bh/2 + 5, 3, col);
+    fillCircle(bx - bw*0.3 - 4, by + bh/2 + 11, 2, col);
+    // Testo
+    txt(text, bx, by - 1, 10, col);
+
+  } else if (type === 'speech') {
+    // ── Fumetto parlato ──
+    // Corpo
+    ctx.fillStyle = COL_BG;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5 * S;
+    ctx.beginPath();
+    ctx.roundRect((bx-bw/2)*S, (by-bh/2)*S, bw*S, bh*S, rx*S);
+    ctx.fill();
+    ctx.stroke();
+    // Codina triangolare
+    ctx.fillStyle = COL_BG;
+    ctx.beginPath();
+    ctx.moveTo((bx-6)*S, (by+bh/2-1)*S);
+    ctx.lineTo((bx-12)*S, (by+bh/2+10)*S);
+    ctx.lineTo((bx+2)*S, (by+bh/2-1)*S);
+    ctx.fill();
+    // Bordo codina
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5 * S;
+    ctx.beginPath();
+    ctx.moveTo((bx-6)*S, (by+bh/2)*S);
+    ctx.lineTo((bx-12)*S, (by+bh/2+10)*S);
+    ctx.lineTo((bx+2)*S, (by+bh/2)*S);
+    ctx.stroke();
+    // Copri la linea interna del bordo superiore della codina
+    ctx.fillStyle = COL_BG;
+    ctx.fillRect((bx-7)*S, (by+bh/2-2)*S, 10*S, 3*S);
+    // Testo
+    txt(text, bx, by - 1, 10, col);
+  }
+}
+
+// ── Balloon content per stato ──
+const balloonContent = {
+  IDLE:       '',
+  THINKING:   function(now){ return ['.','..','...','..'][Math.floor(now/400)%4]; },
+  WORKING:    function(now){ return ['.','..','...','..'][Math.floor(now/600)%4]; },
+  PROUD:      'OK!',
+  SLEEPING:   'zZz',
+  HAPPY:      ':D',
+  CURIOUS:    '?',
+  ALERT:      '!!',
+  ERROR:      'ERR',
+  STANDALONE: '...'
+};
+
+function getBalloonText(state, now) {
+  let c = balloonContent[state];
+  if (!c) return '';
+  if (typeof c === 'function') return c(now);
+  return c;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// MOUTH helpers
+// ════════════════════════════════════════════════════════════════════
+
+function mouthLine(cx, my, w, col) { line(cx-w/2, my, cx+w/2, my, 1, col); }
+function mouthSmile(cx, my, w, col, depth) {
+  ctx.strokeStyle=col; ctx.lineWidth=1.5*S; ctx.lineCap='round';
+  ctx.beginPath();
+  for(let dx=-w;dx<=w;dx++){
+    let ft=dx/w, dy=depth*ft*ft;
+    if(dx===-w) ctx.moveTo((cx+dx)*S,(my+dy)*S); else ctx.lineTo((cx+dx)*S,(my+dy)*S);
+  }
+  ctx.stroke();
+}
+function mouthFrown(cx, my, w, col, depth) {
+  ctx.strokeStyle=col; ctx.lineWidth=1*S; ctx.lineCap='round';
+  ctx.beginPath();
+  for(let dx=-w;dx<=w;dx++){
+    let ft=dx/w, dy=-depth*ft*ft;
+    if(dx===-w) ctx.moveTo((cx+dx)*S,(my+depth+dy)*S); else ctx.lineTo((cx+dx)*S,(my+depth+dy)*S);
+  }
+  ctx.stroke();
+}
+function mouthZig(cx, my, col) {
+  for(let i=0;i<3;i++){
+    let sx=cx-8+i*6, sy=my+((i%2===0)?0:3);
+    line(sx,sy,sx+6,my+((i%2===0)?3:0),1.5,col);
+  }
+}
+function mouthO(cx, my, r, col) { strokeCircle(cx, my, r, col, 1); }
+function mouthV(cx, my, col) { line(cx-8,my+4,cx,my,1.5,col); line(cx,my,cx+8,my+4,1.5,col); }
+
+// ════════════════════════════════════════════════════════════════════
+// COLOR UTILS
+// ════════════════════════════════════════════════════════════════════
+
+function breathCol(now,p){p=p||4000;let t=(now%p)/p,b=.7+.3*Math.sin(t*2*Math.PI);return`rgb(0,${0|255*b},${0|65*b})`}
+function sigilBreath(now,p){p=p||5000;let t=(now%p)/p,b=.5+.5*Math.sin(t*2*Math.PI);return`rgb(${0|255*b},0,${0|64*b})`}
+
+function connectionInd(on){ fillCircle(305,10,5, on?COL_GREEN:COL_RED); }
+
+// ════════════════════════════════════════════════════════════════════
+// MAIN RENDER
+// ════════════════════════════════════════════════════════════════════
+
+function render() {
+  let now = Date.now() - startTime;
+  fillRect(0,0,320,170,COL_BG);
+
+  const cx=160, cy=88;
+  const lx=cx-P.eyeDist, rx=cx+P.eyeDist;
+  const eyeY=cy+P.eyeYOff;
+  const sigilY=cy+P.sigilYOff;
+  const mouthY=cy+P.mouthYOff;
+  // Balloon posizione (in alto a destra della testa)
+  const ballX=cx+P.headR+18, ballY=cy-P.headR-2;
+
+  let bText = getBalloonText(currentState, now);
+
+  // ════════ STATES ════════
+
+  if (currentState === 'IDLE') {
+    drawHood(cx,cy,COL_DIM);
+    let ec = breathCol(now);
+    drawEye(lx,eyeY,ec); drawEye(rx,eyeY,ec);
+    let dx=1.5*Math.sin(now/5000), dy=0.8*Math.cos(now/7000);
+    drawPupil(lx,eyeY,dx,dy); drawPupil(rx,eyeY,dx,dy);
+    drawSigil(cx,sigilY,sigilBreath(now));
+    mouthLine(cx,mouthY,P.mouthW,ec);
+    // Niente balloon in IDLE (silenzio)
+
+  } else if (currentState === 'THINKING') {
+    drawHood(cx,cy,COL_DIM);
+    drawEye(lx,eyeY,COL_GREEN); drawEye(rx,eyeY,COL_GREEN);
+    drawPupil(lx,eyeY,0,-2); drawPupil(rx,eyeY,0,-2);
+    drawSigil(cx,sigilY,COL_RED);
+    mouthLine(cx,mouthY,P.mouthW,COL_GREEN);
+    drawBalloon(ballX, ballY, bText, COL_DIM);
+
+  } else if (currentState === 'WORKING') {
+    drawHood(cx,cy,COL_DIM);
+    drawEyeClosed(lx,eyeY,COL_DIM); drawEyeClosed(rx,eyeY,COL_DIM);
+    // Sopracciglia piatte
+    let ew = (opts.eyeShape==='mandorla') ? P.eyeR*2.2 : P.eyeR*1.5;
+    line(lx-ew,eyeY-8,lx+ew,eyeY-8,1.5,COL_DIM);
+    line(rx-ew,eyeY-8,rx+ew,eyeY-8,1.5,COL_DIM);
+    drawSigil(cx,sigilY,COL_DIM);
+    mouthLine(cx,mouthY,P.mouthW*0.6,COL_DIM);
+    drawBalloon(ballX, ballY, bText, COL_DIM);
+
+  } else if (currentState === 'PROUD') {
+    let t=Math.min(1,now/5000);
+    drawHood(cx,cy,COL_GREEN);
+    drawEye(lx,eyeY,COL_GREEN,1); drawEye(rx,eyeY,COL_GREEN,1);
+    drawPupil(lx,eyeY); drawPupil(rx,eyeY);
+    drawSigil(cx,sigilY,COL_RED);
+    mouthSmile(cx,mouthY,P.mouthW*0.7,COL_GREEN,4);
+    // "OK" sale + balloon
+    let okY=cy-15-30*t, fade=Math.max(0,1-t*1.4);
+    if(fade>0.01) txt('OK',cx,okY,18,`rgba(0,${0|255*fade},${0|65*fade},${fade})`);
+    drawBalloon(ballX, ballY, bText, COL_GREEN);
+
+  } else if (currentState === 'SLEEPING') {
+    drawHood(cx,cy,COL_DIM);
+    drawEyeClosed(lx,eyeY,COL_DIM); drawEyeClosed(rx,eyeY,COL_DIM);
+    drawSigil(cx,sigilY,'#1a0505');
+    mouthLine(cx,mouthY,P.mouthW*0.3,COL_DIM);
+    // zZz flottanti
+    let yO=4*Math.sin(now/800);
+    txt('z',cx+42,cy-38+yO,9,COL_DIM);
+    txt('Z',cx+54,cy-50+yO,15,COL_DIM);
+    txt('z',cx+68,cy-60+yO,9,COL_DIM);
+    drawBalloon(ballX, ballY, bText, COL_DIM);
+
+  } else if (currentState === 'HAPPY') {
+    drawHood(cx,cy,COL_GREEN);
+    drawEye(lx,eyeY,COL_GREEN,2); drawEye(rx,eyeY,COL_GREEN,2);
+    drawPupil(lx,eyeY); drawPupil(rx,eyeY);
+    let sc=(Math.floor(now/300)%2===0)?COL_RED:'#b4002d';
+    drawSigil(cx,sigilY,sc);
+    mouthSmile(cx,mouthY,P.mouthW,COL_GREEN,6);
+    txt('*',cx-55,cy-28,10,COL_GREEN);
+    txt('*',cx+55,cy-28,10,COL_GREEN);
+    drawBalloon(ballX, ballY, bText, COL_GREEN);
+
+  } else if (currentState === 'CURIOUS') {
+    drawHood(cx,cy,COL_GREEN);
+    drawEye(lx,eyeY,COL_GREEN,1); drawEye(rx,eyeY,COL_GREEN,1);
+    let scanX=3.5*Math.sin(now/1500);
+    drawPupil(lx,eyeY,scanX); drawPupil(rx,eyeY,scanX);
+    // Sopracciglia alzate
+    let ew=(opts.eyeShape==='mandorla')?P.eyeR*2.2:P.eyeR*1.5;
+    line(lx-ew,eyeY-12,lx+ew*0.6,eyeY-9,1.5,COL_GREEN);
+    line(rx-ew*0.6,eyeY-9,rx+ew,eyeY-12,1.5,COL_GREEN);
+    let sp=.5+.5*Math.sin(now/1000*2*Math.PI);
+    drawSigil(cx,sigilY,`rgb(${0|255*sp},0,${0|64*sp})`);
+    mouthO(cx,mouthY,3,COL_GREEN);
+    let qY=2*Math.sin(now/800);
+    drawBalloon(ballX, ballY+qY, bText, COL_DIM);
+
+  } else if (currentState === 'ALERT') {
+    drawHood(cx,cy,COL_YELLOW);
+    drawEye(lx,eyeY,COL_YELLOW,1); drawEye(rx,eyeY,COL_YELLOW,1);
+    drawPupil(lx,eyeY); drawPupil(rx,eyeY);
+    // Sopracciglia V aggressive
+    let ew=(opts.eyeShape==='mandorla')?P.eyeR*2:P.eyeR*1.3;
+    line(lx-ew,eyeY-12,lx+ew*0.3,eyeY-8,1.5,COL_YELLOW);
+    line(rx-ew*0.3,eyeY-8,rx+ew,eyeY-12,1.5,COL_YELLOW);
+    if(Math.floor(now/500)%2===0) drawSigil(cx,sigilY,COL_RED);
+    mouthZig(cx,mouthY,COL_YELLOW);
+    drawBalloon(ballX, ballY, bText, COL_RED);
+
+  } else if (currentState === 'ERROR') {
+    drawHood(cx,cy,COL_RED);
+    // X per occhi
+    let xs=P.eyeR+3;
+    line(lx-xs,eyeY-xs,lx+xs,eyeY+xs,2,COL_RED);
+    line(lx-xs,eyeY+xs,lx+xs,eyeY-xs,2,COL_RED);
+    line(rx-xs,eyeY-xs,rx+xs,eyeY+xs,2,COL_RED);
+    line(rx-xs,eyeY+xs,rx+xs,eyeY-xs,2,COL_RED);
+    mouthV(cx,mouthY,COL_RED);
+    drawBalloon(ballX, ballY, bText, COL_RED);
+
+  } else if (currentState === 'STANDALONE') {
+    drawHood(cx,cy,COL_DIM);
+    let offX=2.5*Math.sin(now/2000);
+    drawEye(lx,eyeY,COL_DIM); drawEye(rx,eyeY,COL_DIM);
+    drawPupil(lx,eyeY,offX); drawPupil(rx,eyeY,offX);
+    // Sigil spento
+    drawSigil(cx,sigilY,'#060202');
+    mouthFrown(cx,mouthY,P.mouthW*0.5,COL_DIM,3);
+    drawBalloon(ballX, ballY, bText, COL_DIM);
+  }
+
+  connectionInd(currentState!=='STANDALONE' && currentState!=='ERROR');
+  scanlines();
+  requestAnimationFrame(render);
+}
+
+// ════════════════════════════════════════════════════════════════════
+// EXPORT
+// ════════════════════════════════════════════════════════════════════
+
+function getParamString() {
+  let parts = sliderKeys.map(k=>`${k}=${P[k]}`);
+  parts.push(`hood=${opts.hood?1:0}`);
+  parts.push(`eyes=${opts.eyeShape}`);
+  parts.push(`balloon=${opts.balloon}`);
+  return parts.join(' ');
+}
+function updatePreview() {
+  let el=document.getElementById('paramPreview');
+  if(el)el.textContent=getParamString();
+}
+function copyParams() {
+  navigator.clipboard.writeText(getParamString()).then(()=>{
+    let fb=document.getElementById('copyFeedback');
+    fb.textContent='✓ Copiato!'; fb.style.opacity='1';
+    setTimeout(()=>fb.style.opacity='0',2000);
+  });
+}
+
+up(); // init
+render();
+</script>
+</body>
+</html>

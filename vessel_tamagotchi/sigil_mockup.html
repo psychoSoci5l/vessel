@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>Sigil Face Mockup — Design Lab</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0a;
+    color: #00ff41;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    padding: 20px;
+  }
+  h1 { font-size: 18px; margin-bottom: 12px; color: #00ff41; }
+  .container { display: flex; gap: 30px; flex-wrap: wrap; }
+  .display-wrap {
+    border: 2px solid #00ff4133;
+    border-radius: 8px;
+    padding: 12px;
+    background: #020502;
+  }
+  .display-wrap h3 {
+    font-size: 12px;
+    color: #005516;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+  }
+  canvas {
+    display: block;
+    image-rendering: pixelated;
+  }
+  .controls {
+    margin-top: 20px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .controls button {
+    background: #020502;
+    color: #00ff41;
+    border: 1px solid #00ff41;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+  .controls button:hover { background: #00ff41; color: #020502; }
+  .controls button.active { background: #00ff41; color: #020502; font-weight: bold; }
+  .slider-group {
+    margin-top: 16px;
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .slider-group label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    color: #005516;
+  }
+  .slider-group input[type="range"] {
+    width: 180px;
+    accent-color: #00ff41;
+  }
+  .slider-group span { color: #00ff41; font-size: 13px; }
+  .row { display: flex; gap: 30px; flex-wrap: wrap; margin-top: 20px; }
+  .note {
+    margin-top: 16px;
+    padding: 10px;
+    border: 1px solid #005516;
+    border-radius: 4px;
+    font-size: 11px;
+    color: #005516;
+    max-width: 700px;
+  }
+</style>
+</head>
+<body>
+
+<h1>⬡ Sigil Face — Design Lab</h1>
+<p style="color:#005516; font-size:12px; margin-bottom:16px;">
+  Simulatore 320×170 del display TFT. Scala 2x per visibilità.
+</p>
+
+<div class="controls">
+  <button class="active" onclick="setState('IDLE')">IDLE</button>
+  <button onclick="setState('THINKING')">THINKING</button>
+  <button onclick="setState('WORKING')">WORKING</button>
+  <button onclick="setState('PROUD')">PROUD</button>
+  <button onclick="setState('SLEEPING')">SLEEPING</button>
+  <button onclick="setState('HAPPY')">HAPPY</button>
+  <button onclick="setState('CURIOUS')">CURIOUS</button>
+  <button onclick="setState('ALERT')">ALERT</button>
+  <button onclick="setState('ERROR')">ERROR</button>
+  <button onclick="setState('STANDALONE')">STANDALONE</button>
+</div>
+
+<div class="slider-group">
+  <label>
+    Altezza occhio (halfH)
+    <input type="range" id="eyeH" min="4" max="16" value="10" oninput="updateParam()">
+    <span id="eyeH_val">10</span>
+  </label>
+  <label>
+    Larghezza occhio (halfW)
+    <input type="range" id="eyeW" min="12" max="30" value="22" oninput="updateParam()">
+    <span id="eyeW_val">22</span>
+  </label>
+  <label>
+    Distanza occhi
+    <input type="range" id="eyeDist" min="25" max="55" value="40" oninput="updateParam()">
+    <span id="eyeDist_val">40</span>
+  </label>
+  <label>
+    Cappuccio altezza
+    <input type="range" id="hoodH" min="30" max="70" value="55" oninput="updateParam()">
+    <span id="hoodH_val">55</span>
+  </label>
+  <label>
+    Cappuccio larghezza
+    <input type="range" id="hoodW" min="40" max="90" value="65" oninput="updateParam()">
+    <span id="hoodW_val">65</span>
+  </label>
+  <label>
+    Cappuccio lati (drop)
+    <input type="range" id="hoodDrop" min="5" max="40" value="20" oninput="updateParam()">
+    <span id="hoodDrop_val">20</span>
+  </label>
+  <label>
+    Pupilla raggio
+    <input type="range" id="pupilR" min="2" max="8" value="4" oninput="updateParam()">
+    <span id="pupilR_val">4</span>
+  </label>
+  <label>
+    Palpebra superiore %
+    <input type="range" id="eyelidTop" min="0" max="50" value="15" oninput="updateParam()">
+    <span id="eyelidTop_val">15</span>
+  </label>
+</div>
+
+<div class="row">
+  <div class="display-wrap">
+    <h3>▸ Preview live (animata)</h3>
+    <canvas id="display" width="640" height="340"></canvas>
+  </div>
+</div>
+
+<div style="margin-top:16px; display:flex; gap:12px; align-items:center;">
+  <button onclick="copyParams()" style="background:#00ff41; color:#020502; border:none; padding:10px 20px; cursor:pointer; font-family:inherit; font-size:14px; font-weight:bold; border-radius:4px;">
+    📋 COPIA VALORI
+  </button>
+  <span id="copyFeedback" style="color:#00ff41; font-size:12px; opacity:0; transition:opacity 0.3s;"></span>
+</div>
+
+<div id="paramPreview" style="margin-top:10px; padding:10px; border:1px solid #005516; border-radius:4px; font-size:12px; color:#005516; font-family:monospace; white-space:pre; max-width:700px;"></div>
+
+<div class="note" style="margin-top:12px;">
+  <strong>Come funziona:</strong> Regola gli slider, poi clicca "COPIA VALORI" e incolla in chat.
+  <br>La "palpebra superiore" taglia la parte alta della mandorla per dare uno sguardo più rilassato.
+  <br><strong>Cappuccio</strong>: regola altezza/larghezza/drop dei lati per la forma del hood.
+</div>
+
+<script>
+const canvas = document.getElementById('display');
+const ctx = canvas.getContext('2d');
+const S = 2; // scala
+
+// Colori (matching ESP32)
+const COL_BG     = '#020502';
+const COL_GREEN  = '#00ff41';
+const COL_DIM    = '#005516';
+const COL_RED    = '#ff0040';
+const COL_YELLOW = '#ffaa00';
+const COL_SCAN   = '#001405';
+
+let currentState = 'IDLE';
+let startTime = Date.now();
+
+// Parametri regolabili
+let params = {
+  eyeH: 10, eyeW: 22, eyeDist: 40,
+  hoodH: 55, hoodW: 65, hoodDrop: 20,
+  pupilR: 4, eyelidTop: 15
+};
+
+function updateParam() {
+  for (let k of ['eyeH','eyeW','eyeDist','hoodH','hoodW','hoodDrop','pupilR','eyelidTop']) {
+    params[k] = parseInt(document.getElementById(k).value);
+    document.getElementById(k+'_val').textContent = params[k];
+  }
+}
+
+function setState(s) {
+  currentState = s;
+  startTime = Date.now();
+  document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+// ── Drawing primitives (port from C++) ──
+
+function fillRect(x, y, w, h, col) {
+  ctx.fillStyle = col;
+  ctx.fillRect(x*S, y*S, w*S, h*S);
+}
+
+function drawPixel(x, y, col) {
+  ctx.fillStyle = col;
+  ctx.fillRect(x*S, y*S, S, S);
+}
+
+function fillCircle(cx, cy, r, col) {
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.arc(cx*S, cy*S, r*S, 0, Math.PI*2);
+  ctx.fill();
+}
+
+function drawCircle(cx, cy, r, col) {
+  ctx.strokeStyle = col;
+  ctx.lineWidth = S;
+  ctx.beginPath();
+  ctx.arc(cx*S, cy*S, r*S, 0, Math.PI*2);
+  ctx.stroke();
+}
+
+function drawLine(x1, y1, x2, y2, w, col) {
+  ctx.strokeStyle = col;
+  ctx.lineWidth = w * S;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x1*S, y1*S);
+  ctx.lineTo(x2*S, y2*S);
+  ctx.stroke();
+}
+
+function drawText(text, x, y, size, col, align='center') {
+  ctx.fillStyle = col;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'middle';
+  ctx.font = `${size * S}px "JetBrains Mono", monospace`;
+  ctx.fillText(text, x*S, y*S);
+}
+
+function drawScanlines() {
+  ctx.fillStyle = COL_SCAN;
+  for (let y = 0; y < 170; y += 2) {
+    ctx.fillRect(0, y*S, 320*S, S);
+  }
+}
+
+// ── Hood ──
+function drawHood(cx, cy, col) {
+  const hw = params.hoodW;
+  const hh = params.hoodH;
+  const drop = params.hoodDrop;
+
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2 * S;
+  ctx.lineCap = 'round';
+
+  // Arco parabolico
+  ctx.beginPath();
+  for (let dx = -hw; dx <= hw; dx++) {
+    let t = dx / hw;
+    let dy = hh * t * t - hh;
+    let px = (cx + dx) * S;
+    let py = (cy + dy) * S;
+    if (dx === -hw) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Pixel row for thickness (simulating drawPixel double)
+  ctx.beginPath();
+  for (let dx = -hw; dx <= hw; dx++) {
+    let t = dx / hw;
+    let dy = hh * t * t - hh + 1;
+    let px = (cx + dx) * S;
+    let py = (cy + dy) * S;
+    if (dx === -hw) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // Lati che scendono
+  drawLine(cx - hw, cy, cx - hw + 5, cy + drop, 2, col);
+  drawLine(cx + hw, cy, cx + hw - 5, cy + drop, 2, col);
+}
+
+// ── Mandorla Eye ──
+function drawMandorlaEye(ex, ey, halfW, halfH, col) {
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  // Upper triangle
+  ctx.moveTo((ex - halfW)*S, ey*S);
+  ctx.lineTo(ex*S, (ey - halfH)*S);
+  ctx.lineTo((ex + halfW)*S, ey*S);
+  // Lower triangle
+  ctx.lineTo(ex*S, (ey + halfH)*S);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Mandorla eye with eyelid cut (NEW - relaxed look)
+function drawMandorlaEyeRelaxed(ex, ey, halfW, halfH, col, eyelidPct) {
+  // Draw full mandorla first
+  drawMandorlaEye(ex, ey, halfW, halfH, col);
+
+  // Cut upper portion with background color (eyelid effect)
+  if (eyelidPct > 0) {
+    let cutH = halfH * (eyelidPct / 100);
+    // Draw a curved eyelid shape
+    ctx.fillStyle = COL_BG;
+    ctx.beginPath();
+    ctx.moveTo((ex - halfW - 2)*S, (ey - halfH - 2)*S);
+    ctx.lineTo((ex + halfW + 2)*S, (ey - halfH - 2)*S);
+    ctx.lineTo((ex + halfW + 2)*S, (ey - halfH + cutH)*S);
+    // Curved bottom edge of eyelid
+    ctx.quadraticCurveTo(ex*S, (ey - halfH + cutH + cutH * 0.5)*S,
+                         (ex - halfW - 2)*S, (ey - halfH + cutH)*S);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// ── Sigil glyph ──
+function drawSigil(sx, sy, col) {
+  // Croce
+  drawLine(sx, sy-8, sx, sy+8, 2, col);
+  drawLine(sx-8, sy, sx+8, sy, 2, col);
+  // Diagonali
+  drawLine(sx-5, sy-5, sx+5, sy+5, 1, col);
+  drawLine(sx-5, sy+5, sx+5, sy-5, 1, col);
+  // Cerchio
+  drawCircle(sx, sy, 3, col);
+  // Punte
+  drawPixel(sx, sy-10, col);
+  drawPixel(sx, sy+10, col);
+  drawPixel(sx-10, sy, col);
+  drawPixel(sx+10, sy, col);
+}
+
+// ── Color utils ──
+function breathColor(now, period=4000) {
+  let t = (now % period) / period;
+  let b = 0.7 + 0.3 * Math.sin(t * 2 * Math.PI);
+  return `rgb(0, ${Math.floor(255*b)}, ${Math.floor(65*b)})`;
+}
+
+function sigilBreathColor(now, period=5000) {
+  let t = (now % period) / period;
+  let b = 0.5 + 0.5 * Math.sin(t * 2 * Math.PI);
+  return `rgb(${Math.floor(255*b)}, 0, ${Math.floor(64*b)})`;
+}
+
+function connectionIndicator() {
+  fillCircle(305, 10, 5, COL_GREEN);
+}
+
+// ── Main render ──
+function render() {
+  let now = Date.now() - startTime;
+
+  // Clear
+  fillRect(0, 0, 320, 170, COL_BG);
+
+  const cx = 160, cy = 85;
+  const dist = params.eyeDist;
+  const lx = cx - dist, rx = cx + dist;
+  const eyeY = cy - 15;
+  const sigilY = cy - 42;
+  const mouthY = cy + 30;
+  const hw = params.eyeW;
+  const hh = params.eyeH;
+  const eyelid = params.eyelidTop;
+  const pr = params.pupilR;
+
+  if (currentState === 'IDLE') {
+    drawHood(cx, cy, COL_DIM);
+    let eyeCol = breathColor(now);
+
+    // Mandorle con palpebra rilassata
+    drawMandorlaEyeRelaxed(lx, eyeY, hw, hh, eyeCol, eyelid);
+    drawMandorlaEyeRelaxed(rx, eyeY, hw, hh, eyeCol, eyelid);
+
+    // Pupille micro-drift
+    let driftX = 2.0 * Math.sin(now / 5000);
+    let driftY = 1.0 * Math.cos(now / 7000);
+    fillCircle(lx + driftX, eyeY + driftY, pr, COL_BG);
+    fillCircle(rx + driftX, eyeY + driftY, pr, COL_BG);
+
+    // Sigil breathing
+    drawSigil(cx, sigilY, sigilBreathColor(now));
+
+    // Bocca
+    drawLine(cx-15, mouthY, cx+15, mouthY, 1, eyeCol);
+
+  } else if (currentState === 'THINKING') {
+    drawHood(cx, cy, COL_DIM);
+    drawMandorlaEyeRelaxed(lx, eyeY, hw, hh, COL_GREEN, 0); // wide open when thinking
+    drawMandorlaEyeRelaxed(rx, eyeY, hw, hh, COL_GREEN, 0);
+    // Pupille in alto
+    fillCircle(lx, eyeY - 5, pr+1, COL_BG);
+    fillCircle(rx, eyeY - 5, pr+1, COL_BG);
+    drawSigil(cx, sigilY, COL_RED);
+    drawLine(cx-12, mouthY, cx+12, mouthY, 1, COL_GREEN);
+    let dots = ['', '.', '..', '...'][Math.floor(now/400) % 4];
+    drawText(dots, cx, cy+50, 14, COL_DIM);
+
+  } else if (currentState === 'WORKING') {
+    drawHood(cx, cy, COL_DIM);
+    // Semi-chiusi
+    drawMandorlaEye(lx, eyeY, hw, 4, COL_DIM);
+    drawMandorlaEye(rx, eyeY, hw, 4, COL_DIM);
+    // Sopracciglia piatte
+    drawLine(lx-18, eyeY-14, lx+18, eyeY-14, 2, COL_DIM);
+    drawLine(rx-18, eyeY-14, rx+18, eyeY-14, 2, COL_DIM);
+    drawSigil(cx, sigilY, COL_DIM);
+    drawLine(cx-8, mouthY, cx+8, mouthY, 1, COL_DIM);
+    let dots2 = ['', '.', '..', '...'][Math.floor(now/600) % 4];
+    drawText(dots2, cx, cy+50, 14, COL_DIM);
+
+  } else if (currentState === 'PROUD') {
+    let t = Math.min(1, now / 5000);
+    drawHood(cx, cy, COL_GREEN);
+    drawMandorlaEyeRelaxed(lx, eyeY, hw+2, hh+2, COL_GREEN, 0);
+    drawMandorlaEyeRelaxed(rx, eyeY, hw+2, hh+2, COL_GREEN, 0);
+    drawSigil(cx, sigilY, COL_RED);
+    // Sorriso
+    ctx.strokeStyle = COL_GREEN;
+    ctx.lineWidth = 2*S;
+    ctx.beginPath();
+    for (let dx = -20; dx <= 20; dx++) {
+      let ft = dx / 20;
+      let dy = 8 * ft * ft;
+      let px = (cx+dx)*S, py = (mouthY+dy)*S;
+      if (dx===-20) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+    // OK che sale
+    let checkY = cy - 20 - 35*t;
+    let fade = Math.max(0, 1 - t*1.4);
+    if (fade > 0.01) {
+      drawText('OK', cx, checkY, 22, `rgba(0,${Math.floor(255*fade)},${Math.floor(65*fade)},${fade})`);
+    }
+
+  } else if (currentState === 'SLEEPING') {
+    drawHood(cx, cy, COL_DIM);
+    drawLine(lx-hw, eyeY, lx+hw, eyeY, 2, COL_DIM);
+    drawLine(rx-hw, eyeY, rx+hw, eyeY, 2, COL_DIM);
+    // Sigil quasi invisibile
+    drawSigil(cx, sigilY, '#280a0a');
+    let yOff = 5 * Math.sin(now / 800);
+    drawText('z', cx+50, cy-45+yOff, 14, COL_DIM);
+    drawText('Z', cx+65, cy-60+yOff, 22, COL_DIM);
+    drawText('z', cx+85, cy-75+yOff, 14, COL_DIM);
+
+  } else if (currentState === 'HAPPY') {
+    drawHood(cx, cy, COL_GREEN);
+    drawMandorlaEyeRelaxed(lx, eyeY, hw+4, hh+2, COL_GREEN, 0);
+    drawMandorlaEyeRelaxed(rx, eyeY, hw+4, hh+2, COL_GREEN, 0);
+    let sigilCol = (Math.floor(now/300)%2===0) ? COL_RED : '#b4002d';
+    drawSigil(cx, sigilY, sigilCol);
+    // Arco sorriso
+    ctx.strokeStyle = COL_GREEN;
+    ctx.lineWidth = 2*S;
+    ctx.beginPath();
+    for (let dx = -22; dx <= 22; dx++) {
+      let ft = dx/22;
+      let dy = 10*ft*ft;
+      let px = (cx+dx)*S, py = (mouthY+dy)*S;
+      if (dx===-22) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+    drawText('*', cx-75, cy-35, 14, COL_GREEN);
+    drawText('*', cx+70, cy-35, 14, COL_GREEN);
+
+  } else if (currentState === 'CURIOUS') {
+    drawHood(cx, cy, COL_GREEN);
+    drawMandorlaEyeRelaxed(lx, eyeY, hw+2, hh+2, COL_GREEN, 0);
+    drawMandorlaEyeRelaxed(rx, eyeY, hw+2, hh+2, COL_GREEN, 0);
+    // Scan pupille
+    let scanX = 8 * Math.sin(now / 1500);
+    fillCircle(lx+scanX, eyeY, pr+1, COL_BG);
+    fillCircle(rx+scanX, eyeY, pr+1, COL_BG);
+    // Sopracciglia alzate
+    drawLine(lx-20, eyeY-20, lx+15, eyeY-16, 2, COL_GREEN);
+    drawLine(rx-15, eyeY-16, rx+20, eyeY-20, 2, COL_GREEN);
+    // Sigil pulse
+    let sp = 0.5+0.5*Math.sin(now/1000*2*Math.PI);
+    drawSigil(cx, sigilY, `rgb(${Math.floor(255*sp)},0,${Math.floor(64*sp)})`);
+    // Bocca o
+    drawCircle(cx, mouthY, 5, COL_GREEN);
+    // ?
+    let qY = 3 * Math.sin(now/800);
+    drawText('?', cx+80, cy-30+qY, 22, COL_DIM);
+
+  } else if (currentState === 'ALERT') {
+    drawHood(cx, cy, COL_YELLOW);
+    drawMandorlaEye(lx, eyeY, hw, hh, COL_YELLOW);
+    drawMandorlaEye(rx, eyeY, hw, hh, COL_YELLOW);
+    fillCircle(lx, eyeY, pr+1, COL_BG);
+    fillCircle(rx, eyeY, pr+1, COL_BG);
+    // V aggressiva
+    drawLine(lx-18, eyeY-18, lx+5, eyeY-12, 2, COL_YELLOW);
+    drawLine(rx-5, eyeY-12, rx+18, eyeY-18, 2, COL_YELLOW);
+    // Sigil lampeggia
+    if (Math.floor(now/500)%2===0) drawSigil(cx, sigilY, COL_RED);
+    // Zig-zag
+    for (let i = 0; i < 4; i++) {
+      let sx = cx - 20 + i*10;
+      let sy = mouthY + ((i%2===0)?0:5);
+      drawLine(sx, sy, sx+10, mouthY+((i%2===0)?5:0), 2, COL_YELLOW);
+    }
+    if (Math.floor(now/500)%2===0) {
+      drawText('!', cx+90, cy-15, 22, COL_RED);
+    }
+
+  } else if (currentState === 'ERROR') {
+    drawHood(cx, cy, COL_RED);
+    // X rosse
+    drawLine(lx-12, eyeY-12, lx+12, eyeY+12, 3, COL_RED);
+    drawLine(lx-12, eyeY+12, lx+12, eyeY-12, 3, COL_RED);
+    drawLine(rx-12, eyeY-12, rx+12, eyeY+12, 3, COL_RED);
+    drawLine(rx-12, eyeY+12, rx+12, eyeY-12, 3, COL_RED);
+    // Bocca V
+    drawLine(cx-15, mouthY+5, cx, mouthY, 2, COL_RED);
+    drawLine(cx, mouthY, cx+15, mouthY+5, 2, COL_RED);
+    drawText('reconnecting', cx, cy+55, 8, COL_RED);
+
+  } else if (currentState === 'STANDALONE') {
+    // STANDALONE: cappuccio dim, occhi vaganti, sigil SPENTO
+    drawHood(cx, cy, COL_DIM);
+    let offX = 5 * Math.sin(now / 1800);
+    drawMandorlaEye(lx, eyeY, hw, hh, COL_DIM);
+    drawMandorlaEye(rx, eyeY, hw, hh, COL_DIM);
+    fillCircle(lx+offX, eyeY, pr+1, COL_BG);
+    fillCircle(rx+offX, eyeY, pr+1, COL_BG);
+    // Sigil completamente spento (solo contorno debolissimo)
+    drawSigil(cx, sigilY, '#0a0302');
+    // Bocca sottile
+    drawLine(cx-12, mouthY, cx+12, mouthY, 1, COL_DIM);
+    drawText('sigil offline', cx, cy+55, 8, COL_DIM);
+  }
+
+  // Overlay
+  connectionIndicator();
+  drawScanlines();
+
+  requestAnimationFrame(render);
+}
+
+// ── Export params ──
+function getParamString() {
+  return `eyeH=${params.eyeH} eyeW=${params.eyeW} eyeDist=${params.eyeDist} hoodH=${params.hoodH} hoodW=${params.hoodW} hoodDrop=${params.hoodDrop} pupilR=${params.pupilR} eyelidTop=${params.eyelidTop}`;
+}
+
+function updatePreview() {
+  let el = document.getElementById('paramPreview');
+  if (el) el.textContent = getParamString();
+}
+
+// Override updateParam to also update preview
+let _origUpdateParam = updateParam;
+updateParam = function() {
+  _origUpdateParam();
+  updatePreview();
+};
+
+function copyParams() {
+  let text = getParamString();
+  navigator.clipboard.writeText(text).then(() => {
+    let fb = document.getElementById('copyFeedback');
+    fb.textContent = '✓ Copiato negli appunti!';
+    fb.style.opacity = '1';
+    setTimeout(() => fb.style.opacity = '0', 2000);
+  });
+}
+
+updatePreview();
+render();
+</script>
+</body>
+</html>
