@@ -28,7 +28,8 @@ async def handle_chat(websocket, msg, ctx):
         agent_cfg = get_agent_config(agent_id)
         pid = agent_cfg.get("default_provider", "anthropic")
         system = build_agent_prompt(agent_id, pid)
-        ctx_key, model = _resolve_auto_params(pid)
+        ctx_key, default_model = _resolve_auto_params(pid)
+        model = agent_cfg.get("model", default_model)
         reply = await _stream_chat(websocket, text, ctx[ctx_key], pid, system, model, memory_enabled=mem, agent_id=agent_id)
     elif provider == "local":
         reply = await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, memory_enabled=mem)

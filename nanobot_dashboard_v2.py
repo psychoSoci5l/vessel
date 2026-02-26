@@ -219,9 +219,9 @@ CLAUDE_BRIDGE_TOKEN = os.environ.get("CLAUDE_BRIDGE_TOKEN", _bridge_cfg.get("tok
 # ─── OpenRouter (DeepSeek V3) ────────────────────────────────────────────────
 _or_cfg = _get_config("openrouter.json")
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", _or_cfg.get("apiKey", ""))
-OPENROUTER_MODEL = _or_cfg.get("model", "deepseek/deepseek-chat-v3-0324")
+OPENROUTER_MODEL = _or_cfg.get("model", "openrouter/auto")
 OPENROUTER_PROVIDER_ORDER = _or_cfg.get("providerOrder", ["ModelRun", "DeepInfra"])
-OPENROUTER_LABEL = _or_cfg.get("label", "DeepSeek V3")
+OPENROUTER_LABEL = _or_cfg.get("label", "Auto")
 
 # ─── Telegram ────────────────────────────────────────────────────────────────
 _tg_cfg = _get_config("telegram.json")
@@ -3584,7 +3584,8 @@ async def handle_chat(websocket, msg, ctx):
         agent_cfg = get_agent_config(agent_id)
         pid = agent_cfg.get("default_provider", "anthropic")
         system = build_agent_prompt(agent_id, pid)
-        ctx_key, model = _resolve_auto_params(pid)
+        ctx_key, default_model = _resolve_auto_params(pid)
+        model = agent_cfg.get("model", default_model)
         reply = await _stream_chat(websocket, text, ctx[ctx_key], pid, system, model, memory_enabled=mem, agent_id=agent_id)
     elif provider == "local":
         reply = await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, memory_enabled=mem)

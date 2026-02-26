@@ -346,80 +346,99 @@
 
 ---
 
-## Fase 39 — Agent System + Tone Refinement
+## Fase 39 — Agent System + Tone Refinement (parziale, completata in Fase 58)
 
-> Da singolo assistente a sistema multi-agente leggero. Zero overhead sul Pi:
-> routing keyword-based (niente LLM extra), config-driven, system prompt diversi per ruolo.
-> Include fix del tono di Vessel: umorismo dosato, risposte utility asciutte.
+> Da singolo assistente a sistema multi-agente leggero. Zero overhead sul Pi.
+> **Stato reale:** infrastruttura codificata ma `agents.json` mai creato → tutto girava su fallback.
 
-**Blocco A — Tone Guardrails:**
-> Quick win: il tono attuale è fuori controllo (battute COBOL in ogni risposta,
-> emoji spam, fake code blocks comici, cabaret durante backup).
-> Fix: regole esplicite nel system prompt + SOUL.md.
+**Blocco A — Tone Guardrails** ✅:
+- [x] Regole di tono in `_SYSTEM_SHARED` (config.py): competente, caldo, asciutto
+- [x] NO fake code block, NO cabaret, emoji max 1-2, risposte utility = solo fatti
 
-- [ ] Aggiungere regole di tono in `_SYSTEM_SHARED` (config.py):
-  - Umorismo dosato: una battuta ok se il contesto lo richiede, non ogni risposta
-  - Mai battute sul lavoro/interessi dell'utente a meno che non sia in tema
-  - Niente fake code blocks per scopi comici
-  - Emoji max 1-2 per risposta, non spam
-  - Risposte utility (backup, calendario, stato, sistema) = zero cabaret, solo fatti
-- [ ] Aggiornare SOUL.md (nanobot CLI/Discord/Telegram) con le stesse regole
-- [ ] Tono base: **competente, caldo, asciutto** — amico tecnico, non comico
+**Blocco B — Agent Registry** ✅ (infrastruttura):
+- [x] `_load_agents()`, `get_agent_config()`, `build_agent_prompt()` in config.py
+- [x] `_HARDWARE_BY_PROVIDER` mapping
+- [ ] `agents.json` mai creato → completato in Fase 58
 
-**Blocco B — Agent Registry:**
-> Config-driven: definizioni agente in JSON, `_build_system_prompt()` legge dal registry.
+**Blocco C — Routing** ✅:
+- [x] `detect_agent(message)` keyword-based in chat.py (vessel/coder/sysadmin/researcher)
+- [x] `_resolve_auto_params()` in ws_handlers.py
+- [x] `handle_chat()` branch `auto` funzionante
 
-- [ ] File `~/.nanobot/agents.json`:
-  - `vessel` — generalista, tono balanced, provider Haiku/DeepSeek
-  - `coder` — tecnico, tono strict (zero battute), provider PC Coder/Deep
-  - `sysadmin` — operativo, solo fatti, provider Haiku (veloce)
-  - `researcher` — analitico, contesto lungo, provider DeepSeek
-- [ ] Ogni agent: `id`, `name`, `system_prompt_template`, `default_provider`, `tone`
-- [ ] `_build_system_prompt()` refactor: legge da registry, compone con `_SYSTEM_SHARED`
-- [ ] Fallback: se agents.json manca, comportamento attuale (vessel default)
+**Blocco D — Dashboard** ✅ (parziale):
+- [x] `showAgentBadge()` in frontend (05-chat.js)
+- [x] Colonna `agent` in `chat_messages` (migration v2)
+- [x] `chat_done` invia `agent` al frontend
+- [ ] CSS polish agent badge → completato in Fase 58
 
-**Blocco C — Routing Intelligente:**
-> Keyword-based come `detectTaskCategory()` nel frontend. Nessun costo LLM.
+---
 
-- [ ] `detect_agent(message)` backend — analisi keyword + pattern:
-  - Chat generica / domande / saluti → `vessel`
-  - Codice / debug / implementa / fix → `coder`
-  - Stato / backup / cron / reboot / tmux → `sysadmin`
-  - Cerca / analizza / riassumi / spiega → `researcher`
-- [ ] Il provider segue l'agente (auto-select, non più solo manuale)
-- [ ] Override manuale: dropdown provider o prefisso sovrascrive il routing
+## Fasi 40–57 — Riepilogo (completate 22/02–26/02/2026)
 
-**Blocco D — Dashboard Integration:**
-> Visuale: l'utente vede quale agente sta rispondendo.
+> Queste fasi furono eseguite in sessioni intensive senza aggiornare il ROADMAP.
+> Dettagli nei commit git (`psychoSoci5l/vessel-pi`).
 
-- [ ] Indicatore agente attivo nel Code tab header (nome + colore)
-- [ ] Colori: verde vessel, cyan coder, amber sysadmin, viola researcher
-- [ ] Campo `agent` in `chat_messages` DB per tracking
-- [ ] Provider dropdown mostra anche l'agente suggerito
+| Fasi | Contenuto | Stato |
+|------|-----------|-------|
+| 40–48 | UI overhaul, widget system, Sigil face v1-v4, deep idle, 6 temi | ✅ |
+| 49 | Dashboard 3-tab + bottom nav, layout definitivo | ✅ |
+| 50 | Telegram prefetch (Google Calendar/Tasks/Gmail intent detection) | ✅ |
+| 51 | Chat Diagnostics panel, Sigil PEEKING state | ✅ |
+| 52 | 5 Chat Provider unificati (Haiku, Local, PC, OpenRouter, Brain) | ✅ |
+| 53 | DB Schema v3: tabella `events`, instrumentazione | ✅ |
+| 54 | Observability: tabella events, API `/api/events`, `/api/events/stats` | ✅ |
+| 55 | UX Polish: login senza hood, MEM toggle, help tips, bug tracker | ✅ |
+| 56 | Drawer coerenza, mobile polish, Sigil fix, PWA, ESP32 flash | ✅ |
+| 57 | Hardware loop chiuso + Nanobot proattivo (push ESP32, OTA, check_in) | ✅ |
 
-**Non in scope (futuro):**
-- Delegazione inter-agente (Vessel chiama Coder, Coder passa a Sysadmin)
-- Agenti autonomi con trigger (heartbeat → Sysadmin interviene)
-- Contesto condiviso tra agenti (memory cross-agent)
-- Agenti custom via plugin
+---
 
-**Ordine:** A (quick win, subito) → B → C → D
-**Vincoli:** tutto gira sul Pi, zero chiamate LLM per routing, config editabile a mano
+## Fase 58 — Smart Agent Routing + OpenRouter Auto (in corso)
+
+> **Obiettivo:** attivare il sistema multi-agente (infrastruttura Fase 39) con routing
+> intelligente per-task e smart model selection via OpenRouter.
+> Ispirato al pattern OpenClaw: modelli diversi per task type diversi.
+
+**Blocco A — agents.json + model override:**
+- [ ] Creare `~/.nanobot/agents.json` con 4 agenti:
+  - `vessel` — generalista, OpenRouter auto, tono warm
+  - `coder` — tecnico, Ollama PC (GPU free), tono strict
+  - `sysadmin` — operativo, Haiku (rapido, economico), tono dry
+  - `researcher` — analitico, OpenRouter auto (sceglie il modello migliore), tono analytical
+- [ ] Ogni agente: name, role, specialization, default_provider, model (opzionale), tone
+- [ ] Model override per-agent: agente può specificare un modello diverso dal default del provider
+
+**Blocco B — OpenRouter auto integration:**
+- [ ] Switchare `openrouter.json` su `openrouter/auto` come modello default
+- [ ] Agenti che usano OpenRouter ereditano auto, ma possono forzare un modello specifico
+- [ ] Mantenere fallback chain: `openrouter ↔ anthropic`, `ollama ↔ ollama_pc`
+
+**Blocco C — Frontend polish:**
+- [ ] Agent badge con colori per agente (verde/cyan/amber/viola)
+- [ ] Label agente visibile nella chat quando auto mode è attivo
+
+**Vincoli:**
+- Ollama locale (Pi + PC) resta free e offline-capable
+- Brain (Claude Code CLI) invariato
+- Routing `detect_agent()` resta keyword-based (zero costo LLM)
+- Override manuale via provider dropdown resta disponibile
 
 ---
 
 ## Visione futura (no timeline, complessità crescente)
 
+**Prossime fasi:**
+- **Observability++** — grafici latenza per provider, error rate, heatmap attività, export CSV
+- **Voce dashboard** — TTS/STT già operativi su Telegram (Fase 20), portare su dashboard web
+- **Multi-agent avanzato** — delegazione inter-agente, agenti autonomi con trigger
+
 **Medio termine:**
-- Nanobot aggiornamento versione (attuale 0.1.4 — monitorare release)
 - Smart Home integration (Tuya/Smart Life): sensori fumo, automazioni domotiche via Pi
+- Nanobot aggiornamento versione (monitorare release)
 
 **Lungo termine:**
 - Dashboard multi-host (monitoraggio altri device LAN)
 - iOS & Android companion app nativa
-
-**Sperimentale:**
-- ESP32/MicroPi: heartbeat hardware fisico
 
 ---
 
@@ -431,9 +450,7 @@
 - Test su porta 8091, deploy su porta 8090
 - Widget pesanti (crypto, briefing, token) sempre **on-demand** con placeholder
 - Google Workspace: via `~/scripts/google_helper.py` (exec) — NO MCP server (25k token/chiamata)
-- Ralph Loop: Claude Code + Ollama sequenziali (non paralleli) per evitare contesa VRAM
-- Costi Discord: DeepSeek V3 via OpenRouter, ~$0.004/scambio, SOUL.md ~11k token dominano
 - **Bridge config**: `~/.nanobot/bridge.json` primario; fallback `config.json → bridge`
-- **Regola provider LAN**: PC Coder solo per codegen con contesto esplicito; PC Deep per ragionamento ma con max_tokens
+- **Tamagotchi ESP32**: LilyGO T-Display-S3, IP 192.168.178.31, 12 stati, PlatformIO flash
 - Pi ottimizzato: ZRAM 4GB zstd, swap SSD 8GB, swappiness=10, gpu_mem=16, governor=performance
-- Benchmark Ollama Pi: gemma3:4b → 3.85 tok/s eval, 8.69 tok/s prompt (condizioni canoniche)
+- Provider: 5 attivi (Haiku, Ollama Pi, Ollama PC, OpenRouter, Brain), failover automatico
