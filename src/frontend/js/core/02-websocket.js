@@ -19,6 +19,12 @@
         send({ action: 'get_usage_report', period: 'day' });
         send({ action: 'get_saved_prompts' });
         send({ action: 'get_sigil_state' });
+        // Restore memory toggle from localStorage
+        try {
+          if (localStorage.getItem('vessel_memory_enabled') === '1') {
+            send({ action: 'toggle_memory' });
+          }
+        } catch(e) {}
       }, 500);
     };
     ws.onclose = (e) => {
@@ -76,7 +82,10 @@
     else if (msg.type === 'memory_toggle') {
       memoryEnabled = msg.enabled;
       const btn = document.getElementById('memory-toggle');
-      if (btn) btn.style.opacity = msg.enabled ? '1' : '0.4';
+      if (btn) {
+        btn.className = msg.enabled ? 'btn-ghost btn-sm mem-on' : 'btn-ghost btn-sm mem-off';
+      }
+      try { localStorage.setItem('vessel_memory_enabled', msg.enabled ? '1' : '0'); } catch(e) {}
     }
     else if (msg.type === 'logs')    { renderLogs(msg.data); }
     else if (msg.type === 'cron')    { renderCron(msg.jobs); }

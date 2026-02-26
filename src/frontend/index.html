@@ -94,7 +94,7 @@
               <canvas id="sigil-widget-canvas" class="sigil-widget-canvas"></canvas>
               <div class="sigil-wake-label" id="sigil-wake-label">touch to wake</div>
             </div>
-            <div class="sigil-commands" id="sigil-commands">
+            <div class="sigil-commands" id="sigil-commands" title="Invia stati emotivi al Sigil ESP32. THINK/SLEEP sono persistenti, gli altri tornano a IDLE.">
               <button class="btn-sigil-term" onclick="sigilCommand('HAPPY')">HAPPY</button>
               <button class="btn-sigil-term" onclick="sigilCommand('THINKING')">THINK</button>
               <button class="btn-sigil-term" onclick="sigilCommand('SLEEPING')">SLEEP</button>
@@ -192,7 +192,7 @@
               <button class="btn-icon" onclick="saveCurrentPrompt()" title="Salva come template">[Salva]</button>
               <button class="btn-icon" onclick="deleteSavedPrompt()" title="Elimina template">[Elimina]</button>
               <span style="flex:1;"></span>
-              <button class="btn-icon" id="memory-toggle" onclick="toggleMemory()" title="Memoria persistente" style="opacity:0.4;">&#x25C8;</button>
+              <button class="btn-ghost btn-sm mem-off" id="memory-toggle" onclick="toggleMemory()" title="Memoria contestuale: usa note, knowledge graph e cronologia per arricchire le risposte">MEM</button>
               <button class="btn-icon" onclick="clearChat()" title="Pulisci chat">&#x2715;</button>
             </div>
           </div>
@@ -238,7 +238,7 @@
 
           <!-- Memoria -->
           <div class="prof-section prof-section-mem">
-            <div class="prof-section-title">MEMORIA</div>
+            <div class="prof-section-title">MEMORIA <span class="help-tip" title="MEMORY: contenuto di SOUL.md (personalit&agrave;). HISTORY: cronologia chat. REF: quick reference. CERCA: ricerca per keyword/data. GRAFO: entit&agrave; estratte automaticamente dalle conversazioni.">?</span></div>
             <div class="tab-row">
               <button class="tab active" onclick="switchMemTab('memory', this)">MEMORY</button>
               <button class="tab" onclick="switchMemTab('history', this)">HISTORY</button>
@@ -277,8 +277,9 @@
 
           <!-- Deep Learn -->
           <div class="prof-section">
-            <div class="prof-section-title">SELF-LEARNING</div>
+            <div class="prof-section-title">SELF-LEARNING <span class="help-tip" title="Analizza le conversazioni recenti per estrarre entit&agrave;, aggiornare il knowledge graph e arricchire la memoria a lungo termine.">?</span></div>
             <div style="padding:8px 12px;">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Analizza le conversazioni per estrarre entit&agrave;, aggiornare il knowledge graph e arricchire la memoria.</div>
               <button class="btn-green btn-sm" onclick="triggerDeepLearn()" id="btn-deep-learn">Avvia Deep Learn</button>
               <div id="deep-learn-result" style="display:none;margin-top:8px;">
                 <pre id="deep-learn-text" style="white-space:pre-wrap;font-size:11px;color:var(--text2);max-height:300px;overflow-y:auto;"></pre>

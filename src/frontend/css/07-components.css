@@ -312,6 +312,26 @@ button {
 .sigil-indicator[data-state="ALERT"] .sigil-label { color: var(--amber); }
 .sigil-indicator[data-state="ERROR"] .sigil-label { color: var(--red); }
 
+/* ── Memory toggle ── */
+.mem-on  { color: var(--accent) !important; border-color: var(--accent) !important; text-shadow: var(--glow-sm); }
+.mem-off { color: var(--muted) !important;  border-color: var(--border) !important; }
+
+/* ── Help tip ── */
+.help-tip {
+  display: inline-block;
+  font-size: 9px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 14px; height: 14px;
+  text-align: center;
+  line-height: 14px;
+  cursor: help;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.help-tip:hover { color: var(--accent); border-color: var(--accent); }
+
 /* ── Animations ── */
 @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
 @keyframes blink { 0%, 80%, 100% { opacity: .2 } 40% { opacity: 1 } }

@@ -314,7 +314,7 @@ function _drawLoginBrainGlyph(ctx,gx,gy,col,scale,rotation,glowInt){
 const DIGIT_POS={'1':{x:-1,y:-1},'2':{x:0,y:-1},'3':{x:1,y:-1},'4':{x:-1,y:0},'5':{x:0,y:0},'6':{x:1,y:0},'7':{x:-1,y:1},'8':{x:0,y:1},'9':{x:1,y:1},'0':{x:0,y:1.5}};
 let _loginState='ALERT', _loginStart=Date.now(), _loginAnim=null;
 let _glanceTargetX=0, _glanceTargetY=0, _glanceTime=0;
-let _firstDigitPressed=false, _hoodRevealStart=0;
+let _firstDigitPressed=false;
 
 function _loginLoop(){
   const c=document.getElementById('login-sigil-canvas');
@@ -335,15 +335,6 @@ function _loginLoop(){
   const glDecay=Math.max(0,1-glElapsed/300);
   const glX=_glanceTargetX*glDecay*s;
   const glY=_glanceTargetY*glDecay*s;
-
-  // Hood reveal
-  const showHood=_firstDigitPressed&&_loginState!=='UNLOCK';
-  if(showHood){
-    const hAlpha=Math.min(1,(Date.now()-_hoodRevealStart)/800);
-    if(hAlpha<1)ctx.globalAlpha=hAlpha;
-    _drawLoginHood(ctx,W,H);
-    ctx.globalAlpha=1;
-  }
 
   // Scanlines
   ctx.fillStyle='rgba(0,0,0,.04)';
@@ -369,16 +360,13 @@ function _loginLoop(){
     _drawLoginEye(ctx,lx+dx,eyY+dy,es*.85,ec,_SC.glow,gr*.5,breath*.6);
     _drawLoginEye(ctx,rx+dx,eyY+dy,es*.85,ec,_SC.glow,gr*.5,breath*.6);
   } else if(_loginState==='IDLE'){
-    // Full idle with visible hood, brighter eyes
+    // Eyes in the dark — no hood, just brighter eyes watching
     const breath=.8+.2*Math.sin(now/4000*Math.PI*2);
     const ec=_lc('#004415',_SC.eye,breath);
     const dx=3*Math.sin(now/5000)+glX;
     const dy=2*Math.cos(now/7000)+glY;
     _drawLoginEye(ctx,lx+dx,eyY+dy,es,ec,_SC.glow,gr,breath);
     _drawLoginEye(ctx,rx+dx,eyY+dy,es,ec,_SC.glow,gr,breath);
-    // Dim mouth
-    ctx.strokeStyle=_ra(_SC.eye,.25);ctx.lineWidth=2.5;ctx.lineCap='round';
-    ctx.beginPath();ctx.moveTo(cx-16,115*sy);ctx.lineTo(cx+16,115*sy);ctx.stroke();
   } else if(_loginState==='REJECT'){
     // Eyes shift sideways in disappointment
     const t=now;
@@ -393,20 +381,14 @@ function _loginLoop(){
   } else if(_loginState==='UNLOCK'){
     const t=now;
     if(t<150){
-      // Brief happy flash
-      if(showHood){} // hood already drawn above
+      // Brief happy flash — eyes smile
       _drawLoginHappy(ctx,lx,eyY,es,_SC.eye,_SC.glow,gr);
       _drawLoginHappy(ctx,rx,eyY,es,_SC.eye,_SC.glow,gr);
-      ctx.strokeStyle=_SC.eye;ctx.lineWidth=2.5;ctx.lineCap='round';
-      ctx.beginPath();ctx.moveTo(cx-18,115*sy);ctx.quadraticCurveTo(cx,115*sy+8,cx+18,115*sy);ctx.stroke();
     } else if(t<500){
       // Eyes closing
       const closeT=(t-150)/350;
       _drawLoginEyeClosing(ctx,lx,eyY,es,_SC.eye,_SC.glow,gr,closeT);
       _drawLoginEyeClosing(ctx,rx,eyY,es,_SC.eye,_SC.glow,gr,closeT);
-    } else if(t<700){
-      // Hood fade out (if visible)
-      // Already dark since hood is drawn conditionally above
     } else if(t<900){
       // Dark pause
     } else if(t<2500){
@@ -453,9 +435,9 @@ function numpadPress(n) {
   // Eye glance toward pressed digit
   const pos = DIGIT_POS[String(n)];
   if(pos){ _glanceTargetX=pos.x*4; _glanceTargetY=pos.y*2.5; _glanceTime=Date.now(); }
-  // First digit: begin hood reveal, transition to IDLE
+  // First digit: transition to IDLE (eyes become brighter)
   if(!_firstDigitPressed){
-    _firstDigitPressed=true; _hoodRevealStart=Date.now();
+    _firstDigitPressed=true;
     if(_loginState==='WATCHING'||_loginState==='ALERT'){_loginState='IDLE';_loginStart=Date.now();}
   }
   pinValue += n;
