@@ -53,6 +53,25 @@ def telegram_send(text: str) -> bool:
         return False
 
 
+# ─── Sigil notification ──────────────────────────────────────────────────────
+def _notify_sigil(state: str, detail: str = "", text: str = ""):
+    """Aggiorna stato Sigil via REST locale."""
+    try:
+        payload: dict = {"state": state}
+        if detail:
+            payload["detail"] = detail
+        if text:
+            payload["text"] = text
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            "http://127.0.0.1:8090/api/tamagotchi/state",
+            data=data, headers={"Content-Type": "application/json"}, method="POST"
+        )
+        urllib.request.urlopen(req, timeout=3)
+    except Exception:
+        pass
+
+
 # ─── Dedup ───────────────────────────────────────────────────────────────────
 def _load_sent() -> dict:
     if SENT_FILE.exists():
@@ -143,6 +162,7 @@ def check_calendar_events(sent: dict) -> int:
         if telegram_send(msg):
             sent[dedup_key] = now.isoformat()
             notified += 1
+            _notify_sigil("ALERT", detail="Reminder", text=summary[:40])
             print(f"[Reminder] Notificato: {summary} (tra {minutes_left} min)")
 
     return notified
@@ -196,6 +216,7 @@ def check_tasks_digest(sent: dict) -> bool:
 
     if telegram_send(msg):
         sent[dedup_key] = now.isoformat()
+        _notify_sigil("ALERT", detail="Task", text=f"{len(pending)} task pending")
         print(f"[Reminder] Task digest inviato: {len(pending)} task")
         return True
     return False

@@ -344,7 +344,11 @@
           <div class="session-list" id="session-list">
             <div class="no-items">Caricamento&hellip;</div>
           </div>
-          <div class="sys-actions" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+          <div class="sys-section-head" style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border);">
+            <span class="sys-section-title">SIGIL ESP32</span>
+            <button class="btn-ghost btn-sm" onclick="flashOTA()">&#x21C6; Flash OTA</button>
+          </div>
+          <div class="sys-actions" style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
             <button class="btn-ghost" onclick="requestStats()">&#x21BB; Refresh</button>
             <button class="btn-red" onclick="doLogout()">&#x23FB; Logout</button>
             <button class="btn-red" onclick="showRebootModal()">&#x21BA; Reboot</button>

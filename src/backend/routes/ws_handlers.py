@@ -131,6 +131,7 @@ async def handle_run_briefing(websocket, msg, ctx):
     bd = await bg(run_briefing)
     await websocket.send_json({"type": "briefing", "data": bd})
     await websocket.send_json({"type": "toast", "text": "[ok] Briefing generato con successo", "notify": True})
+    await broadcast_tamagotchi("PROUD", detail="Briefing", text="Briefing completato")
 
 async def handle_tmux_kill(websocket, msg, ctx):
     session = msg.get("session", "")
@@ -252,7 +253,7 @@ async def handle_deep_learn(websocket, msg, ctx):
             result_text = output[-500:] if output else "Nessun output"
         await websocket.send_json({"type": "deep_learn_result", "text": result_text})
         await websocket.send_json({"type": "toast", "text": "Deep Learn completato"})
-        await broadcast_tamagotchi("PROUD")
+        await broadcast_tamagotchi("PROUD", detail="Deep Learn", text="Apprendimento completato")
     except subprocess.TimeoutExpired:
         await websocket.send_json({"type": "deep_learn_result", "text": "Timeout (5 min)"})
         await websocket.send_json({"type": "toast", "text": "Deep Learn: timeout"})

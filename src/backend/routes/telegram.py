@@ -348,7 +348,7 @@ async def _handle_telegram_message(text: str):
         )
         reply = await _chat_response(voice_prefix + enriched_text, history, provider_id, system, model, channel="telegram")
         telegram_send(reply)
-        await broadcast_tamagotchi(detect_emotion(reply or ""))
+        await broadcast_tamagotchi(detect_emotion(reply or ""), detail="Telegram", text=text[:40])
         loop = asyncio.get_running_loop()
         def _tts_send():
             ogg = text_to_voice(reply)
@@ -358,7 +358,7 @@ async def _handle_telegram_message(text: str):
     else:
         reply = await _chat_response(enriched_text, history, provider_id, system, model, channel="telegram")
         telegram_send(reply)
-        await broadcast_tamagotchi(detect_emotion(reply or ""))
+        await broadcast_tamagotchi(detect_emotion(reply or ""), detail="Telegram", text=text[:40])
         # Brainstorm: salva sessione come nota #brainstorm silenziosamente
         if brainstorm_mode and reply:
             db_add_note(f"[Brainstorm: {text[:60]}]\n{reply}", tags="#brainstorm")
@@ -406,7 +406,7 @@ async def _handle_telegram_voice(voice: dict):
     reply = await _chat_response(voice_text, history, provider_id, system, model, channel="telegram")
 
     telegram_send(reply)
-    await broadcast_tamagotchi(detect_emotion(reply or ""))
+    await broadcast_tamagotchi(detect_emotion(reply or ""), detail="Telegram", text=text[:40])
 
     loop = asyncio.get_running_loop()
     def _tts_and_send():

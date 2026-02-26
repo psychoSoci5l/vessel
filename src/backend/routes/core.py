@@ -1,5 +1,6 @@
 # ─── Background broadcaster ───────────────────────────────────────────────────
-_PEEKING_THRESHOLD = 300  # secondi di idle prima di inviare PEEKING (5 min)
+_PEEKING_THRESHOLD = 300   # secondi di idle prima di inviare PEEKING (5 min)
+_BORED_THRESHOLD   = 1800  # secondi di idle prima di inviare BORED (30 min)
 
 async def stats_broadcaster():
     cycle = 0
@@ -8,11 +9,14 @@ async def stats_broadcaster():
         cycle += 1
         if cycle % 60 == 0:
             _cleanup_expired()
-        # PEEKING trigger: ogni 60s controlla idle ESP32
+        # BORED/PEEKING trigger: ogni 60s controlla idle ESP32
         if cycle % 12 == 0 and _tamagotchi_connections:
             idle_secs = time.time() - get_last_chat_ts()
-            if (idle_secs > _PEEKING_THRESHOLD
-                    and _tamagotchi_state not in ("PEEKING", "SLEEPING", "THINKING", "WORKING")):
+            if (idle_secs > _BORED_THRESHOLD
+                    and _tamagotchi_state not in ("BORED", "ALERT", "WORKING", "THINKING", "SLEEPING")):
+                await broadcast_tamagotchi("BORED")
+            elif (idle_secs > _PEEKING_THRESHOLD
+                    and _tamagotchi_state not in ("PEEKING", "SLEEPING", "THINKING", "WORKING", "BORED")):
                 await broadcast_tamagotchi("PEEKING")
         if manager.connections:
             pi = await get_pi_stats()

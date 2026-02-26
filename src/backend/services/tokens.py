@@ -78,10 +78,15 @@ def _provider_defaults(provider_id: str) -> tuple:
     return OLLAMA_MODEL, OLLAMA_SYSTEM
 
 # ─── Tamagotchi helper (REST locale, evita import circolari) ──────────────────
-def _set_tamagotchi_local(state: str):
+def _set_tamagotchi_local(state: str, detail: str = "", text: str = ""):
     """Imposta stato tamagotchi via REST locale (non importa routes)."""
     try:
-        data = json.dumps({"state": state}).encode("utf-8")
+        payload: dict = {"state": state}
+        if detail:
+            payload["detail"] = detail
+        if text:
+            payload["text"] = text
+        data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             "http://127.0.0.1:8090/api/tamagotchi/state",
             data=data, headers={"Content-Type": "application/json"}, method="POST"
