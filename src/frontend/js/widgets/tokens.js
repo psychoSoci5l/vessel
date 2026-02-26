@@ -1,6 +1,4 @@
-  // ── Widget: Tokens ──
-  function loadTokens(btn) { if (btn) btn.textContent = '…'; send({ action: 'get_tokens' }); }
-
+  // ── Widget: Tokens (preview tile only — detail in Profile) ──
   function renderTokens(data) {
     const tp = document.getElementById('wt-tokens-preview');
     if (tp) {
@@ -10,18 +8,6 @@
       const model = (data.last_model || '').split('-').pop() || '';
       tp.textContent = fmt(inTok) + ' in / ' + fmt(outTok) + ' out' + (model ? ' · ' + model : '');
     }
-    const src = data.source === 'api' ? '~ API' : '> Local';
-    document.getElementById('tokens-body').innerHTML = `
-      <div class="token-grid">
-        <div class="token-item"><div class="token-label">Input</div><div class="token-value">${(data.today_input||0).toLocaleString()}</div></div>
-        <div class="token-item"><div class="token-label">Output</div><div class="token-value">${(data.today_output||0).toLocaleString()}</div></div>
-        <div class="token-item"><div class="token-label">Calls</div><div class="token-value">${data.total_calls||0}</div></div>
-      </div>
-      <div style="margin-bottom:6px;font-size:10px;color:var(--muted);">
-        MODELLO: <span style="color:var(--cyan)">${esc(data.last_model||'N/A')}</span> · FONTE: <span style="color:var(--text2)">${src}</span>
-      </div>
-      <div class="mono-block" style="max-height:100px;">${(data.log_lines||[]).map(l=>esc(l)).join('\n')||'// nessun log'}</div>
-      <div style="margin-top:8px;display:flex;gap:6px;"><button class="btn-ghost btn-sm" onclick="loadTokens()">↻</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('tokens-body').textContent)">[cp]</button></div>`;
   }
 
   // ── Usage Report ──

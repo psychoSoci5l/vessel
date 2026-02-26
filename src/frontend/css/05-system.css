@@ -81,3 +81,10 @@
   background: var(--accent); box-shadow: var(--glow-sm);
   animation: pulse 2s infinite;
 }
+
+/* Pi Info (moved from Profile) */
+.sys-pi-grid { display: flex; flex-direction: column; gap: 4px; }
+.sys-pi-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 11px; }
+.sys-pi-row:last-child { border-bottom: none; }
+.sys-pi-label { color: var(--muted); }
+.sys-pi-value { color: var(--accent); font-weight: 600; text-shadow: var(--glow-text); }

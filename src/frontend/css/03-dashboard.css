@@ -463,22 +463,3 @@
   -webkit-box-orient: vertical;
 }
 
-/* ── Settings Panel ── */
-.dash-settings {
-  background: var(--card);
-  border: 1px solid var(--border2);
-  border-radius: 10px;
-  padding: 14px 16px;
-  margin-top: 10px;
-}
-.dash-settings .prof-section-title { margin-bottom: 10px; }
-.dash-settings .theme-chip { padding: 5px 10px; font-size: 10px; }
-.dash-settings .theme-swatch { width: 8px; height: 8px; }
-.dash-settings-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 10px;
-  font-size: 10px;
-  color: var(--muted);
-}
