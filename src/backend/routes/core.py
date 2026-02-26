@@ -252,6 +252,23 @@ async def api_file(request: Request, path: str = ""):
     except Exception:
         return {"content": "File non trovato"}
 
+@app.get("/api/events")
+async def api_events(request: Request, category: str = "", action: str = "",
+                     status: str = "", since: str = "", limit: int = 50):
+    token = request.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        return JSONResponse({"error": "Non autenticato"}, status_code=401)
+    limit = min(max(limit, 1), 200)
+    return db_get_events(category=category, action=action, status=status,
+                         since=since, limit=limit)
+
+@app.get("/api/events/stats")
+async def api_events_stats(request: Request, since: str = ""):
+    token = request.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        return JSONResponse({"error": "Non autenticato"}, status_code=401)
+    return db_get_event_stats(since=since)
+
 @app.get("/api/export")
 async def export_data(request: Request):
     token = request.cookies.get("vessel_session", "")

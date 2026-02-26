@@ -393,6 +393,8 @@ def _validate_config():
 async def lifespan(app):
     _validate_config()
     init_db()
+    db_log_event("system", "start", payload={"port": PORT, "pid": os.getpid(),
+                 "schema_version": SCHEMA_VERSION})
     asyncio.create_task(stats_broadcaster())
     asyncio.create_task(crypto_push_task())
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
@@ -401,6 +403,7 @@ async def lifespan(app):
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, warmup_ollama)
     yield
+    db_log_event("system", "stop")
 
 app = FastAPI(lifespan=lifespan)
 

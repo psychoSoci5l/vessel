@@ -49,6 +49,8 @@ async def heartbeat_task():
                         _heartbeat_known_down.add(alert_key)
                         telegram_send(f"[Heartbeat] {alert_msg}")
                         db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
+                        db_log_event("system", "alert", status="error",
+                                     payload={"key": alert_key, "msg": alert_msg})
                         print(f"[Heartbeat] ALERT: {alert_msg}")
                 else:
                     # Soglie (temp/RAM): cooldown come prima
@@ -57,6 +59,8 @@ async def heartbeat_task():
                         _heartbeat_last_alert[alert_key] = now
                         telegram_send(f"[Heartbeat] {alert_msg}")
                         db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
+                        db_log_event("system", "alert", status="error",
+                                     payload={"key": alert_key, "msg": alert_msg})
                         print(f"[Heartbeat] ALERT: {alert_msg}")
 
             # Recovery: notifica quando servizi tornano online (down → up)
@@ -66,6 +70,7 @@ async def heartbeat_task():
                     label = key.replace("_down", "").replace("_", " ").title()
                     telegram_send(f"[Heartbeat] ✅ {label} tornato online")
                     db_log_audit("heartbeat_recovery", resource=key)
+                    db_log_event("system", "recovery", payload={"key": key, "service": label})
                     print(f"[Heartbeat] RECOVERY: {label} online")
 
             # Tamagotchi: ALERT se ci sono problemi, IDLE se risolti

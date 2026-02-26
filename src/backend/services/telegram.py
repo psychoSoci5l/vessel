@@ -3,6 +3,7 @@ def telegram_send(text: str) -> bool:
     """Invia un messaggio al bot Telegram. Restituisce True se successo."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return False
+    t0 = time.time()
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         data = json.dumps({
@@ -12,9 +13,15 @@ def telegram_send(text: str) -> bool:
         req = urllib.request.Request(url, data=data,
                                      headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=10)
+        db_log_event("telegram", "send", status="ok",
+                     latency_ms=int((time.time() - t0) * 1000),
+                     payload={"chars": len(text)})
         return True
     except Exception as e:
         print(f"[Telegram] send error: {e}")
+        db_log_event("telegram", "send", status="error",
+                     latency_ms=int((time.time() - t0) * 1000),
+                     error=str(e)[:200])
         return False
 
 def telegram_get_file(file_id: str) -> str:

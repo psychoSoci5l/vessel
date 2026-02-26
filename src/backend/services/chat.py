@@ -267,13 +267,18 @@ async def _execute_chat(message, chat_history, provider_id, system_prompt, model
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
     elapsed = int((time.time() - start_time) * 1000)
-    log_token_usage(
-        token_meta.get("input_tokens", 0),
-        token_meta.get("output_tokens", 0),
-        actual_model,
-        provider=actual_pid,
-        response_time_ms=elapsed,
-    )
+    in_tok = token_meta.get("input_tokens", 0)
+    out_tok = token_meta.get("output_tokens", 0)
+    log_token_usage(in_tok, out_tok, actual_model,
+                    provider=actual_pid, response_time_ms=elapsed)
+    # Observability: log evento chat
+    evt_status = "ok" if full_reply and not full_reply.startswith("(errore") else "error"
+    db_log_event("chat", "response", provider=actual_pid, status=evt_status,
+                 latency_ms=elapsed,
+                 payload={"model": actual_model, "tokens_in": in_tok,
+                          "tokens_out": out_tok, "channel": channel,
+                          "chars": len(full_reply)},
+                 error=last_error if evt_status == "error" else "")
     if full_reply:
         loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
     return full_reply, actual_pid, elapsed

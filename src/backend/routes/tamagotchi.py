@@ -117,6 +117,7 @@ async def _handle_tamagotchi_cmd(ws: WebSocket, cmd: str, req_id: int):
 async def tamagotchi_ws(websocket: WebSocket):
     await websocket.accept()
     _tamagotchi_connections.add(websocket)
+    db_log_event("esp32", "connect", payload={"ip": websocket.client.host})
     print(f"[Tamagotchi] ESP32 connesso da {websocket.client.host}")
     try:
         await websocket.send_json({"state": _tamagotchi_state})
@@ -136,9 +137,11 @@ async def tamagotchi_ws(websocket: WebSocket):
                 await websocket.send_json({"ping": True})
     except WebSocketDisconnect:
         _tamagotchi_connections.discard(websocket)
+        db_log_event("esp32", "disconnect")
         print("[Tamagotchi] ESP32 disconnesso")
     except Exception:
         _tamagotchi_connections.discard(websocket)
+        db_log_event("esp32", "disconnect", status="error")
 
 @app.post("/api/tamagotchi/state")
 async def set_tamagotchi_state(request: Request):

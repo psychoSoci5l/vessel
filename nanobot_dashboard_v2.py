@@ -432,6 +432,8 @@ def _validate_config():
 async def lifespan(app):
     _validate_config()
     init_db()
+    db_log_event("system", "start", payload={"port": PORT, "pid": os.getpid(),
+                 "schema_version": SCHEMA_VERSION})
     asyncio.create_task(stats_broadcaster())
     asyncio.create_task(crypto_push_task())
     if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
@@ -440,6 +442,7 @@ async def lifespan(app):
     loop = asyncio.get_running_loop()
     loop.run_in_executor(None, warmup_ollama)
     yield
+    db_log_event("system", "stop")
 
 app = FastAPI(lifespan=lifespan)
 
@@ -516,7 +519,7 @@ LOGIN_HTML = LOGIN_HTML.replace("{VESSEL_ICON_192}", VESSEL_ICON_192) if "VESSEL
 # --- src/backend/database.py ---
 # ─── Database SQLite ──────────────────────────────────────────────────────────
 DB_PATH = Path.home() / ".nanobot" / "vessel.db"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _db_conn():
@@ -645,6 +648,21 @@ def init_db():
                 tags TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_notes_ts ON notes(ts);
+
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts DATETIME DEFAULT (datetime('now', 'localtime')),
+                category TEXT NOT NULL,
+                action TEXT NOT NULL,
+                provider TEXT,
+                status TEXT DEFAULT 'ok',
+                latency_ms INTEGER DEFAULT 0,
+                payload TEXT DEFAULT '{}',
+                error TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+            CREATE INDEX IF NOT EXISTS idx_events_cat ON events(category);
+            CREATE INDEX IF NOT EXISTS idx_events_cat_action ON events(category, action);
         """)
         # Schema version + migrations
         row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -662,6 +680,10 @@ def init_db():
                 conn.execute("ALTER TABLE chat_messages_archive ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
             except Exception:
                 pass
+        if current_ver < 3:
+            # events table già creata dal CREATE IF NOT EXISTS sopra
+            print("[DB] Migrazione v3: tabella 'events' per observability")
+        if current_ver < SCHEMA_VERSION:
             conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
 
     _migrate_jsonl()
@@ -1160,6 +1182,88 @@ def db_delete_note(note_id: int) -> bool:
     with _db_conn() as conn:
         cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         return cur.rowcount > 0
+
+
+# ─── Events (Observability Fase 54) ──────────────────────────────────────────
+
+def db_log_event(category: str, action: str, provider: str = "",
+                 status: str = "ok", latency_ms: int = 0,
+                 payload: dict | None = None, error: str = ""):
+    """Logga un evento di sistema nella tabella events."""
+    try:
+        with _db_conn() as conn:
+            conn.execute(
+                "INSERT INTO events (ts, category, action, provider, status, latency_ms, payload, error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (time.strftime("%Y-%m-%dT%H:%M:%S"), category, action,
+                 provider or None, status, latency_ms,
+                 json.dumps(payload or {}, ensure_ascii=False), error[:500] if error else "")
+            )
+    except Exception as e:
+        print(f"[Events] log error: {e}")
+
+
+def db_get_events(category: str = "", action: str = "", status: str = "",
+                  since: str = "", limit: int = 50) -> list:
+    """Legge eventi con filtri opzionali."""
+    with _db_conn() as conn:
+        query = "SELECT id, ts, category, action, provider, status, latency_ms, payload, error FROM events WHERE 1=1"
+        params = []
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if action:
+            query += " AND action = ?"
+            params.append(action)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if since:
+            query += " AND ts >= ?"
+            params.append(since)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def db_get_event_stats(since: str = "") -> dict:
+    """Statistiche aggregate sugli eventi per la dashboard."""
+    if not since:
+        since = time.strftime("%Y-%m-%d")
+    with _db_conn() as conn:
+        # Conteggi per categoria
+        by_cat = {}
+        for row in conn.execute(
+            "SELECT category, COUNT(*) as cnt FROM events WHERE ts >= ? GROUP BY category",
+            (since,)
+        ).fetchall():
+            by_cat[row["category"]] = row["cnt"]
+        # Conteggi errori
+        errors = conn.execute(
+            "SELECT COUNT(*) FROM events WHERE ts >= ? AND status = 'error'",
+            (since,)
+        ).fetchone()[0]
+        # Latenza media chat
+        avg_lat = conn.execute(
+            "SELECT AVG(latency_ms) FROM events WHERE ts >= ? AND category = 'chat' AND latency_ms > 0",
+            (since,)
+        ).fetchone()[0]
+        return {
+            "by_category": by_cat,
+            "errors_today": errors,
+            "avg_chat_latency_ms": round(avg_lat) if avg_lat else 0,
+            "since": since,
+        }
+
+
+def db_cleanup_old_events(days: int = 90) -> int:
+    """Elimina eventi più vecchi di N giorni."""
+    cutoff = time.strftime("%Y-%m-%dT%H:%M:%S",
+                           time.localtime(time.time() - days * 86400))
+    with _db_conn() as conn:
+        cur = conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
+        return cur.rowcount
 
 
 def db_search_entity(name: str) -> dict | None:
@@ -1973,6 +2077,7 @@ def telegram_send(text: str) -> bool:
     """Invia un messaggio al bot Telegram. Restituisce True se successo."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return False
+    t0 = time.time()
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         data = json.dumps({
@@ -1982,9 +2087,15 @@ def telegram_send(text: str) -> bool:
         req = urllib.request.Request(url, data=data,
                                      headers={"Content-Type": "application/json"})
         urllib.request.urlopen(req, timeout=10)
+        db_log_event("telegram", "send", status="ok",
+                     latency_ms=int((time.time() - t0) * 1000),
+                     payload={"chars": len(text)})
         return True
     except Exception as e:
         print(f"[Telegram] send error: {e}")
+        db_log_event("telegram", "send", status="error",
+                     latency_ms=int((time.time() - t0) * 1000),
+                     error=str(e)[:200])
         return False
 
 def telegram_get_file(file_id: str) -> str:
@@ -2441,13 +2552,18 @@ async def _execute_chat(message, chat_history, provider_id, system_prompt, model
     if len(chat_history) > 100:
         chat_history[:] = chat_history[-60:]
     elapsed = int((time.time() - start_time) * 1000)
-    log_token_usage(
-        token_meta.get("input_tokens", 0),
-        token_meta.get("output_tokens", 0),
-        actual_model,
-        provider=actual_pid,
-        response_time_ms=elapsed,
-    )
+    in_tok = token_meta.get("input_tokens", 0)
+    out_tok = token_meta.get("output_tokens", 0)
+    log_token_usage(in_tok, out_tok, actual_model,
+                    provider=actual_pid, response_time_ms=elapsed)
+    # Observability: log evento chat
+    evt_status = "ok" if full_reply and not full_reply.startswith("(errore") else "error"
+    db_log_event("chat", "response", provider=actual_pid, status=evt_status,
+                 latency_ms=elapsed,
+                 payload={"model": actual_model, "tokens_in": in_tok,
+                          "tokens_out": out_tok, "channel": channel,
+                          "chars": len(full_reply)},
+                 error=last_error if evt_status == "error" else "")
     if full_reply:
         loop.run_in_executor(None, _bg_extract_and_store, message, full_reply)
     return full_reply, actual_pid, elapsed
@@ -2503,11 +2619,18 @@ def chat_with_nanobot(message: str) -> str:
 # ─── Claude Bridge (PC Monitoring) ────────────────────────────────────────────
 def check_bridge_health() -> dict:
     """Verifica se il Claude Bridge su Windows è raggiungibile."""
+    t0 = time.time()
     try:
         req = urllib.request.Request(f"{CLAUDE_BRIDGE_URL}/health")
         with urllib.request.urlopen(req, timeout=3) as resp:
-            return json.loads(resp.read())
+            data = json.loads(resp.read())
+            db_log_event("bridge", "ping", status="ok",
+                         latency_ms=int((time.time() - t0) * 1000))
+            return data
     except Exception:
+        db_log_event("bridge", "ping", status="error",
+                     latency_ms=int((time.time() - t0) * 1000),
+                     error="unreachable")
         return {"status": "offline"}
 
 
@@ -2563,6 +2686,8 @@ async def heartbeat_task():
                         _heartbeat_known_down.add(alert_key)
                         telegram_send(f"[Heartbeat] {alert_msg}")
                         db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
+                        db_log_event("system", "alert", status="error",
+                                     payload={"key": alert_key, "msg": alert_msg})
                         print(f"[Heartbeat] ALERT: {alert_msg}")
                 else:
                     # Soglie (temp/RAM): cooldown come prima
@@ -2571,6 +2696,8 @@ async def heartbeat_task():
                         _heartbeat_last_alert[alert_key] = now
                         telegram_send(f"[Heartbeat] {alert_msg}")
                         db_log_audit("heartbeat_alert", resource=alert_key, details=alert_msg)
+                        db_log_event("system", "alert", status="error",
+                                     payload={"key": alert_key, "msg": alert_msg})
                         print(f"[Heartbeat] ALERT: {alert_msg}")
 
             # Recovery: notifica quando servizi tornano online (down → up)
@@ -2580,6 +2707,7 @@ async def heartbeat_task():
                     label = key.replace("_down", "").replace("_", " ").title()
                     telegram_send(f"[Heartbeat] ✅ {label} tornato online")
                     db_log_audit("heartbeat_recovery", resource=key)
+                    db_log_event("system", "recovery", payload={"key": key, "service": label})
                     print(f"[Heartbeat] RECOVERY: {label} online")
 
             # Tamagotchi: ALERT se ci sono problemi, IDLE se risolti
@@ -2641,6 +2769,14 @@ def _cleanup_expired():
     for token in list(SESSIONS.keys()):
         if now - SESSIONS[token] > SESSION_TIMEOUT:
             del SESSIONS[token]
+
+
+def cleanup_old_data():
+    """Pulizia periodica dati vecchi (chiamabile da cron weekly)."""
+    archived = db_archive_old_chats(90)
+    purged_usage = db_archive_old_usage(180)
+    purged_events = db_cleanup_old_events(90)
+    print(f"[Cleanup] Archiviati {archived} chat, purged {purged_usage} usage, {purged_events} events")
 
 
 # --- src/backend/routes/tamagotchi.py ---
@@ -2763,6 +2899,7 @@ async def _handle_tamagotchi_cmd(ws: WebSocket, cmd: str, req_id: int):
 async def tamagotchi_ws(websocket: WebSocket):
     await websocket.accept()
     _tamagotchi_connections.add(websocket)
+    db_log_event("esp32", "connect", payload={"ip": websocket.client.host})
     print(f"[Tamagotchi] ESP32 connesso da {websocket.client.host}")
     try:
         await websocket.send_json({"state": _tamagotchi_state})
@@ -2782,9 +2919,11 @@ async def tamagotchi_ws(websocket: WebSocket):
                 await websocket.send_json({"ping": True})
     except WebSocketDisconnect:
         _tamagotchi_connections.discard(websocket)
+        db_log_event("esp32", "disconnect")
         print("[Tamagotchi] ESP32 disconnesso")
     except Exception:
         _tamagotchi_connections.discard(websocket)
+        db_log_event("esp32", "disconnect", status="error")
 
 @app.post("/api/tamagotchi/state")
 async def set_tamagotchi_state(request: Request):
@@ -3298,11 +3437,13 @@ async def telegram_polling_task():
                     continue
                 voice = msg.get("voice")
                 if voice:
+                    db_log_event("telegram", "receive", payload={"type": "voice", "duration": voice.get("duration", 0)})
                     asyncio.create_task(_handle_telegram_voice(voice))
                     continue
                 text = msg.get("text", "").strip()
                 if not text:
                     continue
+                db_log_event("telegram", "receive", payload={"type": "text", "chars": len(text)})
                 asyncio.create_task(_handle_telegram_message(text))
         except Exception as e:
             print(f"[Telegram] Polling error: {e}")
@@ -3864,6 +4005,23 @@ async def api_file(request: Request, path: str = ""):
         return {"content": Path(path).resolve().read_text(encoding="utf-8")}
     except Exception:
         return {"content": "File non trovato"}
+
+@app.get("/api/events")
+async def api_events(request: Request, category: str = "", action: str = "",
+                     status: str = "", since: str = "", limit: int = 50):
+    token = request.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        return JSONResponse({"error": "Non autenticato"}, status_code=401)
+    limit = min(max(limit, 1), 200)
+    return db_get_events(category=category, action=action, status=status,
+                         since=since, limit=limit)
+
+@app.get("/api/events/stats")
+async def api_events_stats(request: Request, since: str = ""):
+    token = request.cookies.get("vessel_session", "")
+    if not _is_authenticated(token):
+        return JSONResponse({"error": "Non autenticato"}, status_code=401)
+    return db_get_event_stats(since=since)
 
 @app.get("/api/export")
 async def export_data(request: Request):

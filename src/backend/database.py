@@ -1,6 +1,6 @@
 # ─── Database SQLite ──────────────────────────────────────────────────────────
 DB_PATH = Path.home() / ".nanobot" / "vessel.db"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _db_conn():
@@ -129,6 +129,21 @@ def init_db():
                 tags TEXT DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS idx_notes_ts ON notes(ts);
+
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts DATETIME DEFAULT (datetime('now', 'localtime')),
+                category TEXT NOT NULL,
+                action TEXT NOT NULL,
+                provider TEXT,
+                status TEXT DEFAULT 'ok',
+                latency_ms INTEGER DEFAULT 0,
+                payload TEXT DEFAULT '{}',
+                error TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+            CREATE INDEX IF NOT EXISTS idx_events_cat ON events(category);
+            CREATE INDEX IF NOT EXISTS idx_events_cat_action ON events(category, action);
         """)
         # Schema version + migrations
         row = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()
@@ -146,6 +161,10 @@ def init_db():
                 conn.execute("ALTER TABLE chat_messages_archive ADD COLUMN agent TEXT NOT NULL DEFAULT ''")
             except Exception:
                 pass
+        if current_ver < 3:
+            # events table già creata dal CREATE IF NOT EXISTS sopra
+            print("[DB] Migrazione v3: tabella 'events' per observability")
+        if current_ver < SCHEMA_VERSION:
             conn.execute("UPDATE schema_version SET version = ?", (SCHEMA_VERSION,))
 
     _migrate_jsonl()
@@ -644,6 +663,88 @@ def db_delete_note(note_id: int) -> bool:
     with _db_conn() as conn:
         cur = conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         return cur.rowcount > 0
+
+
+# ─── Events (Observability Fase 54) ──────────────────────────────────────────
+
+def db_log_event(category: str, action: str, provider: str = "",
+                 status: str = "ok", latency_ms: int = 0,
+                 payload: dict | None = None, error: str = ""):
+    """Logga un evento di sistema nella tabella events."""
+    try:
+        with _db_conn() as conn:
+            conn.execute(
+                "INSERT INTO events (ts, category, action, provider, status, latency_ms, payload, error) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (time.strftime("%Y-%m-%dT%H:%M:%S"), category, action,
+                 provider or None, status, latency_ms,
+                 json.dumps(payload or {}, ensure_ascii=False), error[:500] if error else "")
+            )
+    except Exception as e:
+        print(f"[Events] log error: {e}")
+
+
+def db_get_events(category: str = "", action: str = "", status: str = "",
+                  since: str = "", limit: int = 50) -> list:
+    """Legge eventi con filtri opzionali."""
+    with _db_conn() as conn:
+        query = "SELECT id, ts, category, action, provider, status, latency_ms, payload, error FROM events WHERE 1=1"
+        params = []
+        if category:
+            query += " AND category = ?"
+            params.append(category)
+        if action:
+            query += " AND action = ?"
+            params.append(action)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        if since:
+            query += " AND ts >= ?"
+            params.append(since)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(query, params).fetchall()
+        return [dict(r) for r in rows]
+
+
+def db_get_event_stats(since: str = "") -> dict:
+    """Statistiche aggregate sugli eventi per la dashboard."""
+    if not since:
+        since = time.strftime("%Y-%m-%d")
+    with _db_conn() as conn:
+        # Conteggi per categoria
+        by_cat = {}
+        for row in conn.execute(
+            "SELECT category, COUNT(*) as cnt FROM events WHERE ts >= ? GROUP BY category",
+            (since,)
+        ).fetchall():
+            by_cat[row["category"]] = row["cnt"]
+        # Conteggi errori
+        errors = conn.execute(
+            "SELECT COUNT(*) FROM events WHERE ts >= ? AND status = 'error'",
+            (since,)
+        ).fetchone()[0]
+        # Latenza media chat
+        avg_lat = conn.execute(
+            "SELECT AVG(latency_ms) FROM events WHERE ts >= ? AND category = 'chat' AND latency_ms > 0",
+            (since,)
+        ).fetchone()[0]
+        return {
+            "by_category": by_cat,
+            "errors_today": errors,
+            "avg_chat_latency_ms": round(avg_lat) if avg_lat else 0,
+            "since": since,
+        }
+
+
+def db_cleanup_old_events(days: int = 90) -> int:
+    """Elimina eventi più vecchi di N giorni."""
+    cutoff = time.strftime("%Y-%m-%dT%H:%M:%S",
+                           time.localtime(time.time() - days * 86400))
+    with _db_conn() as conn:
+        cur = conn.execute("DELETE FROM events WHERE ts < ?", (cutoff,))
+        return cur.rowcount
 
 
 def db_search_entity(name: str) -> dict | None:

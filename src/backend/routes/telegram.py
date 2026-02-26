@@ -443,11 +443,13 @@ async def telegram_polling_task():
                     continue
                 voice = msg.get("voice")
                 if voice:
+                    db_log_event("telegram", "receive", payload={"type": "voice", "duration": voice.get("duration", 0)})
                     asyncio.create_task(_handle_telegram_voice(voice))
                     continue
                 text = msg.get("text", "").strip()
                 if not text:
                     continue
+                db_log_event("telegram", "receive", payload={"type": "text", "chars": len(text)})
                 asyncio.create_task(_handle_telegram_message(text))
         except Exception as e:
             print(f"[Telegram] Polling error: {e}")
