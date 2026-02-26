@@ -444,6 +444,29 @@
 
 ---
 
+## Fase 60 — UX Polish: Orientamento e Feedback Visivo ✅ (26/02/2026)
+
+> **Obiettivo:** migliorare orientamento e feedback visivo su 5 punti critici identificati dall'audit UX.
+
+**Header status dots** ✅:
+- [x] `home-health-dot`: title descrittivo "Pi: stato sistema", onclick → apre drawer system
+- [x] `bridge-health-dot`: title "Bridge PC: connessione Windows", onclick → apre drawer system
+- [x] `.health-dot-btn:hover` → scale(1.4) per feedback tattile immediato
+
+**Widget card headers** ✅:
+- [x] Chevron `›` aggiunto a tutti gli header dei widget card (indicatore visivo di espandibilità)
+- [x] Illuminazione al hover tramite CSS esistente
+
+**Code tab empty state** ✅:
+- [x] Messaggio di benvenuto personalizzato: "Eyyy, sono Vessel — dimmi cosa vuoi, psychoSocial."
+- [x] Hint "SELEZIONA UN PROVIDER ↓ E INIZIA A SCRIVERE" + icona pulsante centrata
+
+**Icone copy buttons** ✅:
+- [x] Tutti i bottoni copia memoria: icona `¤` (simbolo universale) con tooltip "Copia"
+- [x] History tab copy button allineato allo stesso standard
+
+---
+
 ## Visione futura (no timeline, complessità crescente)
 
 **Prossime fasi:**
