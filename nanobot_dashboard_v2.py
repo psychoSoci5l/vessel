@@ -58,9 +58,10 @@ def _get_config(filename: str) -> dict:
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 
 # ─── Ollama (LLM locale) ─────────────────────────────────────────────────────
-OLLAMA_BASE = "http://127.0.0.1:11434"
-OLLAMA_MODEL = "llama3.2:3b"
-OLLAMA_TIMEOUT = 90  # secondi (Llama 3.2 ~5 tok/s, più leggero)
+_ollama_cfg = _get_config("config.json").get("ollama", {})
+OLLAMA_BASE = _ollama_cfg.get("base_url", "http://127.0.0.1:11434")
+OLLAMA_MODEL = _ollama_cfg.get("model", "gemma2:2b")
+OLLAMA_TIMEOUT = _ollama_cfg.get("timeout", 90)
 OLLAMA_KEEP_ALIVE = "60m"  # tiene il modello in RAM per 60 min (evita cold start)
 _SYSTEM_SHARED = (
     "## Tono e stile\n"
@@ -110,6 +111,13 @@ OLLAMA_SYSTEM = _build_system_prompt(
     "Puoi aiutare con qualsiasi cosa: domande generali, coding, consigli, "
     "curiosità, brainstorming, organizzazione — sei un assistente tuttofare."
 )
+
+_CLOUD_SPEC = (
+    "Puoi aiutare con qualsiasi cosa: domande generali, coding, consigli, "
+    "curiosità, brainstorming, organizzazione — sei un assistente tuttofare."
+)
+ANTHROPIC_SYSTEM = _build_system_prompt("Cloud (Haiku)", _CLOUD_SPEC)
+OPENROUTER_SYSTEM = _build_system_prompt("Cloud (DeepSeek V3)", _CLOUD_SPEC)
 
 # ─── Agent Registry ──────────────────────────────────────────────────────────
 _AGENTS_CACHE: dict = {}
@@ -1705,9 +1713,9 @@ def _resolve_model(raw: str) -> str:
 def _provider_defaults(provider_id: str) -> tuple:
     """Ritorna (model, system_prompt) di default per un provider_id."""
     if provider_id == "anthropic":
-        return ANTHROPIC_MODEL, OLLAMA_SYSTEM
+        return ANTHROPIC_MODEL, ANTHROPIC_SYSTEM
     if provider_id == "openrouter":
-        return OPENROUTER_MODEL, OLLAMA_SYSTEM
+        return OPENROUTER_MODEL, OPENROUTER_SYSTEM
     if provider_id == "ollama":
         return OLLAMA_MODEL, OLLAMA_SYSTEM
     if provider_id == "ollama_pc_coder":
@@ -1745,7 +1753,7 @@ _ENTITY_TECH = {
     "raspberry pi", "arduino", "linux", "debian", "ubuntu", "windows", "macos",
     "git", "github", "gitlab", "sqlite", "postgres", "postgresql", "mongodb",
     "redis", "nginx", "anthropic", "openai", "gemma", "llama", "mistral",
-    "deepseek", "qwen", "claude", "gpt", "telegram", "discord", "whatsapp",
+    "deepseek", "qwen", "claude", "gpt", "telegram", "whatsapp",
 }
 
 # Città/paesi comuni (espandibile)
@@ -2959,7 +2967,7 @@ def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
     """Risolve prefisso provider dal testo Telegram. Ritorna (provider_id, system, model, clean_text)."""
     low = text.lower()
     if low.startswith("@haiku "):
-        return "anthropic", OLLAMA_SYSTEM, ANTHROPIC_MODEL, text.split(" ", 1)[1]
+        return "anthropic", ANTHROPIC_SYSTEM, ANTHROPIC_MODEL, text.split(" ", 1)[1]
     if low.startswith("@coder ") or low.startswith("@pc "):
         return "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL, text.split(" ", 1)[1]
     if low.startswith("@deep "):
@@ -2968,7 +2976,7 @@ def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
         return "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, text.split(" ", 1)[1]
     if low.startswith("@brain "):
         return "brain", BRAIN_SYSTEM, BRAIN_MODEL, text.split(" ", 1)[1]
-    return "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, text
+    return "openrouter", OPENROUTER_SYSTEM, OPENROUTER_MODEL, text
 
 async def _handle_telegram_message(text: str):
     """Routing prefissi e risposta via Telegram."""
@@ -3355,11 +3363,11 @@ async def handle_chat(websocket, msg, ctx):
     elif provider == "pc_deep":
         reply = await _stream_chat(websocket, text, ctx["pc_deep"], "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL, memory_enabled=mem)
     elif provider == "deepseek":
-        reply = await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, memory_enabled=mem)
+        reply = await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OPENROUTER_SYSTEM, OPENROUTER_MODEL, memory_enabled=mem)
     elif provider == "brain":
         reply = await _stream_chat(websocket, text, ctx["brain"], "brain", BRAIN_SYSTEM, BRAIN_MODEL, memory_enabled=mem)
     else:
-        reply = await _stream_chat(websocket, text, ctx["cloud"], "anthropic", OLLAMA_SYSTEM, ANTHROPIC_MODEL, memory_enabled=mem)
+        reply = await _stream_chat(websocket, text, ctx["cloud"], "anthropic", ANTHROPIC_SYSTEM, ANTHROPIC_MODEL, memory_enabled=mem)
     emotion = detect_emotion(reply or "")
     await broadcast_tamagotchi(emotion)
 

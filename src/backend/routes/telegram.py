@@ -101,7 +101,7 @@ def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
     """Risolve prefisso provider dal testo Telegram. Ritorna (provider_id, system, model, clean_text)."""
     low = text.lower()
     if low.startswith("@haiku "):
-        return "anthropic", OLLAMA_SYSTEM, ANTHROPIC_MODEL, text.split(" ", 1)[1]
+        return "anthropic", ANTHROPIC_SYSTEM, ANTHROPIC_MODEL, text.split(" ", 1)[1]
     if low.startswith("@coder ") or low.startswith("@pc "):
         return "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL, text.split(" ", 1)[1]
     if low.startswith("@deep "):
@@ -110,7 +110,7 @@ def _resolve_telegram_provider(text: str) -> tuple[str, str, str, str]:
         return "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, text.split(" ", 1)[1]
     if low.startswith("@brain "):
         return "brain", BRAIN_SYSTEM, BRAIN_MODEL, text.split(" ", 1)[1]
-    return "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, text
+    return "openrouter", OPENROUTER_SYSTEM, OPENROUTER_MODEL, text
 
 async def _handle_telegram_message(text: str):
     """Routing prefissi e risposta via Telegram."""

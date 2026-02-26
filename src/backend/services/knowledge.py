@@ -10,7 +10,7 @@ _ENTITY_TECH = {
     "raspberry pi", "arduino", "linux", "debian", "ubuntu", "windows", "macos",
     "git", "github", "gitlab", "sqlite", "postgres", "postgresql", "mongodb",
     "redis", "nginx", "anthropic", "openai", "gemma", "llama", "mistral",
-    "deepseek", "qwen", "claude", "gpt", "telegram", "discord", "whatsapp",
+    "deepseek", "qwen", "claude", "gpt", "telegram", "whatsapp",
 }
 
 # Città/paesi comuni (espandibile)

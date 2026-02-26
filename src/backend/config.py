@@ -19,9 +19,10 @@ def _get_config(filename: str) -> dict:
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 
 # ─── Ollama (LLM locale) ─────────────────────────────────────────────────────
-OLLAMA_BASE = "http://127.0.0.1:11434"
-OLLAMA_MODEL = "llama3.2:3b"
-OLLAMA_TIMEOUT = 90  # secondi (Llama 3.2 ~5 tok/s, più leggero)
+_ollama_cfg = _get_config("config.json").get("ollama", {})
+OLLAMA_BASE = _ollama_cfg.get("base_url", "http://127.0.0.1:11434")
+OLLAMA_MODEL = _ollama_cfg.get("model", "gemma2:2b")
+OLLAMA_TIMEOUT = _ollama_cfg.get("timeout", 90)
 OLLAMA_KEEP_ALIVE = "60m"  # tiene il modello in RAM per 60 min (evita cold start)
 _SYSTEM_SHARED = (
     "## Tono e stile\n"
@@ -71,6 +72,13 @@ OLLAMA_SYSTEM = _build_system_prompt(
     "Puoi aiutare con qualsiasi cosa: domande generali, coding, consigli, "
     "curiosità, brainstorming, organizzazione — sei un assistente tuttofare."
 )
+
+_CLOUD_SPEC = (
+    "Puoi aiutare con qualsiasi cosa: domande generali, coding, consigli, "
+    "curiosità, brainstorming, organizzazione — sei un assistente tuttofare."
+)
+ANTHROPIC_SYSTEM = _build_system_prompt("Cloud (Haiku)", _CLOUD_SPEC)
+OPENROUTER_SYSTEM = _build_system_prompt("Cloud (DeepSeek V3)", _CLOUD_SPEC)
 
 # ─── Agent Registry ──────────────────────────────────────────────────────────
 _AGENTS_CACHE: dict = {}

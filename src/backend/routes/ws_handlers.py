@@ -38,11 +38,11 @@ async def handle_chat(websocket, msg, ctx):
     elif provider == "pc_deep":
         reply = await _stream_chat(websocket, text, ctx["pc_deep"], "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL, memory_enabled=mem)
     elif provider == "deepseek":
-        reply = await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OLLAMA_SYSTEM, OPENROUTER_MODEL, memory_enabled=mem)
+        reply = await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OPENROUTER_SYSTEM, OPENROUTER_MODEL, memory_enabled=mem)
     elif provider == "brain":
         reply = await _stream_chat(websocket, text, ctx["brain"], "brain", BRAIN_SYSTEM, BRAIN_MODEL, memory_enabled=mem)
     else:
-        reply = await _stream_chat(websocket, text, ctx["cloud"], "anthropic", OLLAMA_SYSTEM, ANTHROPIC_MODEL, memory_enabled=mem)
+        reply = await _stream_chat(websocket, text, ctx["cloud"], "anthropic", ANTHROPIC_SYSTEM, ANTHROPIC_MODEL, memory_enabled=mem)
     emotion = detect_emotion(reply or "")
     await broadcast_tamagotchi(emotion)
 

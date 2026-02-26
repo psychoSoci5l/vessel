@@ -66,9 +66,9 @@ def _resolve_model(raw: str) -> str:
 def _provider_defaults(provider_id: str) -> tuple:
     """Ritorna (model, system_prompt) di default per un provider_id."""
     if provider_id == "anthropic":
-        return ANTHROPIC_MODEL, OLLAMA_SYSTEM
+        return ANTHROPIC_MODEL, ANTHROPIC_SYSTEM
     if provider_id == "openrouter":
-        return OPENROUTER_MODEL, OLLAMA_SYSTEM
+        return OPENROUTER_MODEL, OPENROUTER_SYSTEM
     if provider_id == "ollama":
         return OLLAMA_MODEL, OLLAMA_SYSTEM
     if provider_id == "ollama_pc_coder":
