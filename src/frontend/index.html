@@ -122,6 +122,7 @@
                 <div class="chart-legend">
                   <span><div class="dot-cpu"></div> <span>CPU</span></span>
                   <span><div class="dot-temp"></div> <span>Temp</span></span>
+                  <span class="chart-scale">CPU 0&#x2013;100% · Temp 0&#x2013;85°C</span>
                 </div>
               </div>
               <canvas id="pi-chart"></canvas>
@@ -147,7 +148,7 @@
               </div>
               <div class="widget-card" data-widget="tracker" onclick="openDrawer('tracker')">
                 <div class="wc-header"><span class="wc-label">TRACKER</span><span class="wc-chevron">&#x203A;</span></div>
-                <div class="wc-body" id="wt-tracker-preview">--</div>
+                <div class="wc-body" id="wt-tracker-preview">nessuno</div>
               </div>
             </div>
           </div>
@@ -239,7 +240,7 @@
               <button class="tab" onclick="switchMemTab('history', this)">HISTORY</button>
               <button class="tab" onclick="switchMemTab('quickref', this)">REF</button>
               <button class="tab" onclick="switchMemTab('search', this)">CERCA</button>
-              <button class="tab" onclick="switchMemTab('grafo', this)">GRAFO</button>
+              <button class="tab" onclick="switchMemTab('grafo', this)">ENTITÀ</button>
             </div>
             <div class="mem-panels">
               <div id="tab-memory" class="tab-content active">

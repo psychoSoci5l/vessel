@@ -398,6 +398,14 @@
 .dot-cpu { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: var(--glow-sm); }
 .dot-temp { width: 6px; height: 6px; border-radius: 50%; background: var(--amber); }
 
+.chart-scale {
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  opacity: 0.8;
+  margin-left: auto;
+}
+
 #pi-chart {
   width: 100%;
   height: 60px;
@@ -465,8 +473,8 @@
 
 .wc-chevron {
   font-size: 18px;
-  color: var(--muted);
-  opacity: 0.5;
+  color: var(--text2);
+  opacity: 0.6;
   transition: opacity .15s, color .15s;
   line-height: 1;
 }
