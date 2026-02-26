@@ -612,6 +612,23 @@
   let _sigilAnimFrame = null;
   let _sigilDormant = true;
 
+  // Map API state → button text for highlight
+  const _sigilBtnMap = {
+    'HAPPY': 'HAPPY', 'THINKING': 'THINK', 'SLEEPING': 'SLEEP',
+    'ALERT': 'ALERT', 'PROUD': 'PROUD', 'CURIOUS': 'CURIO', 'IDLE': 'IDLE'
+  };
+
+  function _updateSigilBtns(state) {
+    const target = _sigilBtnMap[state];
+    document.querySelectorAll('.btn-sigil-term').forEach(btn => {
+      if (target && btn.textContent.trim() === target) {
+        btn.classList.add('sigil-active');
+      } else {
+        btn.classList.remove('sigil-active');
+      }
+    });
+  }
+
   function setSigilState(state) {
     if (state !== _sigilState) {
       _sigilState = state;
@@ -621,6 +638,7 @@
     _sigilOnline = true;
     const moodEl = document.getElementById('sigil-mood-info');
     if (moodEl) moodEl.textContent = state;
+    _updateSigilBtns(state);
   }
 
   function updateSigilIndicator(state) {

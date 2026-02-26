@@ -108,6 +108,14 @@ button {
 .btn-sm  { min-height: 28px; padding: 3px 10px; font-size: 10px; }
 .btn-xs  { min-height: 20px; padding: 1px 6px; font-size: 10px; line-height: 1.2; }
 
+.btn-danger-off {
+  border-color: var(--red) !important;
+  box-shadow: 0 0 6px rgba(255,50,50,0.3);
+  font-weight: 700;
+  letter-spacing: 1px;
+}
+.btn-danger-off:hover { box-shadow: 0 0 12px rgba(255,50,50,0.5) !important; }
+
 /* Badge inline */
 .badge { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; border-radius: 3px;
          padding: 1px 5px; white-space: nowrap; border: 1px solid; }

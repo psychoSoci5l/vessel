@@ -77,6 +77,37 @@
 .dots span:nth-child(2) { animation-delay: .2s; }
 .dots span:nth-child(3) { animation-delay: .4s; }
 
+/* Chat welcome state */
+.chat-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  gap: 12px;
+  padding: 40px 20px;
+  text-align: center;
+  min-height: 200px;
+}
+.chat-welcome-sigil {
+  font-size: 36px;
+  color: var(--accent3);
+  text-shadow: var(--glow-text);
+  animation: sigilPulse 3s ease-in-out infinite;
+}
+.chat-welcome-text {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+.chat-welcome-hint {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
 /* Code input */
 .code-input-area {
   padding: 10px 14px;

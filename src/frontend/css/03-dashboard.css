@@ -95,6 +95,11 @@
 .health-dot.green { background: var(--accent); box-shadow: var(--glow-sm); }
 .health-dot.yellow { background: var(--amber); box-shadow: 0 0 8px var(--amber); }
 .health-dot.red { background: var(--red); box-shadow: 0 0 8px var(--red); animation: pulse 1s infinite; }
+.health-dot-btn {
+  cursor: pointer;
+  transition: all .15s, background .5s;
+}
+.health-dot-btn:hover { transform: scale(1.4); }
 
 /* ── Sigil Header Canvas ── */
 .sigil-header-canvas {
@@ -224,6 +229,12 @@
 .btn-sigil-term:active {
   color: var(--accent);
   border-color: var(--accent3);
+  text-shadow: var(--glow-sm);
+}
+.btn-sigil-term.sigil-active {
+  color: var(--accent);
+  border-color: var(--accent3);
+  background: var(--accent-dim);
   text-shadow: var(--glow-sm);
 }
 
@@ -450,6 +461,19 @@
 .wc-icon {
   font-size: 16px;
   color: var(--muted);
+}
+
+.wc-chevron {
+  font-size: 18px;
+  color: var(--muted);
+  opacity: 0.5;
+  transition: opacity .15s, color .15s;
+  line-height: 1;
+}
+.widget-card:hover .wc-chevron,
+.widget-card:active .wc-chevron {
+  color: var(--accent);
+  opacity: 1;
 }
 
 .wc-body {

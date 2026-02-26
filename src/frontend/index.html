@@ -35,8 +35,8 @@
               src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABAAEADASIAAhEBAxEB/8QAGwAAAgMBAQEAAAAAAAAAAAAAAAQDBQYBAgj/xAAzEAACAQMCAwUGBQUAAAAAAAABAgMABBEFIRIxUQYTFEFhIkJxgZGhMjM0YqIkUsHR4f/EABgBAQEBAQEAAAAAAAAAAAAAAAABAwIE/8QAHxEAAgIBBQEBAAAAAAAAAAAAAAECERIDBCExQcHx/9oADAMBAAIRAxEAPwD5foooqHIAEkAAknYAedMizkH5jRxnozbj5DJFTWscihEgXNzMCQc44Ewd8+WwJJ6fGr9ez8EOlie/MMMUhKxz3DlQxHMKu2PoTQqRmWtJMewUk2zhGyfpzper++0TwyQvaSxnvPy2STiSQjnggnBz8xVXcDvo3lK8M8ZxKMYzvjJ9c7H4g9aBoUooooQK6AWIUczsK5U1mvFdwD965+GcmgNDoAifV7xiMmFfYB3GAcDPpsnyzVz2g0+41Se27+QeGjZymWwFTCYUnkvnz3361R9mTEt3LNNJwRzJMr7kAIEBJyN+Zxt51Z6fdxppd1OyeKhZSixNk96SyjG4OPIEnfpWepdpo921cMXGa7+cjGmaSLF57cujW5mWQSNt7JU5AbqMDl0qg1e0MGslXzifijckjdweEnbrlWq0vrqNotOcq9vaTAKsaEjg3wQMY8s/9pfti8Ul74u2ZQomAQDkR3YwR6ZQfWmnfpN0oKlDz9MmOW/Oipr1Al3Mq/hDnHw5ioa0PEFMWP6kHojn+BpemLDe6Vf7wyD4lSB9zQFlp83dTaR3eULSzIXzsckD/VbWyS/vdVk0/TrKGSGBC8jKgGCB7uOZxvjesHbL4my7iIMLlJBJAVO/H5rj1XhI9Vx50/pvajV9O1gXGl3ipcToglWUDhDqMb8W2ee/7qjVm0Z4x47NzeeI0u6nS9igDwWviY3GzBdxupGzZHpnJrBX3FcdmraZlAMGNwv4svjJP2+VM33aHV+1F5Kt5NCZ5UEGY0CIIwcsxxzGw+u1edWuLaLSFs4JJBJ3iIsLAflpxZc48y2dvWolTE55JWUV9+oz1RD/AAWl6nvz/VyAe7hPoAP8VBXRiFdUlWBU4IOQelcooB/DTsZbRlWRx7UedwfQefUYz08q8a1O1/qcs726wSv+NVJxkbEnPLkc0nz50yLyXbIjZh77Rgn786FsLG7ltobuNSVkkQQ8QXZV4sk/b6E1I7eELcTCW6Jyxb2uA+vVvTcD48o/GSDHAkKMPeVN/vnHypckkkkkk7kmgs4SSSSck+dFFFCH/9k="
               alt="V">
             <span class="dash-title">VESSEL</span>
-            <div id="home-health-dot" class="health-dot" title="Salute Pi"></div>
-            <div id="bridge-health-dot" class="health-dot" title="Bridge PC" style="margin-left:4px;"></div>
+            <div id="home-health-dot" class="health-dot health-dot-btn" title="Pi: stato sistema" onclick="openDrawer('system')"></div>
+            <div id="bridge-health-dot" class="health-dot health-dot-btn" title="Bridge PC: connessione Windows" onclick="openDrawer('system')" style="margin-left:4px;"></div>
 <span class="dash-spacer"></span>
             <span class="dash-weather" id="home-weather-text"></span>
             <span class="dash-temp" id="home-temp">--</span>
@@ -130,23 +130,23 @@
             <!-- Widget tiles -->
             <div class="dash-widgets">
               <div class="widget-card" data-widget="briefing" onclick="openDrawer('briefing')">
-                <div class="wc-header"><span class="wc-label">BRIEFING</span><span class="wc-icon">&#x2630;</span></div>
+                <div class="wc-header"><span class="wc-label">BRIEFING</span><span class="wc-chevron">&#x203A;</span></div>
                 <div class="wc-body" id="wt-briefing-preview">--</div>
               </div>
               <div class="widget-card" data-widget="tokens" onclick="openDrawer('tokens')">
-                <div class="wc-header"><span class="wc-label">TOKEN</span><span class="wc-icon">&#x00A4;</span></div>
+                <div class="wc-header"><span class="wc-label">TOKEN</span><span class="wc-chevron">&#x203A;</span></div>
                 <div class="wc-body" id="wt-tokens-preview">--</div>
               </div>
               <div class="widget-card" data-widget="logs" onclick="openDrawer('logs')">
-                <div class="wc-header"><span class="wc-label">LOGS</span><span class="wc-icon">&#x2261;</span></div>
+                <div class="wc-header"><span class="wc-label">LOGS</span><span class="wc-chevron">&#x203A;</span></div>
                 <div class="wc-body" id="wt-logs-preview">--</div>
               </div>
               <div class="widget-card" data-widget="cron" onclick="openDrawer('cron')">
-                <div class="wc-header"><span class="wc-label">JOBS</span><span class="wc-icon">&#x25C7;</span></div>
+                <div class="wc-header"><span class="wc-label">JOBS</span><span class="wc-chevron">&#x203A;</span></div>
                 <div class="wc-body" id="wt-cron-preview">--</div>
               </div>
               <div class="widget-card" data-widget="tracker" onclick="openDrawer('tracker')">
-                <div class="wc-header"><span class="wc-label">TRACKER</span><span class="wc-icon">&#x25C8;</span></div>
+                <div class="wc-header"><span class="wc-label">TRACKER</span><span class="wc-chevron">&#x203A;</span></div>
                 <div class="wc-body" id="wt-tracker-preview">--</div>
               </div>
             </div>
@@ -158,7 +158,11 @@
       <div id="tab-code" class="tab-view">
         <div id="code-chat" class="code-panel">
           <div id="chat-messages">
-            <div class="msg msg-bot">Eyyy, sono Vessel &mdash; dimmi cosa vuoi, psychoSocial.</div>
+            <div class="chat-welcome">
+              <div class="chat-welcome-sigil">&#x25CE;</div>
+              <div class="chat-welcome-text">Eyyy, sono Vessel &mdash; dimmi cosa vuoi, psychoSocial.</div>
+              <div class="chat-welcome-hint">Seleziona un provider &darr; e inizia a scrivere</div>
+            </div>
           </div>
           <div class="code-input-area">
             <div class="code-input-row">
@@ -240,15 +244,15 @@
             <div class="mem-panels">
               <div id="tab-memory" class="tab-content active">
                 <div class="mono-block" id="memory-content">Caricamento&hellip;</div>
-                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshMemory()">&#x21BB;</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('memory-content').textContent)">[cp]</button></div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshMemory()">&#x21BB;</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('memory-content').textContent)" title="Copia">&#x2398;</button></div>
               </div>
               <div id="tab-history" class="tab-content">
                 <div class="mono-block" id="history-content">Premi Carica&hellip;</div>
-                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshHistory()">&#x21BB; Carica</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('history-content').textContent)">[cp]</button></div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="refreshHistory()">&#x21BB; Carica</button><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('history-content').textContent)" title="Copia">&#x2398;</button></div>
               </div>
               <div id="tab-quickref" class="tab-content">
                 <div class="mono-block" id="quickref-content">Caricamento&hellip;</div>
-                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)">[cp]</button></div>
+                <div class="prof-btns"><button class="btn-ghost btn-sm" onclick="copyToClipboard(document.getElementById('quickref-content').textContent)" title="Copia">&#x2398;</button></div>
               </div>
               <div id="tab-search" class="tab-content">
                 <div class="search-row">
@@ -348,7 +352,7 @@
             <button class="btn-ghost" onclick="requestStats()">&#x21BB; Refresh</button>
             <button class="btn-red" onclick="doLogout()">&#x23FB; Logout</button>
             <button class="btn-red" onclick="showRebootModal()">&#x21BA; Reboot</button>
-            <button class="btn-red" onclick="showShutdownModal()">&#x23FB; Off</button>
+            <button class="btn-red btn-danger-off" onclick="showShutdownModal()" title="Spegne il Pi completamente">&#x23FB; Off</button>
           </div>
         </div>
       </div>
