@@ -36,6 +36,7 @@
               alt="V">
             <span class="dash-title">VESSEL</span>
             <div id="home-health-dot" class="health-dot" title="Salute Pi"></div>
+            <div id="bridge-health-dot" class="health-dot" title="Bridge PC" style="margin-left:4px;"></div>
             <div id="sigil-indicator" class="sigil-indicator" data-state="IDLE" title="Sigil: IDLE" onclick="scrollToSigilWidget()">
               <canvas id="sigil-header-canvas" class="sigil-header-canvas" width="80" height="24"></canvas>
               <span class="sigil-label" id="sigil-label">SIGIL</span>
@@ -184,9 +185,8 @@
                   <button type="button" onclick="switchProvider('auto')"><span class="dot dot-auto"></span> Auto</button>
                   <button type="button" onclick="switchProvider('cloud')"><span class="dot dot-cloud"></span> Haiku</button>
                   <button type="button" onclick="switchProvider('local')"><span class="dot dot-local"></span> Local (Gemma)</button>
-                  <button type="button" onclick="switchProvider('pc_coder')"><span class="dot dot-pc-coder"></span> PC Coder</button>
-                  <button type="button" onclick="switchProvider('pc_deep')"><span class="dot dot-pc-deep"></span> PC Deep</button>
-                  <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> DeepSeek V3</button>
+                  <button type="button" onclick="switchProvider('pc')"><span class="dot dot-pc"></span> PC</button>
+                  <button type="button" onclick="switchProvider('deepseek')"><span class="dot dot-deepseek"></span> OpenRouter</button>
                   <button type="button" onclick="switchProvider('brain')"><span class="dot dot-brain"></span> Brain</button>
                 </div>
               </div>
@@ -225,9 +225,8 @@
             <div class="prof-providers">
               <div class="prof-prov"><span class="dot dot-cloud"></span><span class="prof-prov-name">Haiku</span><span class="prof-prov-info">Claude &mdash; cloud</span></div>
               <div class="prof-prov"><span class="dot dot-local"></span><span class="prof-prov-name">Local</span><span class="prof-prov-info">Gemma 3 4B &mdash; Pi</span></div>
-              <div class="prof-prov"><span class="dot dot-pc-coder"></span><span class="prof-prov-name">PC Coder</span><span class="prof-prov-info">Qwen 14B &mdash; LAN</span></div>
-              <div class="prof-prov"><span class="dot dot-pc-deep"></span><span class="prof-prov-name">PC Deep</span><span class="prof-prov-info">Qwen 30B &mdash; LAN</span></div>
-              <div class="prof-prov"><span class="dot dot-deepseek"></span><span class="prof-prov-name">DeepSeek</span><span class="prof-prov-info">DeepSeek V3 &mdash; cloud</span></div>
+              <div class="prof-prov"><span class="dot dot-pc"></span><span class="prof-prov-name">PC</span><span class="prof-prov-info">Qwen 14B &mdash; GPU LAN</span></div>
+              <div class="prof-prov"><span class="dot dot-deepseek"></span><span class="prof-prov-name">OpenRouter</span><span class="prof-prov-info">DeepSeek V3 &mdash; cloud</span></div>
               <div class="prof-prov"><span class="dot dot-brain"></span><span class="prof-prov-name">Brain</span><span class="prof-prov-info">Claude Code CLI &mdash; bridge</span></div>
             </div>
           </div>
@@ -401,9 +400,8 @@
           <div class="help-table">
             <div class="help-row"><span class="help-badge" style="color:var(--accent);border-color:var(--accent);">Haiku</span><span class="help-kw">Claude &mdash; cloud, veloce</span></div>
             <div class="help-row"><span class="help-badge" style="color:#888;border-color:#888;">Local</span><span class="help-kw">Gemma 3 4B &mdash; Pi, lento</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">PC Coder</span><span class="help-kw">Qwen 14B &mdash; GPU LAN</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#aa66ff;border-color:#aa66ff;">PC Deep</span><span class="help-kw">Qwen 30B &mdash; LAN</span></div>
-            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">DeepSeek</span><span class="help-kw">DeepSeek V3 &mdash; cloud</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#44aaff;border-color:#44aaff;">PC</span><span class="help-kw">Qwen 14B &mdash; GPU LAN</span></div>
+            <div class="help-row"><span class="help-badge" style="color:#ffaa00;border-color:#ffaa00;">OpenRouter</span><span class="help-kw">DeepSeek V3 &mdash; cloud</span></div>
             <div class="help-row"><span class="help-badge" style="color:#00d4ff;border-color:#00d4ff;">Brain</span><span class="help-kw">Claude Code CLI &mdash; bridge</span></div>
           </div>
         </div>

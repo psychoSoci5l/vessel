@@ -114,7 +114,7 @@ def get_provider(provider_id: str, model: str, system_prompt: str, history: list
         p = AnthropicProvider(model, system_prompt, history)
     elif provider_id == "openrouter":
         p = OpenRouterProvider(model, system_prompt, history)
-    elif provider_id.startswith("ollama_pc"):
+    elif provider_id == "ollama_pc":
         p = OllamaPCProvider(model, system_prompt, history)
     else:
         p = OllamaProvider(model, system_prompt, history)

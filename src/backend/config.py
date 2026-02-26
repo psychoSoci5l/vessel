@@ -78,7 +78,7 @@ _CLOUD_SPEC = (
     "curiosità, brainstorming, organizzazione — sei un assistente tuttofare."
 )
 ANTHROPIC_SYSTEM = _build_system_prompt("Cloud (Haiku)", _CLOUD_SPEC)
-OPENROUTER_SYSTEM = _build_system_prompt("Cloud (DeepSeek V3)", _CLOUD_SPEC)
+OPENROUTER_SYSTEM = _build_system_prompt("Cloud (OpenRouter)", _CLOUD_SPEC)
 
 # ─── Agent Registry ──────────────────────────────────────────────────────────
 _AGENTS_CACHE: dict = {}
@@ -95,9 +95,8 @@ def _load_agents() -> dict:
 _HARDWARE_BY_PROVIDER = {
     "anthropic": "Cloud (Haiku)",
     "ollama": "Raspberry Pi 5",
-    "ollama_pc_coder": "un PC Windows con GPU NVIDIA RTX 3060",
-    "ollama_pc_deep": "un PC Windows con GPU NVIDIA RTX 3060",
-    "openrouter": "Cloud (DeepSeek V3)",
+    "ollama_pc": "un PC Windows con GPU NVIDIA RTX 3060",
+    "openrouter": "Cloud (OpenRouter)",
     "brain": "PC Windows via Claude Code CLI (con memoria cross-sessione)",
 }
 
@@ -152,18 +151,11 @@ OLLAMA_PC_PORT = _pc_cfg.get("port", 11434)
 OLLAMA_PC_BASE = f"http://{OLLAMA_PC_HOST}:{OLLAMA_PC_PORT}"
 OLLAMA_PC_KEEP_ALIVE = "60m"
 OLLAMA_PC_TIMEOUT = 60  # GPU è veloce
-_pc_models = _pc_cfg.get("models", {})
-OLLAMA_PC_CODER_MODEL = _pc_models.get("coder", "qwen2.5-coder:14b")
-OLLAMA_PC_DEEP_MODEL = _pc_models.get("deep", "qwen3-coder:30b")
+OLLAMA_PC_MODEL = _pc_cfg.get("model", _pc_cfg.get("models", {}).get("coder", "qwen2.5-coder:14b"))
 OLLAMA_PC_NUM_PREDICT = _pc_cfg.get("num_predict", 2048)  # limita generazione (anti-loop)
-OLLAMA_PC_CODER_SYSTEM = _build_system_prompt(
+OLLAMA_PC_SYSTEM = _build_system_prompt(
     "un PC Windows con GPU NVIDIA RTX 3060",
     "Sei specializzato in coding e questioni tecniche, ma puoi aiutare con qualsiasi cosa."
-)
-OLLAMA_PC_DEEP_SYSTEM = _build_system_prompt(
-    "un PC Windows con GPU NVIDIA RTX 3060",
-    "Sei specializzato in ragionamento, analisi e problem solving, "
-    "ma puoi aiutare con qualsiasi cosa."
 )
 
 # ─── Claude Brain (Claude Code CLI via Bridge) ────────────────────────────
@@ -261,9 +253,8 @@ def ensure_self_signed_cert() -> bool:
 PROVIDER_FALLBACKS = {
     "anthropic":       "openrouter",
     "openrouter":      "anthropic",
-    "ollama":          "ollama_pc_coder",
-    "ollama_pc_coder": "ollama",
-    "ollama_pc_deep":  "openrouter",
+    "ollama":          "ollama_pc",
+    "ollama_pc":       "ollama",
     "brain":           "openrouter",
 }
 

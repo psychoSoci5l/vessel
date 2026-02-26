@@ -71,10 +71,8 @@ def _provider_defaults(provider_id: str) -> tuple:
         return OPENROUTER_MODEL, OPENROUTER_SYSTEM
     if provider_id == "ollama":
         return OLLAMA_MODEL, OLLAMA_SYSTEM
-    if provider_id == "ollama_pc_coder":
-        return OLLAMA_PC_CODER_MODEL, OLLAMA_PC_CODER_SYSTEM
-    if provider_id == "ollama_pc_deep":
-        return OLLAMA_PC_DEEP_MODEL, OLLAMA_PC_DEEP_SYSTEM
+    if provider_id == "ollama_pc":
+        return OLLAMA_PC_MODEL, OLLAMA_PC_SYSTEM
     if provider_id == "brain":
         return BRAIN_MODEL, BRAIN_SYSTEM
     return OLLAMA_MODEL, OLLAMA_SYSTEM

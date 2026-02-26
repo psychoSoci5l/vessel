@@ -34,12 +34,12 @@
   }
 
   const _providerNames = {
-    anthropic: 'Haiku', openrouter: 'DeepSeek', ollama: 'Local',
-    ollama_pc_coder: 'PC Coder', ollama_pc_deep: 'PC Deep', unknown: '?'
+    anthropic: 'Haiku', openrouter: 'OpenRouter', ollama: 'Local',
+    ollama_pc: 'PC', unknown: '?'
   };
   const _providerColors = {
     anthropic: 'var(--accent)', openrouter: 'var(--amber)', ollama: 'var(--muted)',
-    ollama_pc_coder: 'var(--cyan)', ollama_pc_deep: '#aa66ff'
+    ollama_pc: 'var(--cyan)'
   };
 
   function renderUsageReport(data) {

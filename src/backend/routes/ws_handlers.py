@@ -4,8 +4,7 @@ def _resolve_auto_params(provider_id: str) -> tuple:
     _map = {
         "anthropic": ("cloud", ANTHROPIC_MODEL),
         "ollama": ("ollama", OLLAMA_MODEL),
-        "ollama_pc_coder": ("pc_coder", OLLAMA_PC_CODER_MODEL),
-        "ollama_pc_deep": ("pc_deep", OLLAMA_PC_DEEP_MODEL),
+        "ollama_pc": ("pc", OLLAMA_PC_MODEL),
         "openrouter": ("deepseek", OPENROUTER_MODEL),
         "brain": ("brain", BRAIN_MODEL),
     }
@@ -33,10 +32,8 @@ async def handle_chat(websocket, msg, ctx):
         reply = await _stream_chat(websocket, text, ctx[ctx_key], pid, system, model, memory_enabled=mem, agent_id=agent_id)
     elif provider == "local":
         reply = await _stream_chat(websocket, text, ctx["ollama"], "ollama", OLLAMA_SYSTEM, OLLAMA_MODEL, memory_enabled=mem)
-    elif provider == "pc_coder":
-        reply = await _stream_chat(websocket, text, ctx["pc_coder"], "ollama_pc_coder", OLLAMA_PC_CODER_SYSTEM, OLLAMA_PC_CODER_MODEL, memory_enabled=mem)
-    elif provider == "pc_deep":
-        reply = await _stream_chat(websocket, text, ctx["pc_deep"], "ollama_pc_deep", OLLAMA_PC_DEEP_SYSTEM, OLLAMA_PC_DEEP_MODEL, memory_enabled=mem)
+    elif provider == "pc":
+        reply = await _stream_chat(websocket, text, ctx["pc"], "ollama_pc", OLLAMA_PC_SYSTEM, OLLAMA_PC_MODEL, memory_enabled=mem)
     elif provider == "deepseek":
         reply = await _stream_chat(websocket, text, ctx["deepseek"], "openrouter", OPENROUTER_SYSTEM, OPENROUTER_MODEL, memory_enabled=mem)
     elif provider == "brain":
@@ -66,9 +63,11 @@ async def handle_get_quickref(websocket, msg, ctx):
     await websocket.send_json({"type": "quickref", "text": get_quickref_preview()})
 
 async def handle_get_stats(websocket, msg, ctx):
+    bridge = await bg(check_bridge_health)
     await websocket.send_json({
         "type": "stats",
-        "data": {"pi": await get_pi_stats(), "tmux": await bg(get_tmux_sessions), "time": time.strftime("%H:%M:%S")}
+        "data": {"pi": await get_pi_stats(), "tmux": await bg(get_tmux_sessions), "time": time.strftime("%H:%M:%S"),
+                 "bridge": bridge.get("status", "offline")}
     })
 
 async def handle_get_logs(websocket, msg, ctx):

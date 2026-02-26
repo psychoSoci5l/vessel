@@ -52,6 +52,12 @@
         const el = document.getElementById(id);
         if (el) el.textContent = msg.data.time;
       });
+      const bd = document.getElementById('bridge-health-dot');
+      if (bd) {
+        const ok = msg.data.bridge === 'ok';
+        bd.className = 'health-dot ' + (ok ? 'green' : '');
+        bd.title = 'Bridge PC: ' + (ok ? 'online' : 'offline');
+      }
     }
     else if (msg.type === 'chat_thinking') { appendThinking(); }
     else if (msg.type === 'chat_chunk') { removeThinking(); appendChunk(msg.text); }
