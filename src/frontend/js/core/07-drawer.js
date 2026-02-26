@@ -5,6 +5,7 @@
     cron:     { title: '◇ Cron Jobs', actions: '<button class="btn-ghost btn-sm" onclick="loadCron(this)">Carica</button>' },
     system:   { title: '⚙ System', actions: '<button class="btn-ghost btn-sm" onclick="requestStats()">Refresh</button>' },
     tracker:  { title: '◈ Bug Tracker', actions: '<button class="btn-ghost btn-sm" onclick="loadTracker()">Carica</button><button class="btn-green btn-sm" onclick="showTrackerForm()">+ Aggiungi</button>' },
+    tokens:   { title: '¤ Token Usage', actions: '<button class="btn-ghost btn-sm usage-period-btn active" onclick="loadUsageReport(\'day\',this)">Oggi</button><button class="btn-ghost btn-sm usage-period-btn" onclick="loadUsageReport(\'week\',this)">7gg</button><button class="btn-ghost btn-sm usage-period-btn" onclick="loadUsageReport(\'month\',this)">30gg</button>' },
   };
 
   function openDrawer(widgetId) {

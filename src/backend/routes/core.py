@@ -154,10 +154,13 @@ async def manifest():
     return {
         "name": "Vessel Dashboard",
         "short_name": "Vessel",
+        "description": "Vessel — AI Dashboard for Raspberry Pi",
         "start_url": "/",
         "display": "standalone",
+        "orientation": "any",
         "background_color": "#060a06",
         "theme_color": "#060a06",
+        "categories": ["utilities", "productivity"],
         "icons": [
             {"src": VESSEL_ICON, "sizes": "64x64", "type": "image/jpeg"},
             {"src": VESSEL_ICON_192, "sizes": "192x192", "type": "image/jpeg"}
@@ -167,7 +170,7 @@ async def manifest():
 @app.get("/sw.js")
 async def service_worker():
     sw_code = """
-const CACHE = 'vessel-v3';
+const CACHE = 'vessel-v4';
 const OFFLINE_URL = '/';
 
 self.addEventListener('install', e => {
@@ -185,7 +188,11 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.mode === 'navigate') {
     e.respondWith(
-      fetch(e.request).catch(() => caches.match(OFFLINE_URL))
+      fetch(e.request).then(r => {
+        const clone = r.clone();
+        caches.open(CACHE).then(c => c.put(e.request, clone));
+        return r;
+      }).catch(() => caches.match(OFFLINE_URL))
     );
   }
 });

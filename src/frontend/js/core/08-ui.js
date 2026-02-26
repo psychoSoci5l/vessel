@@ -95,5 +95,21 @@
 
   // ── Service Worker ──
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      // Check for updates every 30 min
+      setInterval(() => reg.update(), 1800000);
+    }).catch(() => {});
+  }
+
+  // ── PWA Install Prompt ──
+  let _deferredInstall = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    _deferredInstall = e;
+  });
+  function pwaInstall() {
+    if (_deferredInstall) {
+      _deferredInstall.prompt();
+      _deferredInstall.userChoice.then(() => { _deferredInstall = null; });
+    }
   }

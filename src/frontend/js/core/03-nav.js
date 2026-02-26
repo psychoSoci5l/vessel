@@ -16,15 +16,6 @@
     if (tabName === 'dashboard') requestAnimationFrame(() => drawChart());
   }
 
-  // ── Token shortcut (tile → Profile) ──
-function goToTokens() {
-  switchView('profile');
-  requestAnimationFrame(() => {
-    const el = document.getElementById('usage-report-body');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-}
-
 // ── Memory Tabs ──
   function switchMemTab(name, btn) {
     const section = btn.closest('.prof-section');

@@ -137,7 +137,7 @@
                 <div class="wc-header"><span class="wc-label">BRIEFING</span><span class="wc-icon">&#x2630;</span></div>
                 <div class="wc-body" id="wt-briefing-preview">--</div>
               </div>
-              <div class="widget-card" data-widget="tokens" onclick="goToTokens()">
+              <div class="widget-card" data-widget="tokens" onclick="openDrawer('tokens')">
                 <div class="wc-header"><span class="wc-label">TOKEN</span><span class="wc-icon">&#x00A4;</span></div>
                 <div class="wc-body" id="wt-tokens-preview">--</div>
               </div>
@@ -226,13 +226,8 @@
           <!-- Token Usage Report -->
           <div class="prof-section">
             <div class="prof-section-title">UTILIZZO TOKEN</div>
-            <div style="display:flex;gap:6px;margin-bottom:8px;">
-              <button class="btn-ghost btn-sm usage-period-btn active" onclick="loadUsageReport('day',this)">Oggi</button>
-              <button class="btn-ghost btn-sm usage-period-btn" onclick="loadUsageReport('week',this)">7gg</button>
-              <button class="btn-ghost btn-sm usage-period-btn" onclick="loadUsageReport('month',this)">30gg</button>
-            </div>
-            <div id="usage-report-body">
-              <div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Caricamento&hellip;</span></div>
+            <div style="padding:6px 0;">
+              <button class="btn-ghost btn-sm" onclick="openDrawer('tokens')">&#x00A4; Apri Report Token</button>
             </div>
           </div>
 
@@ -326,6 +321,9 @@
         </div>
         <div class="drawer-widget" id="dw-tracker">
           <div id="tracker-body"><div class="widget-placeholder"><span class="ph-icon">&#x25C8;</span><span>Premi Carica per il tracker</span></div></div>
+        </div>
+        <div class="drawer-widget" id="dw-tokens">
+          <div id="tokens-drawer-body"><div class="widget-placeholder"><span class="ph-icon">&#x00A4;</span><span>Seleziona un periodo</span></div></div>
         </div>
         <div class="drawer-widget" id="dw-system">
           <div style="margin-bottom:12px;">

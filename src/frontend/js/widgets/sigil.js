@@ -632,6 +632,8 @@
       if (label) label.textContent = state;
     }
     setSigilState(state);
+    // Auto-wake: quando arriva stato reale dal WS, esci da dormant
+    if (_sigilDormant) wakeSigil();
   }
 
   // ── Wake sigil (click to activate) ──

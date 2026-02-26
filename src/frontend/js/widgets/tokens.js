@@ -29,7 +29,7 @@
   };
 
   function renderUsageReport(data) {
-    const el = document.getElementById('usage-report-body');
+    const el = document.getElementById('tokens-drawer-body');
     if (!el) return;
     const fmt = n => n >= 1000000 ? (n/1000000).toFixed(1) + 'M' : n >= 1000 ? (n/1000).toFixed(1) + 'K' : n;
     const rows = data.rows || [];
