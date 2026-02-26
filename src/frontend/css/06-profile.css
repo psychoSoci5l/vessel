@@ -120,14 +120,11 @@
 /* Theme selector */
 .theme-selector { display: flex; gap: 8px; flex-wrap: wrap; }
 .theme-chip {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 14px; border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0; border-radius: 8px;
   background: var(--bg2); border: 1px solid var(--border2);
-  color: var(--text2); font-family: var(--font); font-size: 11px;
-  cursor: pointer; transition: all .15s;
+  cursor: pointer; transition: all .15s; flex-shrink: 0;
 }
-.theme-chip:hover { border-color: var(--accent3); }
-.theme-chip.active { border-color: var(--accent); color: var(--accent); box-shadow: var(--glow-sm); }
-.theme-swatch { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-.theme-check { display: none; margin-left: 2px; font-size: 10px; }
-.theme-chip.active .theme-check { display: inline; }
+.theme-chip:hover { border-color: var(--accent3); transform: scale(1.08); }
+.theme-chip.active { border-color: var(--accent); box-shadow: var(--glow-sm); transform: scale(1.05); }
+.theme-swatch { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; }

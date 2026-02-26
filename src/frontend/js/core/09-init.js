@@ -20,8 +20,8 @@
     if (sel) {
       const current = getThemeId();
       sel.innerHTML = THEMES.map(t =>
-        `<button class="theme-chip${t.id === current ? ' active' : ''}" data-theme="${t.id}" onclick="selectTheme(this)">` +
-        `<span class="theme-swatch" style="background:${t.accent};box-shadow:0 0 6px ${t.accent};"></span>${t.label}<span class="theme-check">&#x2713;</span></button>`
+        `<button class="theme-chip${t.id === current ? ' active' : ''}" data-theme="${t.id}" onclick="selectTheme(this)" title="${t.label}">` +
+        `<span class="theme-swatch" style="background:${t.accent};box-shadow:0 0 8px ${t.accent};"></span></button>`
       ).join('');
     }
   });
