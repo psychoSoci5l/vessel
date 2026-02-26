@@ -2,7 +2,10 @@
   let _trackerFormVisible = false;
 
   function loadTracker(statusFilter) {
-    const status = statusFilter || document.getElementById('tracker-status-filter')?.value || 'open';
+    const el = document.getElementById('tracker-status-filter');
+    const status = (statusFilter !== undefined && statusFilter !== null)
+        ? statusFilter
+        : (el ? el.value : 'open');
     send({ action: 'tracker_get', status });
   }
 

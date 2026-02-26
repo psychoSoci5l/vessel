@@ -59,7 +59,7 @@
         if (el) el.textContent = msg.data.time;
       });
       const bd = document.getElementById('bridge-health-dot');
-      if (bd) {
+      if (bd && msg.data.bridge !== undefined) {
         const ok = msg.data.bridge === 'ok';
         bd.className = 'health-dot ' + (ok ? 'green' : '');
         bd.title = 'Bridge PC: ' + (ok ? 'online' : 'offline');

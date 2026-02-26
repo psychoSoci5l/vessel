@@ -173,7 +173,8 @@ async def send_tamagotchi_text(request: Request):
     text = data.get("text", "").strip()
     if not text or len(text) > 64:
         return JSONResponse({"ok": False, "error": "Testo vuoto o troppo lungo (max 64)"}, status_code=400)
-    await broadcast_tamagotchi_raw({"type": "text", "text": text})
+    # Il firmware si aspetta "state" per processare il payload — manteniamo lo stato corrente
+    await broadcast_tamagotchi_raw({"state": _tamagotchi_state, "text": text})
     return {"ok": True, "text": text, "clients": len(_tamagotchi_connections)}
 
 @app.get("/api/tamagotchi/firmware")

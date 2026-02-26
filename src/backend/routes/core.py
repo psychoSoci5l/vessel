@@ -1,14 +1,23 @@
 # ─── Background broadcaster ───────────────────────────────────────────────────
 _PEEKING_THRESHOLD = 300   # secondi di idle prima di inviare PEEKING (5 min)
 _BORED_THRESHOLD   = 1800  # secondi di idle prima di inviare BORED (30 min)
+_bridge_status_cache = "offline"  # cache bridge check
 
 async def stats_broadcaster():
+    global _bridge_status_cache
     cycle = 0
     while True:
         await asyncio.sleep(5)
         cycle += 1
         if cycle % 60 == 0:
             _cleanup_expired()
+        # Bridge check ogni 30 cicli (150s) — non blocca ogni 5s
+        if cycle % 30 == 0:
+            try:
+                result = await bg(check_bridge_health)
+                _bridge_status_cache = result.get("status", "offline")
+            except Exception:
+                _bridge_status_cache = "offline"
         # BORED/PEEKING trigger: ogni 60s controlla idle ESP32
         if cycle % 12 == 0 and _tamagotchi_connections:
             idle_secs = time.time() - get_last_chat_ts()
@@ -27,6 +36,7 @@ async def stats_broadcaster():
                     "pi": pi,
                     "tmux": tmux,
                     "time": time.strftime("%H:%M:%S"),
+                    "bridge": _bridge_status_cache,
                 }
             })
 

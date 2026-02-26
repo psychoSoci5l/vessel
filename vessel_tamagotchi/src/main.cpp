@@ -477,7 +477,7 @@ void drawSigil(int sx, int sy, uint16_t col, float scale, float rotation) {
     #undef SIGIL_PT
 }
 
-// Box notifica in basso a sinistra, 30s
+// Fumetto messaggio centrato sotto la bocca (mouthY=115)
 void drawNotifOverlay() {
     if (!notifShowing) return;
     unsigned long dur = notifShowIsPeek ? NOTIF_PEEK_DURATION : NOTIF_SHOW_DURATION;
@@ -485,16 +485,21 @@ void drawNotifOverlay() {
         notifShowing = false;
         return;
     }
-    const int bx = 2, by = 125, bw = 165, bh = 30;
-    fb.fillRect(bx, by, bw, bh, COL_DIM);
-    fb.drawRect(bx, by, bw, bh, COL_GREEN);
+    const int bw = 280, bh = 26;
+    const int bx = (320 - bw) / 2;   // 20px margini
+    const int by = 132;
+    // Triangolino puntato verso la bocca
+    const int tx = 160, ty = by - 7;
+    fb.fillTriangle(tx - 8, by, tx + 8, by, tx, ty, COL_BG);
+    fb.drawLine(tx, ty, tx - 8, by, COL_HOOD_LT);
+    fb.drawLine(tx, ty, tx + 8, by, COL_HOOD_LT);
+    // Box arrotondato
+    fb.fillRoundRect(bx, by, bw, bh, 5, COL_BG);
+    fb.drawRoundRect(bx, by, bw, bh, 5, COL_HOOD_LT);
+    // Testo centrato font 2
     fb.setTextColor(COL_GREEN);
-    fb.setTextDatum(TL_DATUM);
-    String tag = notifShowDetail.substring(0, 12);
-    tag.toUpperCase();
-    fb.drawString(tag, bx + 3, by + 3, 1);
-    fb.drawString(notifShowText.substring(0, 24), bx + 3, by + 16, 1);
     fb.setTextDatum(MC_DATUM);
+    fb.drawString(notifShowText.substring(0, 22), 160, by + bh / 2, 2);
 }
 
 // Indicatore notifiche non lette: puntino pulsante + numerino

@@ -358,7 +358,7 @@
 **Blocco B — Agent Registry** ✅ (infrastruttura):
 - [x] `_load_agents()`, `get_agent_config()`, `build_agent_prompt()` in config.py
 - [x] `_HARDWARE_BY_PROVIDER` mapping
-- [ ] `agents.json` mai creato → completato in Fase 58
+- [x] `agents.json` creato e deployato in Fase 58
 
 **Blocco C — Routing** ✅:
 - [x] `detect_agent(message)` keyword-based in chat.py (vessel/coder/sysadmin/researcher)
@@ -369,7 +369,7 @@
 - [x] `showAgentBadge()` in frontend (05-chat.js)
 - [x] Colonna `agent` in `chat_messages` (migration v2)
 - [x] `chat_done` invia `agent` al frontend
-- [ ] CSS polish agent badge → completato in Fase 58
+- [x] CSS agent badge già presente (04-code.css)
 
 ---
 
@@ -393,35 +393,54 @@
 
 ---
 
-## Fase 58 — Smart Agent Routing + OpenRouter Auto (in corso)
+## Fase 58 — Smart Agent Routing + OpenRouter Auto ✅ (26/02/2026)
 
 > **Obiettivo:** attivare il sistema multi-agente (infrastruttura Fase 39) con routing
 > intelligente per-task e smart model selection via OpenRouter.
 > Ispirato al pattern OpenClaw: modelli diversi per task type diversi.
 
-**Blocco A — agents.json + model override:**
-- [ ] Creare `~/.nanobot/agents.json` con 4 agenti:
-  - `vessel` — generalista, OpenRouter auto, tono warm
-  - `coder` — tecnico, Ollama PC (GPU free), tono strict
-  - `sysadmin` — operativo, Haiku (rapido, economico), tono dry
-  - `researcher` — analitico, OpenRouter auto (sceglie il modello migliore), tono analytical
-- [ ] Ogni agente: name, role, specialization, default_provider, model (opzionale), tone
-- [ ] Model override per-agent: agente può specificare un modello diverso dal default del provider
+**Blocco A — agents.json + model override** ✅:
+- [x] `~/.nanobot/agents.json` con 4 agenti: vessel (OpenRouter auto), coder (Ollama PC), sysadmin (Haiku), researcher (OpenRouter auto)
+- [x] Ogni agente: name, role, specialization, default_provider, model (opzionale), tone, color
+- [x] Model override per-agent in `handle_chat()` — `agent_cfg.get("model", default_model)`
 
-**Blocco B — OpenRouter auto integration:**
-- [ ] Switchare `openrouter.json` su `openrouter/auto` come modello default
-- [ ] Agenti che usano OpenRouter ereditano auto, ma possono forzare un modello specifico
-- [ ] Mantenere fallback chain: `openrouter ↔ anthropic`, `ollama ↔ ollama_pc`
+**Blocco B — OpenRouter auto integration** ✅:
+- [x] `openrouter.json` switchato su `openrouter/auto` (smart model selection)
+- [x] Agenti che usano OpenRouter ereditano auto; researcher override esplicito
+- [x] Fallback chain invariata: `openrouter ↔ anthropic`, `ollama ↔ ollama_pc`
 
-**Blocco C — Frontend polish:**
-- [ ] Agent badge con colori per agente (verde/cyan/amber/viola)
-- [ ] Label agente visibile nella chat quando auto mode è attivo
+**Blocco C — Frontend** ✅ (già esistente dalla Fase 39):
+- [x] Agent badge con colori per agente (verde/cyan/amber/viola) — CSS in 04-code.css
+- [x] `showAgentBadge()` in 05-chat.js, chiamato da `chat_done` handler
 
 **Vincoli:**
 - Ollama locale (Pi + PC) resta free e offline-capable
 - Brain (Claude Code CLI) invariato
 - Routing `detect_agent()` resta keyword-based (zero costo LLM)
 - Override manuale via provider dropdown resta disponibile
+
+---
+
+## Fase 59 — Bugfix + Sigil Speech Bubble ✅ (26/02/2026)
+
+> **Obiettivo:** risolvere 5 bug segnalati via Bug Tracker integrato, migliorare UX Sigil.
+
+**Bugfix dashboard** ✅:
+- [x] Filtro tracker "Tutti" non funzionava (`""` falsy in JS con `||`) → fix con `!== undefined`
+- [x] Bridge status dot resettava a offline ogni 5s → broadcaster include `bridge` campo, frontend skippa update se `undefined`
+- [x] Sigil mini canvas rimosso dall'header top bar (semplificazione UI)
+- [x] Testo Sigil non arrivava all'ESP32 → payload mancante campo `state` richiesto dal firmware
+
+**Briefing in italiano** ✅:
+- [x] `briefing.py` tradotto: titoli, etichette, data in italiano (dizionario GIORNI/MESI)
+- [x] 7 news HN invece di 5, con punti e commenti estratti dalla description RSS
+- [x] Frontend `briefing.js` mostra punti e commenti accanto a ogni storia
+
+**Firmware ESP32 — Speech Bubble** ✅:
+- [x] `drawNotifOverlay()` ridisegnato: fumetto centrato (280px, 20px margini), triangolino puntato verso la bocca
+- [x] Font 2 (16px) per leggibilità, bordo viola `COL_HOOD_LT` che matcha il cappuccio Sigil
+- [x] Posizione: `by=132` (sotto mouthY=115), triangolo a `ty=125`
+- [x] Firmware compilato e flashato via PlatformIO USB
 
 ---
 

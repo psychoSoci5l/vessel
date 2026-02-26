@@ -32,7 +32,13 @@
       ? `<div style="font-size:10px;color:var(--muted);margin-top:8px;margin-bottom:4px">// DOMANI</div>` +
         calTomorrow.map(e => `<div style="margin:2px 0;font-size:10px;color:var(--text2)"><span style="color:var(--cyan)">${esc(e.time)}</span> ${esc(e.summary)}</div>`).join('')
       : '';
-    const stories = (b.stories || []).map((s, i) => `<div style="margin:4px 0;font-size:11px;color:var(--text2);">${i+1}. ${esc(s.title)}</div>`).join('');
+    const stories = (b.stories || []).map((s, i) => {
+      const parts = [];
+      if (s.points != null) parts.push(s.points + 'pt');
+      if (s.comments != null) parts.push(s.comments + ' cmt');
+      const meta = parts.length ? ` <span style="color:var(--muted);font-size:10px;">(${parts.join(', ')})</span>` : '';
+      return `<div style="margin:4px 0;font-size:11px;color:var(--text2);">${i+1}. ${esc(s.title)}${meta}</div>`;
+    }).join('');
     el.innerHTML = `
       <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
         <div style="font-size:10px;color:var(--muted);">ULTIMO: <span style="color:var(--amber)">${ts}</span></div>
