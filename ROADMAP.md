@@ -467,10 +467,56 @@
 
 ---
 
+## Fase 61 — UX Refinement ✅ (26/02/2026)
+
+> **Obiettivo:** 5 fix da audit UX esterno — contrasto, leggibilità, coerenza terminologica.
+
+- [x] **Bottoni [Salva]/[Elimina]**: contrasto alzato da `--muted` a `--text2`, bordo da `--border` a `--border2`
+- [x] **Chevron `›`**: da `--muted` + opacity 0.5 a `--text2` + opacity 0.6 su tutti i temi via variabili CSS
+- [x] **Tracker placeholder**: `--` → `nessuno` (coerente con fallback JS)
+- [x] **Tab Memoria**: GRAFO → ENTITÀ (ID interno `'grafo'` invariato per retrocompatibilità)
+- [x] **Server Activity**: label scala `CPU 0–100% · Temp 0–85°C` aggiunta alla legend
+
+---
+
+## Fase 61b — Theme Selector Icon-Only ✅ (26/02/2026)
+
+> **Obiettivo:** ridurre l'ingombro del selettore tema — solo chip icona 44×44px con tooltip.
+
+- [x] Chip tema: solo swatch colorato senza etichetta testo, dimensione fissa 44×44px
+- [x] Tooltip `title` con nome tema (hover desktop)
+- [x] Effetto scale(1.15) al hover, scale(1.05) quando attivo
+- [x] Tutti i 6 temi verificati (Terminal Green, Amber CRT, Cyan Ice, Red Alert, Sigil Violet, Ghost White)
+
+---
+
+## Fase 62 — Observability Dashboard ✅ (27/02/2026)
+
+> **Obiettivo:** visibilità completa su utilizzo provider, latenza, errori, attività. + 2 bugfix.
+
+**Bugfix** ✅:
+- [x] **Mobile dropdown provider**: `.provider-menu` su mobile ora apre verso l'alto (`bottom: 100%`) — fix `08-responsive.css`
+- [x] **Failover log**: gli eventi failover ora visibili in dashboard (già registrati in `audit_log`)
+
+**Analytics section (tab Profile)** ✅:
+- [x] Periodo selezionabile: 24H / 7D / 30D
+- [x] **Token Usage**: barre orizzontali per provider con totale periodo (format K/M)
+- [x] **Latenza media**: barre con avg_ms / max_ms per provider
+- [x] **Error Rate**: badge per provider con `%`, conteggio, evidenziazione se >5%
+- [x] **Failover Recenti**: lista ultimi 10 eventi con timestamp, route, motivo
+- [x] **Heatmap 7×24**: canvas interattivo (DPR-aware), tooltip hover `GG HH:00 — N msg`
+
+**Backend** ✅:
+- [x] `db_get_provider_analytics(period)` — latenza avg/max + error rate per provider da tabella `events`
+- [x] `db_get_activity_heatmap(days=7)` — matrice 7×24 da `chat_messages` raggruppati per giorno/ora
+- [x] `db_get_failover_log(limit=20)` — wrapper su `db_get_audit_log(action='failover')`
+- [x] WS handlers: `handle_get_analytics`, `handle_get_heatmap` nel dispatcher
+
+---
+
 ## Visione futura (no timeline, complessità crescente)
 
 **Prossime fasi:**
-- **Observability++** — grafici latenza per provider, error rate, heatmap attività, export CSV
 - **Voce dashboard** — TTS/STT già operativi su Telegram (Fase 20), portare su dashboard web
 - **Multi-agent avanzato** — delegazione inter-agente, agenti autonomi con trigger
 

@@ -3,7 +3,7 @@
 🐈 Nanobot Dashboard v2 — Single-file web UI
 Avvio:  python3.13 ~/nanobot_dashboard.py
 Test:   PORT=8091 python3.13 ~/nanobot_dashboard.py
-Accesso: http://picoclaw.local:8090
+Accesso: http://your-pi.local:{PORT}
 """
 
 import asyncio

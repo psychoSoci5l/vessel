@@ -229,7 +229,7 @@ def ensure_self_signed_cert() -> bool:
         print("[HTTPS] Generazione certificato autofirmato...")
         hostname = subprocess.run(
             ["hostname"], capture_output=True, text=True, timeout=5
-        ).stdout.strip() or "picoclaw.local"
+        ).stdout.strip() or "localhost"
         subprocess.run([
             "openssl", "req", "-x509", "-newkey", "rsa:2048",
             "-keyout", str(KEY_FILE), "-out", str(CERT_FILE),

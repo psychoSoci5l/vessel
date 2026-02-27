@@ -45,7 +45,7 @@ class OpenRouterProvider(BaseChatProvider):
         self.path = "/api/v1/chat/completions"
         self.headers = {
             "Content-Type": "application/json", "Authorization": f"Bearer {api_key}",
-            "HTTP-Referer": "https://picoclaw.local", "X-Title": "Vessel Dashboard"
+            "HTTP-Referer": "https://vessel.local", "X-Title": "Vessel Dashboard"
         }
         self.payload = json.dumps({
             "model": self.model, "messages": [{"role": "system", "content": self.system_prompt}] + self.history,

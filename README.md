@@ -1,207 +1,227 @@
-# Vessel
+# VESSEL — Raspberry Pi AI Dashboard
 
-**Turn your Raspberry Pi 5 into a local AI assistant with a single Python file.**
+**Single-file Python AI dashboard for Raspberry Pi.**
+Local + cloud LLM chat, Telegram bot, ESP32 companion, SQLite memory, multi-agent routing.
 
+[![Python 3.11+](https://img.shields.io/badge/Python-3.11%2B-blue)](https://python.org)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688)](https://fastapi.tiangolo.com)
+[![SQLite](https://img.shields.io/badge/SQLite-WAL-003B57)](https://sqlite.org)
+[![PWA](https://img.shields.io/badge/PWA-installabile-5A0FC8)](https://web.dev/progressive-web-apps/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://www.python.org)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-teal.svg)](https://fastapi.tiangolo.com)
-
-Vessel is a self-hosted AI dashboard that runs entirely from one Python file. No build tools, no npm, no separate frontend. Just `python3 vessel.py` and you have a complete local assistant with real-time system monitoring, a chat interface powered by a local LLM, and optional cloud AI — all accessible from your phone as a PWA.
-
-<!-- TODO: Add screenshot here -->
-<!-- ![Vessel Dashboard](assets/screenshot.png) -->
-
-## Features
-
-- **Local AI Chat** — Talk to Gemma 3 4B (or any Ollama model) running directly on your Pi at ~3.5 tokens/sec
-- **Cloud AI Chat** — Optional Anthropic Claude integration with automatic token usage tracking
-- **System Monitor** — Real-time CPU, temperature, RAM, disk usage with health indicator and history chart
-- **Morning Briefing** — Daily weather, Google Calendar events, and HackerNews top stories (cron or on-demand)
-- **Crypto Tracker** — Live BTC/ETH prices from CoinGecko
-- **tmux Manager** — View, kill, and restart sessions from the browser
-- **Log Viewer** — Filterable system logs with date and text search
-- **Cron Scheduler** — Add and remove cron jobs from the UI
-- **Token Dashboard** — Track AI API costs via Anthropic Admin API or local logs
-- **Memory Browser** — View agent memory, history, and quick reference files
-- **PWA** — Install on iPhone/Android, works as a native-feeling app
-- **Secure** — PIN authentication, session tokens, rate limiting, security headers, path whitelist
-
-## Glossary
-
-| Term | Meaning |
-|------|---------|
-| **Vessel Pi** | The open source project — turn a Raspberry Pi into a personal AI assistant |
-| **Vessel** | The AI assistant itself (default name, configurable via `VESSEL_NAME` env var) |
-| **Nanobot** | Optional AI agent runtime ([nanobot-ai](https://github.com/nanobot-ai/nanobot)) — not required |
-| **Dashboard** | The web interface served by FastAPI (port 8090, installable as PWA) |
-| **Bridge** | Optional Windows component for invoking Claude Code over LAN |
-
-## Quick Start
-
-### 1. Install dependencies
-
-```bash
-pip install fastapi uvicorn
-```
-
-### 2. Install Ollama (for local AI)
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull gemma3:4b
-```
-
-### 3. Run
-
-```bash
-python3 vessel.py
-```
-
-Open `http://localhost:8090` in your browser. On first visit, you'll be prompted to set a PIN.
-
-### 4. Configure (optional)
-
-```bash
-# Rename your assistant
-export VESSEL_NAME=Jarvis
-
-# Set your hostname and username
-export VESSEL_HOST=mypi.local
-export VESSEL_USER=myname
-
-# Use a different Ollama model
-export OLLAMA_MODEL=phi4-mini
-
-python3 vessel.py
-```
-
-See [`config/vessel.env.example`](config/vessel.env.example) for all available options.
-
-## Architecture
-
-```
-vessel.py (single file)
-├── FastAPI backend
-│   ├── WebSocket — real-time stats broadcast (every 5s)
-│   ├── Auth — PIN + session tokens + rate limiting
-│   ├── Ollama — streaming chat via thread worker + asyncio.Queue
-│   ├── Anthropic — direct API with token logging
-│   └── System — Pi stats, tmux, cron, logs, memory files
-└── Inline frontend (HTML + CSS + JS)
-    ├── Terminal theme (green-on-black, JetBrains Mono)
-    ├── Collapsible widget cards (on-demand loading)
-    ├── PWA manifest + service worker
-    └── Mobile-optimized responsive layout
-```
-
-## Configuration
-
-All settings are configurable via environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8090` | Dashboard port |
-| `VESSEL_NAME` | `Vessel` | Assistant name (UI, prompts, PWA) |
-| `VESSEL_HOST` | `vessel.local` | Hostname shown in header |
-| `VESSEL_USER` | `user` | Owner name (chat greeting, system prompt) |
-| `OLLAMA_BASE` | `http://127.0.0.1:11434` | Ollama API endpoint |
-| `OLLAMA_MODEL` | `gemma3:4b` | LLM model for local chat |
-| `OLLAMA_SYSTEM` | *(see code)* | System prompt for local AI |
-| `NANOBOT_DIR` | `~/.nanobot` | Base directory for data and config |
-
-## Optional Integrations
-
-### Cloud AI (Anthropic Claude)
-
-Place your API key in `~/.nanobot/config.json`:
-
-```json
-{
-  "providers": {
-    "anthropic": {
-      "apiKey": "sk-ant-..."
-    }
-  }
-}
-```
-
-Then use the Cloud/Local toggle in the chat widget.
-
-### Google Workspace
-
-Vessel can show your Google Calendar events, Tasks, and Gmail in the morning briefing. See [docs/GOOGLE_WORKSPACE.md](docs/GOOGLE_WORKSPACE.md) for setup.
-
-### Morning Briefing
-
-Automated daily briefing with weather, calendar, and tech news. Can be triggered from the dashboard or scheduled via cron:
-
-```bash
-# Add to crontab for daily 07:30 briefing
-30 7 * * * cd ~/.nanobot/workspace/skills/morning-briefing && python3 briefing.py
-```
-
-Optionally sends to Discord via webhook. See [`config/vessel.env.example`](config/vessel.env.example).
-
-### Nanobot Gateway
-
-[Nanobot](https://github.com/nanobot-ai/nanobot) is an optional AI agent framework. If installed, Vessel can use it as a chat backend fallback and manage its gateway sessions. It is **not required** — the dashboard works standalone with just Ollama or the Anthropic API.
-
-## Hardware
-
-Tested on:
-- **Raspberry Pi 5 (8GB)** — recommended
-- Raspberry Pi 5 (4GB) — works, limited RAM for Ollama
-- Debian 13 (Trixie) Lite / Raspberry Pi OS Lite (headless)
-- Python 3.11+
-
-Performance with Ollama + Gemma 3 4B on Pi 5:
-- ~3.5 tokens/second (CPU only)
-- ~4.7 GB RAM with model loaded
-- Boot to dashboard: ~16 seconds (SSD)
-
-## Project Structure
-
-```
-vessel-pi/
-├── vessel.py              # The entire dashboard (single file)
-├── scripts/
-│   ├── briefing.py        # Morning briefing script
-│   └── google_helper.py   # Google Workspace integration
-├── config/                # Configuration templates
-│   ├── vessel.env.example
-│   ├── config.example.json
-│   ├── vessel.service
-│   ├── crontab.example
-│   ├── SOUL.example.md
-│   └── USER.example.md
-├── docs/                  # Documentation
-│   ├── SETUP.md
-│   ├── OLLAMA.md
-│   ├── GOOGLE_WORKSPACE.md
-│   └── ARCHITECTURE.md
-├── requirements.txt
-├── LICENSE
-├── CHANGELOG.md
-└── CONTRIBUTING.md
-```
-
-## Documentation
-
-- [Full Setup Guide](docs/SETUP.md) — Pi setup from scratch
-- [Ollama Setup](docs/OLLAMA.md) — Local LLM installation and configuration
-- [Google Workspace](docs/GOOGLE_WORKSPACE.md) — Calendar, Tasks, Gmail integration
-- [Architecture](docs/ARCHITECTURE.md) — How Vessel works under the hood
-
-## Contributing
-
-Contributions are welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
-
-The golden rule: **everything stays in one file**. No separate frontend builds, no component files. vessel.py is the product.
-
-## License
-
-[MIT](LICENSE)
 
 ---
 
-Built with FastAPI, Ollama, and a Raspberry Pi 5.
+## Features
+
+- **5 LLM providers** — Anthropic Haiku (cloud), Ollama locale (Pi), Ollama PC (GPU LAN), OpenRouter (DeepSeek V3), Brain (Claude Code CLI via bridge)
+- **Telegram bot** con prefetch contestuale, STT Groq Whisper, TTS Edge-TTS
+- **Sigil Tamagotchi** — companion ESP32 (LilyGO T-Display-S3) con 12 stati emotivi sincronizzati
+- **Multi-agent routing** — rileva automaticamente l'agente ottimale (vessel, coder, sysadmin, researcher) per ogni messaggio
+- **SQLite memory** — cronologia persistente, knowledge graph con entity extraction, weekly summary automatico
+- **Observability** — heatmap attivita 7x24, latenza media per provider, error rate, failover log
+- **6 temi visivi** — Terminal Green, Amber CRT, Cyan Ice, Red Alert, Sigil Violet, Ghost White
+- **PWA** — installabile su iPhone e Android come app nativa
+- **System monitor** — CPU, RAM, temperatura, disk, sessioni tmux in tempo reale
+- **Tool integrati** — cron manager, log viewer, token tracker, task tracker, knowledge base
+
+---
+
+## Requirements
+
+- Raspberry Pi 4/5 (testato su Pi 5 8GB; Pi 4 supportato)
+- Python 3.11+
+- Debian/Ubuntu o derivati
+
+**Opzionali:**
+- [Ollama](https://ollama.ai) per LLM locale
+- Chiavi API: Anthropic, OpenRouter, Groq (voce), Telegram Bot Token
+
+---
+
+## Quick Start
+
+```bash
+# 1. Clona e installa
+git clone https://github.com/psychoSoci5l/vessel-pi.git
+cd vessel-pi
+pip install -r requirements.txt
+
+# 2. (Opzionale) configura le variabili
+mkdir -p ~/.nanobot
+# Crea ~/.nanobot/config.json con le tue API key (vedi sezione Configuration)
+
+# 3. Avvia
+python vessel.py
+# Apri http://localhost:8090
+```
+
+Al primo avvio imposta un PIN di accesso dalla schermata di login.
+
+---
+
+## Development (src/ + build.py)
+
+Il progetto usa un sistema di build modulare. `vessel.py` e' l'artefatto compilato.
+
+```
+src/
+  backend/
+    imports.py          # dipendenze Python
+    config.py           # configurazione, costanti, env vars
+    database.py         # SQLite (WAL), schema, query
+    providers.py        # strategy pattern per i 5 LLM provider
+    services/           # chat, crypto, monitor, telegram, knowledge, tokens, ...
+    routes/             # core, ws_handlers, tamagotchi, telegram
+    main.py             # app FastAPI, startup, shutdown
+  frontend/
+    index.html          # template HTML
+    css/                # 8 file CSS (design system, dashboard, code, profile, ...)
+    js/core/            # 10 moduli JS (theme, state, websocket, nav, chat, ...)
+    js/widgets/         # 11 widget (briefing, crypto, knowledge, sigil, tracker, analytics, ...)
+
+build.py                # compila src/ in un single-file Python
+vessel.py               # distribuzione pubblica compilata
+```
+
+```bash
+# Workflow sviluppo
+# 1. Modifica src/frontend/ o src/backend/
+python build.py                             # compila
+PORT=8091 python nanobot_dashboard_v2.py    # test locale su porta 8091
+```
+
+---
+
+## Configuration
+
+Configurazione tramite env vars o `~/.nanobot/config.json`.
+
+### Env vars principali
+
+| Variabile | Default | Descrizione |
+|-----------|---------|-------------|
+| `PORT` | `8090` | Porta HTTP |
+| `HTTPS_PORT` | `8443` | Porta HTTPS (cert autofirmato) |
+| `VESSEL_NAME` | hostname | Nome del dispositivo |
+| `VESSEL_PIN` | — | PIN accesso (SHA256 hash) |
+| `ANTHROPIC_API_KEY` | — | Chiave API Anthropic |
+| `OPENROUTER_API_KEY` | — | Chiave API OpenRouter |
+| `GROQ_API_KEY` | — | Chiave API Groq (STT voce) |
+| `TELEGRAM_TOKEN` | — | Token Telegram Bot |
+| `OLLAMA_BASE` | `http://localhost:11434` | URL Ollama locale |
+| `OLLAMA_MODEL` | `gemma2:2b` | Modello Ollama Pi |
+| `NANOBOT_DIR` | `~/.nanobot` | Directory dati (DB, config, workspace) |
+| `CLAUDE_BRIDGE_URL` | `http://localhost:8095` | URL bridge Claude Code CLI |
+
+### Config file
+
+```json
+{
+  "vessel": { "name": "mypi", "user": "pi" },
+  "ollama": { "model": "gemma2:2b" },
+  "anthropic": { "apiKey": "sk-ant-..." },
+  "openrouter": { "apiKey": "sk-or-..." },
+  "groq": { "apiKey": "gsk_..." },
+  "telegram": { "token": "...", "chat_id": "..." }
+}
+```
+
+---
+
+## Deployment su Raspberry Pi
+
+```bash
+# Deploy rapido via SCP
+scp vessel.py pi@your-pi.local:~/vessel.py
+
+# Avvio in background con tmux
+ssh pi@your-pi.local
+tmux new-session -d -s vessel 'python3 ~/vessel.py'
+
+# Verifica
+curl http://localhost:8090/health
+```
+
+**Avvio automatico al boot:**
+```bash
+# Aggiungi al crontab (crontab -e)
+@reboot sleep 10 && tmux new-session -d -s vessel 'python3 ~/vessel.py'
+```
+
+**Accesso remoto** (opzionale): usa [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) per esporre la dashboard su internet senza aprire porte.
+
+---
+
+## ESP32 Tamagotchi (opzionale)
+
+Il **Sigil** e' un companion visivo ESP32 che rispecchia lo stato emotivo del chatbot in tempo reale.
+
+- **Hardware**: LilyGO T-Display-S3 (TFT 320x170, 2 bottoni GPIO)
+- **Firmware**: PlatformIO (`vessel_tamagotchi/`)
+- **12 stati**: IDLE, THINKING, WORKING, PROUD, SLEEPING, HAPPY, CURIOUS, ALERT, ERROR, BORED, PEEKING, STANDALONE
+- **Comunicazione**: REST API via WiFi
+
+```bash
+# Flash firmware (richiede PlatformIO)
+cd vessel_tamagotchi
+pio run --target upload
+```
+
+Vedi [`docs/05-SIGIL-TAMAGOTCHI.md`](docs/05-SIGIL-TAMAGOTCHI.md) per dettagli hardware.
+
+---
+
+## Telegram Bot
+
+Interagisci con il dashboard da mobile. Supporto voce nativo.
+
+**Selezione provider via prefisso:**
+
+| Prefisso | Provider |
+|----------|----------|
+| `@haiku` | Anthropic Claude Haiku |
+| `@pc` | Ollama PC (GPU LAN) |
+| `@local` | Ollama Pi locale |
+| `@brain` | Claude Code CLI (bridge) |
+| *(nessuno)* | OpenRouter (default) |
+
+**Voce**: messaggio vocale -> Groq Whisper (STT) -> LLM -> Edge-TTS (TTS) -> risposta audio.
+
+---
+
+## Documentation
+
+| File | Contenuto |
+|------|-----------|
+| [`docs/01-ARCHITETTURA.md`](docs/01-ARCHITETTURA.md) | Struttura backend, pattern service/route |
+| [`docs/02-BACKEND-REFERENCE.md`](docs/02-BACKEND-REFERENCE.md) | API REST, WebSocket handlers |
+| [`docs/03-FRONTEND-REFERENCE.md`](docs/03-FRONTEND-REFERENCE.md) | Moduli JS, CSS temi |
+| [`docs/04-AGENT-SYSTEM.md`](docs/04-AGENT-SYSTEM.md) | Multi-agent routing, configurazione agenti |
+| [`docs/05-SIGIL-TAMAGOTCHI.md`](docs/05-SIGIL-TAMAGOTCHI.md) | ESP32 hardware, firmware, stati |
+| [`docs/06-DEPLOYMENT.md`](docs/06-DEPLOYMENT.md) | Deploy Pi, crontab, backup |
+| [`docs/OLLAMA.md`](docs/OLLAMA.md) | Setup Ollama, benchmark, tuning Pi |
+| [`ROADMAP.md`](ROADMAP.md) | Storia del progetto, fasi di sviluppo |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Come contribuire |
+
+---
+
+## Hardware testato
+
+| Componente | Modello | Note |
+|------------|---------|------|
+| SBC | Raspberry Pi 5 8GB | Raccomandato |
+| SBC | Raspberry Pi 4 4GB+ | Supportato |
+| OS | Debian 13 Trixie Lite | Headless |
+| Companion | LilyGO T-Display-S3 | Opzionale |
+
+---
+
+## Contributing
+
+Vedi [`CONTRIBUTING.md`](CONTRIBUTING.md) per il workflow di sviluppo e come aggiungere nuovi widget, provider o agenti.
+
+---
+
+## License
+
+MIT — vedi [`LICENSE`](LICENSE)
