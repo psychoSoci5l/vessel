@@ -13,10 +13,10 @@
   .btn-send { min-height: 44px; }
   .mono-block { max-height: 150px; }
 
-  /* Provider menu: apri verso il basso su mobile — Fase 56D */
+  /* Provider menu: apri verso l'alto su mobile — Fix Fase 62 */
   .provider-menu {
-    bottom: auto;
-    top: 100%;
+    bottom: 100%;
+    top: auto;
     max-height: 50vh;
     overflow-y: auto;
   }

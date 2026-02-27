@@ -99,6 +99,8 @@
     else if (msg.type === 'saved_prompts') { renderSavedPrompts(msg.prompts); }
     else if (msg.type === 'sigil_state') { updateSigilIndicator(msg.state); }
     else if (msg.type === 'tracker')   { renderTracker(msg.items); }
+    else if (msg.type === 'analytics') { renderAnalytics(msg.data); }
+    else if (msg.type === 'heatmap')   { renderHeatmap(msg.data); }
     else if (msg.type === 'deep_learn_result') {
       const el = document.getElementById('deep-learn-text');
       const wrap = document.getElementById('deep-learn-result');

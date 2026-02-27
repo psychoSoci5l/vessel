@@ -14,6 +14,8 @@
 
     // Ridisegna chart quando torniamo a dashboard
     if (tabName === 'dashboard') requestAnimationFrame(() => drawChart());
+    // Carica analytics quando apriamo Profile
+    if (tabName === 'profile') loadAnalytics();
   }
 
 // ── Memory Tabs ──

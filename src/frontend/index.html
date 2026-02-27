@@ -282,6 +282,21 @@
               </div>
             </div>
           </div>
+
+          <!-- ── ANALYTICS (Fase 62) ── -->
+          <div class="prof-section prof-section-mem" id="analytics-section">
+            <div class="prof-section-title" style="display:flex;justify-content:space-between;align-items:center;">
+              ANALYTICS
+              <span class="anl-period-btns">
+                <button class="btn-sm anl-period-btn active" data-period="day" onclick="loadAnalytics('day')">24H</button>
+                <button class="btn-sm anl-period-btn" data-period="week" onclick="loadAnalytics('week')">7D</button>
+                <button class="btn-sm anl-period-btn" data-period="month" onclick="loadAnalytics('month')">30D</button>
+              </span>
+            </div>
+            <div id="analytics-content" style="padding:8px 12px;">
+              <div class="no-items">// apri il tab Profile per caricare</div>
+            </div>
+          </div>
         </div>
       </div>
 

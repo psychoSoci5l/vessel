@@ -762,6 +762,87 @@ def db_cleanup_old_events(days: int = 90) -> int:
         return cur.rowcount
 
 
+# ─── Analytics (Fase 62) ─────────────────────────────────────────────────────
+
+def db_get_failover_log(limit: int = 20) -> list:
+    """Legge ultimi N eventi failover dal log audit."""
+    return db_get_audit_log(limit=limit, action="failover")
+
+
+def db_get_provider_analytics(period: str = "day") -> dict:
+    """Aggrega latenza e error rate per provider dalla tabella events."""
+    days = {"day": 0, "week": 7, "month": 30}.get(period, 0)
+    if days == 0:
+        since = time.strftime("%Y-%m-%d")
+    else:
+        since = time.strftime("%Y-%m-%d", time.localtime(time.time() - days * 86400))
+    with _db_conn() as conn:
+        latency_rows = conn.execute(
+            "SELECT provider, AVG(latency_ms) as avg_ms, MAX(latency_ms) as max_ms, COUNT(*) as calls "
+            "FROM events WHERE ts >= ? AND category = 'chat' AND action = 'response' AND latency_ms > 0 "
+            "GROUP BY provider ORDER BY avg_ms DESC",
+            (since,)
+        ).fetchall()
+        err_rows = conn.execute(
+            "SELECT provider, COUNT(*) as err_count FROM events "
+            "WHERE ts >= ? AND status = 'error' AND category = 'chat' GROUP BY provider",
+            (since,)
+        ).fetchall()
+        tot_rows = conn.execute(
+            "SELECT provider, COUNT(*) as total FROM events "
+            "WHERE ts >= ? AND category = 'chat' GROUP BY provider",
+            (since,)
+        ).fetchall()
+    err_map = {r["provider"]: r["err_count"] for r in err_rows}
+    tot_map = {r["provider"]: r["total"] for r in tot_rows}
+    latency_out = [
+        {"provider": r["provider"] or "unknown",
+         "avg_ms": round(r["avg_ms"]) if r["avg_ms"] else 0,
+         "max_ms": r["max_ms"] or 0,
+         "calls": r["calls"]}
+        for r in latency_rows
+    ]
+    all_providers = set(list(err_map.keys()) + list(tot_map.keys()))
+    errors_out = sorted([
+        {"provider": p,
+         "count": err_map.get(p, 0),
+         "total": tot_map.get(p, 0),
+         "rate": round(err_map.get(p, 0) / tot_map[p], 3) if tot_map.get(p, 0) > 0 else 0}
+        for p in all_providers
+    ], key=lambda x: x["rate"], reverse=True)
+    return {"period": period, "since": since, "latency": latency_out, "errors": errors_out}
+
+
+def db_get_activity_heatmap(days: int = 7) -> dict:
+    """Matrice attività chat: {matrix: [[count]*24 per giorno], max, labels, dates}."""
+    date_list = []
+    for i in range(days):
+        t = time.localtime(time.time() - (days - 1 - i) * 86400)
+        date_list.append(time.strftime("%Y-%m-%d", t))
+    since = date_list[0] + "T00:00:00"
+    date_idx = {d: i for i, d in enumerate(date_list)}
+    matrix = [[0] * 24 for _ in range(days)]
+    with _db_conn() as conn:
+        rows = conn.execute(
+            "SELECT date(ts) as day, CAST(strftime('%H', ts) AS INTEGER) as hour, COUNT(*) as cnt "
+            "FROM chat_messages WHERE ts >= ? AND role = 'user' GROUP BY day, hour",
+            (since,)
+        ).fetchall()
+    max_val = 0
+    for r in rows:
+        idx = date_idx.get(r["day"])
+        if idx is not None and 0 <= r["hour"] < 24:
+            matrix[idx][r["hour"]] += r["cnt"]
+            if matrix[idx][r["hour"]] > max_val:
+                max_val = matrix[idx][r["hour"]]
+    days_it = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"]
+    labels = []
+    for d in date_list:
+        t = time.strptime(d, "%Y-%m-%d")
+        labels.append(days_it[t.tm_wday])
+    return {"matrix": matrix, "max": max_val, "days": days, "labels": labels, "dates": date_list}
+
+
 # ─── Tracker (Fase 55b) ──────────────────────────────────────────────────────
 
 def db_add_tracker(title: str, body: str = "", type: str = "note",

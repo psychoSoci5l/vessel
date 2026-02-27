@@ -314,6 +314,34 @@ async def handle_tracker_delete(websocket, msg, ctx):
     else:
         await websocket.send_json({"type": "toast", "text": "Item non trovato"})
 
+# ─── Analytics handlers (Fase 62) ────────────────────────────────────────────
+
+async def handle_get_analytics(websocket, msg, ctx):
+    period = msg.get("period", "day")
+    if period not in ("day", "week", "month"):
+        period = "day"
+    usage = await bg(db_get_usage_report, period)
+    analytics = await bg(db_get_provider_analytics, period)
+    failovers = await bg(db_get_failover_log, 10)
+    await websocket.send_json({
+        "type": "analytics",
+        "data": {
+            "period": period,
+            "token_usage": usage.get("rows", []),
+            "token_total": usage.get("total", {}),
+            "latency": analytics.get("latency", []),
+            "errors": analytics.get("errors", []),
+            "failovers": failovers,
+        }
+    })
+
+async def handle_get_heatmap(websocket, msg, ctx):
+    days = msg.get("days", 7)
+    if not isinstance(days, int) or days < 1 or days > 30:
+        days = 7
+    data = await bg(db_get_activity_heatmap, days)
+    await websocket.send_json({"type": "heatmap", "data": data})
+
 WS_DISPATCHER = {
     "chat": handle_chat,
     "clear_chat": handle_clear_chat,
@@ -348,4 +376,6 @@ WS_DISPATCHER = {
     "tracker_add": handle_tracker_add,
     "tracker_update": handle_tracker_update,
     "tracker_delete": handle_tracker_delete,
+    "get_analytics": handle_get_analytics,
+    "get_heatmap": handle_get_heatmap,
 }
